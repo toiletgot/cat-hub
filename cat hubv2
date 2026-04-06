@@ -1,0 +1,247 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UIS = game:GetService("UserInputService")
+local player = Players.LocalPlayer
+local camera = workspace.CurrentCamera
+
+-- ================= 状態管理 =================
+local enabled, rotateEnabled, spinEnabled, spin2Enabled = false, false, false, false
+local hoveringObjects = {}
+local totalRotation, totalSpinX, totalSpinY = 0, 0, 0
+local loopConnection = nil
+
+-- 初期値
+local radius, orbitSpeed, spinXSpeed, spinYSpeed = 8, 50, 80, 80
+local flingPower, liftHeight = 350, 12
+
+-- ================= ターゲット取得 =================
+local function getTarget()
+    local origin = camera.CFrame.Position
+    local dir = camera.CFrame.LookVector * 50
+    local rp = RaycastParams.new()
+    rp.FilterDescendantsInstances = {player.Character}
+    rp.FilterType = Enum.RaycastFilterType.Exclude
+
+    local result = workspace:Raycast(origin, dir, rp)
+    if result and result.Instance then
+        local inst = result.Instance
+        if Players:GetPlayerFromCharacter(inst.Parent) then return nil end
+        if inst:IsA("Terrain") then return nil end
+        if inst.Name:lower():find("floor") or inst.Name:lower():find("baseplate") then return nil end
+        if inst.Anchored and inst.Size.Magnitude > 15 then return nil end
+        return inst
+    end
+end
+
+-- ================= UI =================
+local gui = Instance.new("ScreenGui", player:WaitForChild("PlayerGui"))
+gui.Name = "CatHub_Final"
+gui.ResetOnSpawn = false
+
+-- メインフレーム
+local main = Instance.new("Frame", gui)
+main.Size = UDim2.new(0, 140, 0, 220)
+main.Position = UDim2.new(1, -150, 1, -270)
+main.BackgroundColor3 = Color3.fromRGB(30,30,30)
+main.BorderSizePixel = 0
+main.Active = true -- ドラッグを有効にするために必要
+Instance.new("UICorner", main).CornerRadius = UDim.new(0,6)
+
+-- ================= ドラッグバー (ここがドラッグのトリガー) =================
+local dragBar = Instance.new("TextButton", main)
+dragBar.Size = UDim2.new(1,0,0,22)
+dragBar.BackgroundColor3 = Color3.fromRGB(50,50,50)
+dragBar.Text = "cat hub"
+dragBar.TextColor3 = Color3.fromRGB(255,255,255)
+dragBar.TextSize = 12
+dragBar.Font = Enum.Font.GothamBold
+dragBar.AutoButtonColor = false -- クリック時の色変化を無効化
+
+-- 閉じるボタン
+local close = Instance.new("TextButton", dragBar)
+close.Size = UDim2.new(0,18,0,18)
+close.Position = UDim2.new(1,-20,0,2)
+close.Text = "×"
+close.BackgroundColor3 = Color3.fromRGB(120,40,40)
+close.TextColor3 = Color3.fromRGB(255,255,255)
+Instance.new("UICorner", close).CornerRadius = UDim.new(0,4)
+
+-- スクロール
+local scroll = Instance.new("ScrollingFrame", main)
+scroll.Size = UDim2.new(1,0,1,-22)
+scroll.Position = UDim2.new(0,0,0,22)
+scroll.CanvasSize = UDim2.new(0,0,0,380)
+scroll.ScrollBarThickness = 2
+scroll.BackgroundTransparency = 1
+scroll.BorderSizePixel = 0
+
+local layout = Instance.new("UIListLayout", scroll)
+layout.Padding = UDim.new(0,4)
+layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+
+-- ================= UI生成関数 =================
+local function makeBtn(text)
+    local b = Instance.new("TextButton", scroll)
+    b.Size = UDim2.new(0,130,0,22)
+    b.BackgroundColor3 = Color3.fromRGB(60,60,60)
+    b.TextColor3 = Color3.fromRGB(255,255,255)
+    b.Text = text
+    b.TextSize = 11
+    Instance.new("UICorner", b).CornerRadius = UDim.new(0,4)
+    return b
+end
+
+local function makeInp(name,val)
+    local f = Instance.new("Frame", scroll)
+    f.Size = UDim2.new(0,130,0,28)
+    f.BackgroundTransparency = 1
+
+    local l = Instance.new("TextLabel", f)
+    l.Size = UDim2.new(0.6,0,1,0)
+    l.Text = name
+    l.TextColor3 = Color3.fromRGB(200,200,200)
+    l.TextSize = 10
+    l.BackgroundTransparency = 1
+
+    local t = Instance.new("TextBox", f)
+    t.Size = UDim2.new(0.4,0,0.8,0)
+    t.Position = UDim2.new(0.6,0,0.1,0)
+    t.Text = tostring(val)
+    t.BackgroundColor3 = Color3.fromRGB(45,45,45)
+    t.TextColor3 = Color3.fromRGB(255,255,255)
+    t.TextSize = 10
+    Instance.new("UICorner", t).CornerRadius = UDim.new(0,4)
+    return t
+end
+
+-- ================= ボタン & 入力 =================
+local toggleBtn = makeBtn("掴む: OFF")
+local rotBtn    = makeBtn("周囲回転: OFF")
+local sXBtn     = makeBtn("自転X: OFF")
+local sYBtn     = makeBtn("自転Y: OFF")
+local throwBtn  = makeBtn("発射")
+
+local rBox = makeInp("半径", radius)
+local oBox = makeInp("回転速度", orbitSpeed)
+local xBox = makeInp("自転X速度", spinXSpeed)
+local yBox = makeInp("自転Y速度", spinYSpeed)
+local fBox = makeInp("投げる強さ", flingPower)
+local hBox = makeInp("高さ", liftHeight)
+
+-- ================= ドラッグ機能の実装 =================
+local dragging, dragInput, dragStart, startPos
+
+local function update(input)
+    local delta = input.Position - dragStart
+    main.Position = UDim2.new(
+        startPos.X.Scale, 
+        startPos.X.Offset + delta.X, 
+        startPos.Y.Scale, 
+        startPos.Y.Offset + delta.Y
+    )
+end
+
+dragBar.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = main.Position
+
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+            end
+        end)
+    end
+end)
+
+dragBar.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+        dragInput = input
+    end
+end)
+
+UIS.InputChanged:Connect(function(input)
+    if input == dragInput and dragging then
+        update(input)
+    end
+end)
+
+-- ================= 終了処理 =================
+close.MouseButton1Click:Connect(function()
+    if loopConnection then loopConnection:Disconnect() end
+    for o in pairs(hoveringObjects) do
+        if o and o.Parent then o.CanCollide = true o.Massless = false end
+    end
+    hoveringObjects = {}
+    gui:Destroy()
+end)
+
+-- ================= ボタンロジック =================
+toggleBtn.MouseButton1Click:Connect(function()
+    enabled = not enabled
+    toggleBtn.Text = "掴む: "..(enabled and "ON" or "OFF")
+end)
+rotBtn.MouseButton1Click:Connect(function()
+    rotateEnabled = not rotateEnabled
+    rotBtn.Text = "周囲回転: "..(rotateEnabled and "ON" or "OFF")
+end)
+sXBtn.MouseButton1Click:Connect(function()
+    spinEnabled = not spinEnabled
+    sXBtn.Text = "自転X: "..(spinEnabled and "ON" or "OFF")
+end)
+sYBtn.MouseButton1Click:Connect(function()
+    spin2Enabled = not spin2Enabled
+    sYBtn.Text = "自転Y: "..(spin2Enabled and "ON" or "OFF")
+end)
+throwBtn.MouseButton1Click:Connect(function()
+    for o in pairs(hoveringObjects) do
+        if o and o.Parent then
+            o.CanCollide = true
+            o.Massless = false
+            o.AssemblyLinearVelocity = camera.CFrame.LookVector * flingPower
+        end
+    end
+    hoveringObjects = {}
+end)
+
+-- 入力反映
+rBox.FocusLost:Connect(function() radius = tonumber(rBox.Text) or radius end)
+oBox.FocusLost:Connect(function() orbitSpeed = tonumber(oBox.Text) or orbitSpeed end)
+xBox.FocusLost:Connect(function() spinXSpeed = tonumber(xBox.Text) or spinXSpeed end)
+yBox.FocusLost:Connect(function() spinYSpeed = tonumber(yBox.Text) or spinYSpeed end)
+fBox.FocusLost:Connect(function() flingPower = tonumber(fBox.Text) or flingPower end)
+hBox.FocusLost:Connect(function() liftHeight = tonumber(hBox.Text) or liftHeight end)
+
+-- ================= メインループ =================
+loopConnection = RunService.RenderStepped:Connect(function(dt)
+    local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+
+    if enabled then
+        local t = getTarget()
+        if t and t:IsA("BasePart") then
+            hoveringObjects[t] = true
+            t.CanCollide = false
+            t.Massless = true
+        end
+    end
+
+    totalRotation += math.rad(orbitSpeed) * dt
+    if spinEnabled then totalSpinX += math.rad(spinXSpeed) * dt end
+    if spin2Enabled then totalSpinY += math.rad(spinYSpeed) * dt end
+
+    local objects = {}
+    for o in pairs(hoveringObjects) do
+        if o and o.Parent then table.insert(objects,o) else hoveringObjects[o]=nil end
+    end
+
+    local center = hrp.Position + Vector3.new(0,liftHeight,0)
+    for i,o in ipairs(objects) do
+        local angle = totalRotation + (i/#objects) * math.pi*2
+        local pos = rotateEnabled and center + Vector3.new(math.cos(angle)*radius,0,math.sin(angle)*radius) or center
+        o.CFrame = CFrame.new(pos) * CFrame.Angles(totalSpinX,totalSpinY,0)
+        o.AssemblyLinearVelocity = Vector3.zero
+        o.AssemblyAngularVelocity = Vector3.zero
+    end
+end)
