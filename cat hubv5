@@ -1,0 +1,808 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UIS = game:GetService("UserInputService")
+local Tweens = game:GetService("TweenService")
+
+local player = Players.LocalPlayer
+local camera = workspace.CurrentCamera
+
+-- --- 状態管理 ---
+local enabled = false -- 掴むフラグ
+local rotateEnabled = false
+local spinXEnabled = false
+local spinYEnabled = false
+local tornadoEnabled = false
+local wingEnabled = false
+local sunEnabled = false
+local auraEnabled = false
+local magicCircleEnabled = false 
+local sandstormEnabled = false 
+local spiritDanceEnabled = false 
+local manjiEnabled = false -- 卍陣フラグ
+local squareEnabled = false -- 四角陣フラグ
+local trailEnabled = true -- ★追加：光の追跡（トレイル）フラグ
+local omenEnabled = false -- ★追加：終焉の徴フラグ
+
+local hoveringObjects = {} -- { [Part] = {元々の色, 元々の素材, トレイル, アカウント類} }
+local frozenObjects = {}
+local magicParts = {} -- 魔法陣用の視覚パーツ
+local objectSeeds = {} -- ★追加：個体ごとの乱数保持用
+
+local totalRotation, totalSpinX, totalSpinY = 0, 0, 0
+local magicCircleRotation = 0
+local sandstormTime = 0 
+local spiritDanceTime = 0 
+local manjiRotation = 0 
+local squareRotation = 0 
+local omenTime = 0 -- ★追加
+local loop
+
+-- --- 詳細設定 (デフォルト値) ---
+local radius = 9 
+local orbitSpeed = 60 
+local spinXSpeed = 100 
+local spinYSpeed = 100 
+local flingPower = 400 
+local liftHeight = 13 
+local lerpSpeed = 0.3 
+
+local squareRadius = 10 
+local squareRotationSpeed = 50 
+local manjiRadius = 12 
+local manjiRotationSpeed = 50 
+
+-- ★ここから五芒星の設定変数（デフォルト値）
+local magicCircleRotationSpeed = 40 
+local magicPulseSpeed = 2 
+local magicPulseStrength = 0.8 
+local showVisualPentagram = true 
+-- ★ここまで
+
+local tornadoHeight = 30 
+local tornadoBottomRadius = 2 
+local tornadoTopRadius = 12 
+local tornadoTightness = 5 
+
+local wingBackOffset = 3.0 
+local wingSideSpacing = 2.0 
+local wingVertSpacing = 1.0 
+local wingFlapSpeed = 2.5 
+local wingFlapStrength = 0.6 
+local wingWaveDelay = 0.6 
+
+local sunPulsationSpeed = 3 
+local sunPulsationStrength = 2 
+local auraVerticalSpeed = 5 
+local auraVerticalStrength = 4 
+local auraRandomness = 0.8 
+local sandstormOrbitSpeed = 300 
+local sandstormScatter = 4 
+local sandstormTurbulence = 10 
+local spiritDanceRadius = 15 
+local spiritDanceSpeed = 1.5 
+local spiritDanceHeight = 15 
+
+-- ★終焉の徴 詳細設定（変数を細分化）
+local omenBaseRadius = 25 
+local omenBaseHeight = 15
+local omenVerticalWave = 8    -- 上下のふわふわ感
+local omenSpread = 15         -- 拡散（バラツキ）の強さ
+local omenRotationSpeed = 2   -- 個別の回転複雑度
+local omenLerpSpeed = 0.1     -- 終焉モード専用の追従滑らかさ
+
+-- --- エフェクト設定 ---
+
+local coolNeonColors = {
+    Color3.fromRGB(0, 255, 255),
+    Color3.fromRGB(255, 0, 255),
+    Color3.fromRGB(100, 100, 255),
+    Color3.fromRGB(200, 0, 255),
+    Color3.fromRGB(255, 50, 50),
+}
+
+local sandNeonColors = {
+    Color3.fromRGB(194, 178, 128),
+    Color3.fromRGB(218, 165, 32),
+    Color3.fromRGB(139, 69, 19),
+    Color3.fromRGB(244, 164, 96),
+    Color3.fromRGB(255, 215, 0),
+}
+
+local spiritNeonColors = {
+    Color3.fromRGB(255, 255, 255),
+    Color3.fromRGB(200, 255, 255),
+    Color3.fromRGB(200, 255, 200),
+    Color3.fromRGB(255, 240, 200),
+    Color3.fromRGB(230, 230, 250),
+}
+
+local manjiColor = Color3.fromRGB(255, 215, 0)
+local squareColor = Color3.fromRGB(255, 0, 255)
+
+-- ★トレイルを作成する内部関数
+local function createTrailForPart(part, data)
+    if data.Trail then data.Trail:Destroy() end
+    if data.AAttachment0 then data.AAttachment0:Destroy() end
+    if data.AAttachment1 then data.AAttachment1:Destroy() end
+
+    local a0 = Instance.new("Attachment", part)
+    a0.Position = Vector3.new(0, part.Size.Y/2, 0)
+    local a1 = Instance.new("Attachment", part)
+    a1.Position = Vector3.new(0, -part.Size.Y/2, 0)
+    
+    local trail = Instance.new("Trail", part)
+    trail.Attachment0 = a0
+    trail.Attachment1 = a1
+    trail.Color = ColorSequence.new(part.Color, Color3.new(0,0,0))
+    trail.Lifetime = 0.5
+    trail.LightEmission = 1
+    trail.Transparency = NumberSequence.new({NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(1, 1)})
+    trail.WidthScale = NumberSequence.new({NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(1, 0)})
+    
+    data.Trail = trail
+    data.AAttachment0 = a0
+    data.AAttachment1 = a1
+end
+
+-- トレイルとネオンを追加
+local function addCoolEffects(part)
+    if not hoveringObjects[part] then
+        hoveringObjects[part] = {
+            Color = part.Color,
+            Material = part.Material,
+            Trail = nil,
+            AAttachment0 = nil,
+            AAttachment1 = nil
+        }
+        
+        part.Material = Enum.Material.Neon
+        
+        if manjiEnabled then
+            part.Color = manjiColor
+        elseif squareEnabled then
+            part.Color = squareColor
+        elseif sandstormEnabled then
+            part.Color = sandNeonColors[math.random(1, #sandNeonColors)]
+        elseif spiritDanceEnabled then
+            part.Color = spiritNeonColors[math.random(1, #spiritNeonColors)] 
+        else
+            part.Color = coolNeonColors[math.random(1, #coolNeonColors)]
+        end
+        
+        -- ★トレイル設定がONの時だけ作成
+        if trailEnabled then
+            createTrailForPart(part, hoveringObjects[part])
+        end
+
+        -- ★個別の乱数シードを生成
+        objectSeeds[part] = {
+            distMod = math.random(-omenSpread, omenSpread),
+            heightMod = math.random(-omenSpread/2, omenSpread/2),
+            rotAxis = Vector3.new(math.random(-10, 10), math.random(-10, 10), math.random(-10, 10)).Unit,
+            phase = math.random() * math.pi * 2
+        }
+    end
+end
+
+-- 元に戻す
+local function removeCoolEffects(part)
+    local data = hoveringObjects[part]
+    if data then
+        if part.Parent then
+            part.Color = data.Color
+            part.Material = data.Material
+            if data.Trail then data.Trail:Destroy() end
+            if data.AAttachment0 then data.AAttachment0:Destroy() end
+            if data.AAttachment1 then data.AAttachment1:Destroy() end
+        end
+        hoveringObjects[part] = nil
+        objectSeeds[part] = nil
+    end
+end
+
+-- 全オブジェクトの色を今のモードに合わせて更新
+local function updateAllObjectColors()
+    for part, data in pairs(hoveringObjects) do
+        if part and part.Parent then
+            if manjiEnabled then
+                part.Color = manjiColor
+            elseif squareEnabled then
+                part.Color = squareColor
+            elseif sandstormEnabled then
+                part.Color = sandNeonColors[math.random(1, #sandNeonColors)]
+            elseif spiritDanceEnabled then
+                part.Color = spiritNeonColors[math.random(1, #spiritNeonColors)] 
+            else
+                part.Color = coolNeonColors[math.random(1, #coolNeonColors)]
+            end
+            if data.Trail then
+                data.Trail.Color = ColorSequence.new(part.Color, Color3.new(0,0,0))
+            end
+        end
+    end
+end
+
+-- ★トレイルのON/OFFを即座に反映させる関数
+local function toggleAllTrails(on)
+    for part, data in pairs(hoveringObjects) do
+        if on then
+            createTrailForPart(part, data)
+        else
+            if data.Trail then data.Trail:Destroy(); data.Trail = nil end
+            if data.AAttachment0 then data.AAttachment0:Destroy(); data.AAttachment0 = nil end
+            if data.AAttachment1 then data.AAttachment1:Destroy(); data.AAttachment1 = nil end
+        end
+    end
+end
+
+-- 魔法陣のパーツを消去
+local function clearVisualPentagram()
+    for _, p in pairs(magicParts) do p:Destroy() end
+    magicParts = {}
+end
+
+-- 魔法陣を描画/更新
+local function updateVisualPentagram(pos, pRadius)
+    clearVisualPentagram()
+    if not showVisualPentagram or not magicCircleEnabled then return end
+
+    local function createLine(p1, p2)
+        local dist = (p1 - p2).Magnitude
+        local part = Instance.new("Part")
+        part.Anchored = true
+        part.CanCollide = false
+        part.Material = Enum.Material.Neon
+        part.Color = Color3.fromRGB(100, 100, 255)
+        part.Size = Vector3.new(0.2, 0.2, dist)
+        part.CFrame = CFrame.new(p1:Lerp(p2, 0.5), p2)
+        part.Parent = workspace
+        table.insert(magicParts, part)
+        part.Transparency = 1
+        Tweens:Create(part, TweenInfo.new(0.5), {Transparency = 0.3}):Play()
+    end
+
+    local points = {}
+    for i = 1, 5 do
+        local angle = (i-1) * (math.pi * 2 / 5) + magicCircleRotation
+        table.insert(points, pos + Vector3.new(math.cos(angle) * pRadius, 0, math.sin(angle) * pRadius))
+    end
+
+    createLine(points[1], points[3])
+    createLine(points[3], points[5])
+    createLine(points[5], points[2])
+    createLine(points[2], points[4])
+    createLine(points[4], points[1])
+end
+
+-- ターゲット取得
+local function getTarget()
+    local origin = camera.CFrame.Position
+    local dir = camera.CFrame.LookVector * 60
+    local rp = RaycastParams.new()
+    rp.FilterDescendantsInstances = {player.Character}
+    rp.FilterType = Enum.RaycastFilterType.Exclude
+    local r = workspace:Raycast(origin, dir, rp)
+    if r and r.Instance then
+        local i = r.Instance
+        if Players:GetPlayerFromCharacter(i.Parent) then return end
+        if i:IsA("Terrain") or i.Name:lower():find("baseplate") then return end
+        if i.Anchored and i.Size.Magnitude > 20 then return end
+        return i
+    end
+end
+
+-- --- UI構築 ---
+local gui = Instance.new("ScreenGui", player.PlayerGui)
+gui.ResetOnSpawn = false
+gui.Name = "CatHub_MagicSetting"
+
+local main = Instance.new("Frame", gui)
+main.Size = UDim2.new(0, 140, 0, 280)
+main.Position = UDim2.new(1, -150, 1, -300)
+main.BackgroundColor3 = Color3.fromRGB(10, 10, 12)
+main.BorderSizePixel = 0
+main.Active = true
+Instance.new("UICorner", main).CornerRadius = UDim.new(0, 6)
+
+local uistroke = Instance.new("UIStroke", main)
+uistroke.Color = Color3.fromRGB(0, 150, 255)
+uistroke.Thickness = 1
+uistroke.Transparency = 0.5
+
+local bar = Instance.new("TextButton", main)
+bar.Size = UDim2.new(1, 0, 0, 24)
+bar.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
+bar.Text = "猫 hub"
+bar.TextColor3 = Color3.fromRGB(255, 255, 255)
+bar.TextSize = 11
+bar.Font = Enum.Font.Code
+bar.AutoButtonColor = false
+Instance.new("UICorner", bar).CornerRadius = UDim.new(0, 6)
+
+local dragging, dragInput, dragStart, startPos
+bar.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true; dragStart = input.Position; startPos = main.Position
+        input.Changed:Connect(function() if input.UserInputState == Enum.UserInputState.End then dragging = false end end)
+    end
+end)
+UIS.InputChanged:Connect(function(input)
+    if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        local delta = input.Position - dragStart
+        main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
+
+local close = Instance.new("TextButton", bar)
+close.Size = UDim2.new(0, 24, 1, 0)
+close.Position = UDim2.new(1, -24, 0, 0)
+close.Text = "×"
+close.TextColor3 = Color3.fromRGB(255, 80, 80)
+close.TextSize = 16
+close.BackgroundTransparency = 1
+close.Font = Enum.Font.Code
+close.MouseButton1Click:Connect(function() 
+    if loop then loop:Disconnect() end 
+    for o in pairs(hoveringObjects) do removeCoolEffects(o) end
+    clearVisualPentagram() 
+    gui:Destroy() 
+end)
+
+local scroll = Instance.new("ScrollingFrame", main)
+scroll.Size = UDim2.new(1, -4, 1, -28)
+scroll.Position = UDim2.new(0, 2, 0, 26)
+scroll.CanvasSize = UDim2.new(0, 0, 0, 2000) -- ★少し広げた
+scroll.BackgroundTransparency = 1
+scroll.ScrollBarThickness = 3
+scroll.ScrollBarImageColor3 = Color3.fromRGB(0, 150, 255)
+local layout = Instance.new("UIListLayout", scroll)
+layout.Padding = UDim.new(0, 4); layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+
+local function btn(t)
+    local b = Instance.new("TextButton", scroll)
+    b.Size = UDim2.new(0, 125, 0, 22)
+    b.Text = "> " .. t
+    b.TextSize = 10; b.Font = Enum.Font.Code
+    b.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+    b.TextColor3 = Color3.fromRGB(200, 200, 200)
+    b.BackgroundTransparency = 1
+    Instance.new("UICorner", b)
+    local s = Instance.new("UIStroke", b); s.Color = Color3.fromRGB(0, 100, 200); s.Transparency = 0.8
+    return b
+end
+
+local function updateBtnStyle(b, on)
+    b.TextColor3 = on and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(200, 200, 200)
+    b.BackgroundTransparency = on and 0.2 or 1 
+    b.BackgroundColor3 = on and Color3.fromRGB(0, 100, 200) or Color3.fromRGB(25, 25, 30)
+    if b:FindFirstChild("UIStroke") then b.UIStroke.Transparency = on and 0.2 or 0.8 end
+end
+
+local function inputField(name, val)
+    local f = Instance.new("Frame", scroll)
+    f.Size = UDim2.new(0, 125, 0, 18); f.BackgroundTransparency = 1
+    local l = Instance.new("TextLabel", f)
+    l.Size = UDim2.new(0.5, -2, 1, 0); l.Text = name; l.TextColor3 = Color3.fromRGB(150, 150, 150); l.BackgroundTransparency = 1; l.TextSize = 8; l.Font = Enum.Font.Code; l.TextXAlignment = Enum.TextXAlignment.Left
+    local t = Instance.new("TextBox", f)
+    t.Size = UDim2.new(0.5, 0, 0.9, 0); t.Position = UDim2.new(0.5, 0, 0.05, 0); t.Text = tostring(val); t.BackgroundColor3 = Color3.fromRGB(15, 15, 18); t.TextColor3 = Color3.fromRGB(0, 255, 255); t.TextSize = 9; t.Font = Enum.Font.Code
+    Instance.new("UICorner", t)
+    return t
+end
+
+local function createSeparator(text)
+    local sep = Instance.new("TextLabel", scroll)
+    sep.Size = UDim2.new(1,0,0,18)
+    sep.Text = "-- " .. text .. " --"
+    sep.TextSize = 8
+    sep.TextColor3 = Color3.new(0.5,0.5,0.5)
+    sep.BackgroundTransparency = 1
+    sep.Font = Enum.Font.Code
+    return sep
+end
+
+-- --- UI要素配置 ---
+
+createSeparator("メイン")
+local grab  = btn("掴む: OFF")
+local place = btn("目の前に展開")
+local throw = btn("一斉射撃")
+local freezeGrab = btn("その場に固定")
+local clearFreeze = btn("固定解除")
+
+createSeparator("モード選択")
+local omen  = btn("終焉の徴: OFF") -- ★追加
+local squr  = btn("四角陣: OFF") 
+local mnji  = btn("卍陣: OFF") 
+local sprt  = btn("精霊の舞: OFF")
+local sstm  = btn("砂嵐: OFF")
+local magic = btn("五芒星: OFF")
+local aura  = btn("オーラ: OFF")
+local sun   = btn("太陽: OFF")
+local wing  = btn("翼: OFF") 
+local rot   = btn("回転: OFF")
+local tnd   = btn("竜巻: OFF")
+
+createSeparator("自転・エフェクト") -- ★名称変更
+local sx    = btn("X軸回転: OFF")
+local sy    = btn("Y軸回転: OFF")
+local trl   = btn("光の追跡: ON") -- ★追加ボタン
+
+createSeparator("基本設定")
+local rBox = inputField("半径", radius)
+local oBox = inputField("回転速度", orbitSpeed)
+local xBox = inputField("自転X速", spinXSpeed)
+local yBox = inputField("自転Y速", spinYSpeed)
+local hBox = inputField("浮遊高さ", liftHeight)
+local fBox = inputField("射撃力", flingPower)
+local lerpBox = inputField("追従滑らかさ", lerpSpeed)
+
+-- ★五芒星設定セクション
+createSeparator("五芒星設定")
+local mcrBox = inputField("陣:回転速", magicCircleRotationSpeed)
+local mcpBox = inputField("陣:脈動速", magicPulseSpeed)
+local mcsBox = inputField("陣:脈動強", magicPulseStrength)
+local mcvBox = btn("陣の表示: ON")
+
+-- ★終焉設定セクション（細分化して追加）
+createSeparator("終焉の徴設定")
+local omrBox = inputField("終焉:基本半径", omenBaseRadius)
+local omhBox = inputField("終焉:基本高さ", omenBaseHeight)
+local omwBox = inputField("終焉:上下振幅", omenVerticalWave)
+local omsBox = inputField("終焉:拡散度", omenSpread)
+local omrotBox = inputField("終焉:自転複雑", omenRotationSpeed)
+local omlBox = inputField("終焉:追従感度", omenLerpSpeed)
+
+createSeparator("四角陣設定")
+local sqrBox = inputField("四角:半径", squareRadius)
+local sqsBox = inputField("四角:回転速", squareRotationSpeed)
+createSeparator("卍陣設定")
+local mnrBox = inputField("卍:半径", manjiRadius)
+local mnsBox = inputField("卍:回転速", manjiRotationSpeed)
+createSeparator("精霊の舞設定")
+local sprBox = inputField("精霊:半径", spiritDanceRadius)
+local spsBox = inputField("精霊:速さ", spiritDanceSpeed)
+createSeparator("砂嵐設定")
+local ssoBox = inputField("砂:回転速", sandstormOrbitSpeed)
+local sssBox = inputField("砂:飛散激しさ", sandstormScatter)
+
+createSeparator("竜巻設定")
+local thBox = inputField("竜巻:高さ", tornadoHeight)
+local tbrBox = inputField("竜巻:底半径", tornadoBottomRadius)
+local ttrBox = inputField("竜巻:頂半径", tornadoTopRadius)
+local ttBox = inputField("竜巻:巻き数", tornadoTightness)
+createSeparator("翼設定")
+local wbBox = inputField("翼:後距離", wingBackOffset)
+local wsBox = inputField("翼:横間隔", wingSideSpacing)
+local wvBox = inputField("翼:縦間隔", wingVertSpacing)
+local wfBox = inputField("翼:羽ばたき速", wingFlapSpeed)
+local wgBox = inputField("翼:羽ばたき強", wingFlapStrength)
+createSeparator("太陽設定")
+local spBox = inputField("太陽:脈動速", sunPulsationSpeed)
+local ssBox = inputField("太陽:脈動強", sunPulsationStrength)
+createSeparator("オーラ設定")
+local avBox = inputField("オーラ:縦速", auraVerticalSpeed)
+local asBox = inputField("オーラ:縦強", auraVerticalStrength)
+local arBox = inputField("オーラ:不規則", auraRandomness)
+
+-- --- 数値反映ロジック ---
+rBox.FocusLost:Connect(function() radius = tonumber(rBox.Text) or radius end)
+oBox.FocusLost:Connect(function() orbitSpeed = tonumber(oBox.Text) or orbitSpeed end)
+xBox.FocusLost:Connect(function() spinXSpeed = tonumber(xBox.Text) or spinXSpeed end)
+yBox.FocusLost:Connect(function() spinYSpeed = tonumber(yBox.Text) or spinYSpeed end)
+hBox.FocusLost:Connect(function() liftHeight = tonumber(hBox.Text) or liftHeight end)
+fBox.FocusLost:Connect(function() flingPower = tonumber(fBox.Text) or flingPower end)
+lerpBox.FocusLost:Connect(function() lerpSpeed = tonumber(lerpBox.Text) or lerpSpeed end)
+
+-- ★五芒星設定の反映
+mcrBox.FocusLost:Connect(function() magicCircleRotationSpeed = tonumber(mcrBox.Text) or magicCircleRotationSpeed end)
+mcpBox.FocusLost:Connect(function() magicPulseSpeed = tonumber(mcpBox.Text) or magicPulseSpeed end)
+mcsBox.FocusLost:Connect(function() magicPulseStrength = tonumber(mcsBox.Text) or magicPulseStrength end)
+mcvBox.MouseButton1Click:Connect(function() showVisualPentagram = not showVisualPentagram; mcvBox.Text = "陣の表示: "..(showVisualPentagram and "ON" or "OFF"); updateBtnStyle(mcvBox, showVisualPentagram); if not showVisualPentagram then clearVisualPentagram() end end)
+
+-- ★終焉設定の詳細反映
+omrBox.FocusLost:Connect(function() omenBaseRadius = tonumber(omrBox.Text) or omenBaseRadius end)
+omhBox.FocusLost:Connect(function() omenBaseHeight = tonumber(omhBox.Text) or omenBaseHeight end)
+omwBox.FocusLost:Connect(function() omenVerticalWave = tonumber(omwBox.Text) or omenVerticalWave end)
+omsBox.FocusLost:Connect(function() omenSpread = tonumber(omsBox.Text) or omenSpread end)
+omrotBox.FocusLost:Connect(function() omenRotationSpeed = tonumber(omrotBox.Text) or omenRotationSpeed end)
+omlBox.FocusLost:Connect(function() omenLerpSpeed = math.clamp(tonumber(omlBox.Text) or omenLerpSpeed, 0.001, 1) end)
+
+sqrBox.FocusLost:Connect(function() squareRadius = tonumber(sqrBox.Text) or squareRadius end)
+sqsBox.FocusLost:Connect(function() squareRotationSpeed = tonumber(sqsBox.Text) or squareRotationSpeed end)
+mnrBox.FocusLost:Connect(function() manjiRadius = tonumber(mnrBox.Text) or manjiRadius end)
+mnsBox.FocusLost:Connect(function() manjiRotationSpeed = tonumber(mnsBox.Text) or manjiRotationSpeed end)
+sprBox.FocusLost:Connect(function() spiritDanceRadius = tonumber(sprBox.Text) or spiritDanceRadius end)
+spsBox.FocusLost:Connect(function() spiritDanceSpeed = tonumber(spsBox.Text) or spiritDanceSpeed end)
+ssoBox.FocusLost:Connect(function() sandstormOrbitSpeed = tonumber(ssoBox.Text) or sandstormOrbitSpeed end)
+sssBox.FocusLost:Connect(function() sandstormScatter = tonumber(sssBox.Text) or sandstormScatter end)
+thBox.FocusLost:Connect(function() tornadoHeight = tonumber(thBox.Text) or tornadoHeight end)
+tbrBox.FocusLost:Connect(function() tornadoBottomRadius = tonumber(tbrBox.Text) or tornadoBottomRadius end)
+ttrBox.FocusLost:Connect(function() tornadoTopRadius = tonumber(ttrBox.Text) or tornadoTopRadius end)
+ttBox.FocusLost:Connect(function() tornadoTightness = tonumber(ttBox.Text) or tornadoTightness end)
+wbBox.FocusLost:Connect(function() wingBackOffset = tonumber(wbBox.Text) or wingBackOffset end)
+wsBox.FocusLost:Connect(function() wingSideSpacing = tonumber(wsBox.Text) or wingSideSpacing end)
+wvBox.FocusLost:Connect(function() wingVertSpacing = tonumber(wvBox.Text) or wingVertSpacing end)
+wfBox.FocusLost:Connect(function() wingFlapSpeed = tonumber(wfBox.Text) or wingFlapSpeed end)
+wgBox.FocusLost:Connect(function() wingFlapStrength = tonumber(wgBox.Text) or wingFlapStrength end)
+spBox.FocusLost:Connect(function() sunPulsationSpeed = tonumber(spBox.Text) or sunPulsationSpeed end)
+ssBox.FocusLost:Connect(function() sunPulsationStrength = tonumber(ssBox.Text) or sunPulsationStrength end)
+avBox.FocusLost:Connect(function() auraVerticalSpeed = tonumber(avBox.Text) or auraVerticalSpeed end)
+asBox.FocusLost:Connect(function() auraVerticalStrength = tonumber(asBox.Text) or auraVerticalStrength end)
+arBox.FocusLost:Connect(function() auraRandomness = tonumber(arBox.Text) or auraRandomness end)
+
+-- --- ボタンイベントと排他制御 ---
+local function updateModeButtons()
+    updateBtnStyle(grab, enabled)
+    updateBtnStyle(omen, omenEnabled) -- ★追加
+    updateBtnStyle(squr, squareEnabled)
+    updateBtnStyle(mnji, manjiEnabled) 
+    updateBtnStyle(sprt, spiritDanceEnabled) 
+    updateBtnStyle(sstm, sandstormEnabled)
+    updateBtnStyle(magic, magicCircleEnabled)
+    updateBtnStyle(aura, auraEnabled)
+    updateBtnStyle(sun, sunEnabled)
+    updateBtnStyle(wing, wingEnabled)
+    updateBtnStyle(rot, rotateEnabled)
+    updateBtnStyle(tnd, tornadoEnabled) 
+    updateBtnStyle(sx, spinXEnabled)
+    updateBtnStyle(sy, spinYEnabled)
+    updateBtnStyle(trl, trailEnabled) -- ★トレイルボタンの状態反映
+    
+    grab.Text = "掴む: "..(enabled and "ON" or "OFF")
+    omen.Text = "終焉の徴: "..(omenEnabled and "ON" or "OFF") -- ★追加
+    squr.Text = "四角陣: "..(squareEnabled and "ON" or "OFF")
+    mnji.Text = "卍陣: "..(manjiEnabled and "ON" or "OFF") 
+    sprt.Text = "精霊の舞: "..(spiritDanceEnabled and "ON" or "OFF") 
+    sstm.Text = "砂嵐: "..(sandstormEnabled and "ON" or "OFF")
+    magic.Text = "五芒星: "..(magicCircleEnabled and "ON" or "OFF")
+    aura.Text = "オーラ: "..(auraEnabled and "ON" or "OFF")
+    sun.Text = "太陽: "..(sunEnabled and "ON" or "OFF")
+    wing.Text = "翼: "..(wingEnabled and "ON" or "OFF")
+    rot.Text = "回転: "..(rotateEnabled and "ON" or "OFF")
+    tnd.Text = "竜巻: "..(tornadoEnabled and "ON" or "OFF")
+    sx.Text = "X軸回転: "..(spinXEnabled and "ON" or "OFF")
+    sy.Text = "Y軸回転: "..(spinYEnabled and "ON" or "OFF")
+    trl.Text = "光の追跡: "..(trailEnabled and "ON" or "OFF") -- ★トレイルボタンのテキスト
+end
+
+local function silenceModesExcept(activeMode)
+    if activeMode ~= "omen" then omenEnabled = false end -- ★追加
+    if activeMode ~= "square" then squareEnabled = false end 
+    if activeMode ~= "manji" then manjiEnabled = false end 
+    if activeMode ~= "sprt" then spiritDanceEnabled = false end 
+    if activeMode ~= "sand" then sandstormEnabled = false end
+    if activeMode ~= "magic" then magicCircleEnabled = false; clearVisualPentagram() end
+    if activeMode ~= "aura" then auraEnabled = false end
+    if activeMode ~= "sun" then sunEnabled = false end
+    if activeMode ~= "wing" then wingEnabled = false end
+    if activeMode ~= "rot" then rotateEnabled = false end
+    if activeMode ~= "tnd" then tornadoEnabled = false end
+    updateModeButtons()
+end
+
+grab.MouseButton1Click:Connect(function() enabled = not enabled; updateModeButtons() end)
+omen.MouseButton1Click:Connect(function() omenEnabled = not omenEnabled; silenceModesExcept(omenEnabled and "omen" or ""); updateAllObjectColors() end) -- ★追加
+squr.MouseButton1Click:Connect(function() squareEnabled = not squareEnabled; silenceModesExcept(squareEnabled and "square" or ""); updateAllObjectColors() end)
+mnji.MouseButton1Click:Connect(function() manjiEnabled = not manjiEnabled; silenceModesExcept(manjiEnabled and "manji" or ""); updateAllObjectColors() end)
+sprt.MouseButton1Click:Connect(function() spiritDanceEnabled = not spiritDanceEnabled; silenceModesExcept(spiritDanceEnabled and "sprt" or ""); updateAllObjectColors() end)
+sstm.MouseButton1Click:Connect(function() sandstormEnabled = not sandstormEnabled; silenceModesExcept(sandstormEnabled and "sand" or ""); updateAllObjectColors() end)
+magic.MouseButton1Click:Connect(function() magicCircleEnabled = not magicCircleEnabled; silenceModesExcept(magicCircleEnabled and "magic" or ""); updateAllObjectColors() end)
+aura.MouseButton1Click:Connect(function() auraEnabled = not auraEnabled; silenceModesExcept(auraEnabled and "aura" or ""); updateAllObjectColors() end)
+sun.MouseButton1Click:Connect(function() sunEnabled = not sunEnabled; silenceModesExcept(sunEnabled and "sun" or ""); updateAllObjectColors() end)
+wing.MouseButton1Click:Connect(function() wingEnabled = not wingEnabled; silenceModesExcept(wingEnabled and "wing" or ""); updateAllObjectColors() end)
+rot.MouseButton1Click:Connect(function() rotateEnabled = not rotateEnabled; silenceModesExcept(rotateEnabled and "rot" or ""); updateAllObjectColors() end)
+tnd.MouseButton1Click:Connect(function() tornadoEnabled = not tornadoEnabled; silenceModesExcept(tornadoEnabled and "tnd" or ""); updateAllObjectColors() end)
+sx.MouseButton1Click:Connect(function() spinXEnabled = not spinXEnabled; updateModeButtons() end)
+sy.MouseButton1Click:Connect(function() spinYEnabled = not spinYEnabled; updateModeButtons() end)
+
+-- ★光の追跡ボタンのクリックイベント
+trl.MouseButton1Click:Connect(function() 
+    trailEnabled = not trailEnabled
+    toggleAllTrails(trailEnabled)
+    updateModeButtons() 
+end)
+
+local deployPoint = nil
+place.MouseButton1Click:Connect(function()
+    local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+    deployPoint = hrp.Position + (hrp.CFrame.LookVector * (radius + 2))
+    if magicCircleEnabled then updateVisualPentagram(deployPoint - Vector3.new(0, 3, 0), radius) end
+end)
+
+throw.MouseButton1Click:Connect(function()
+    local look = camera.CFrame.LookVector
+    for o in pairs(hoveringObjects) do if o then removeCoolEffects(o); o.CanCollide = true; o.AssemblyLinearVelocity = look * flingPower end end
+    for o in pairs(frozenObjects) do if o then o.Anchored = false; o.AssemblyLinearVelocity = look * flingPower end end
+    hoveringObjects, frozenObjects = {}, {}; deployPoint = nil
+end)
+
+freezeGrab.MouseButton1Click:Connect(function() 
+    for o in pairs(hoveringObjects) do if o then if hoveringObjects[o].Trail then hoveringObjects[o].Trail.Lifetime = 0 end frozenObjects[o] = {pos = o.Position} end end 
+    hoveringObjects = {}
+end)
+
+clearFreeze.MouseButton1Click:Connect(function() for o in pairs(frozenObjects) do if o then o.Anchored = false end end; frozenObjects = {} end)
+
+-- 初期状態反映
+updateBtnStyle(mcvBox, showVisualPentagram) 
+updateModeButtons() 
+
+-- --- メインループ ---
+loop = RunService.RenderStepped:Connect(function(dt)
+    local character = player.Character
+    local hrp = character and character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+
+    if enabled then
+        local t = getTarget()
+        if t and not hoveringObjects[t] and not frozenObjects[t] then 
+            addCoolEffects(t)
+            t.CanCollide = false
+            t.Massless = true 
+        end
+    end
+
+    local currentTime = tick()
+    totalRotation += math.rad(orbitSpeed) * dt
+    magicCircleRotation += math.rad(magicCircleRotationSpeed) * dt
+    sandstormTime += dt 
+    spiritDanceTime += dt * spiritDanceSpeed 
+    manjiRotation += math.rad(manjiRotationSpeed) * dt 
+    squareRotation += math.rad(squareRotationSpeed) * dt 
+    omenTime += dt -- ★追加
+    
+    if spinXEnabled then totalSpinX += math.rad(spinXSpeed) * dt end
+    if spinYEnabled then totalSpinY += math.rad(spinYSpeed) * dt end
+
+    local objs = {}
+    for o in pairs(hoveringObjects) do if o and o.Parent then table.insert(objs, o) else hoveringObjects[o] = nil end end
+
+    local centerPos = deployPoint or (hrp.Position - Vector3.new(0, 3, 0))
+    if magicCircleEnabled and not deployPoint then updateVisualPentagram(centerPos, radius) end
+
+    for i, o in ipairs(objs) do
+        local phase = (totalRotation * 0.1 + (i / #objs)) % 1 
+        local targetPos
+        local currentObjRot = CFrame.Angles(totalSpinX, totalSpinY, 0) 
+        local currentLerp = lerpSpeed 
+
+        if omenEnabled then
+            -- ★必殺技：終焉の徴 ロジック
+            local seed = objectSeeds[o] or {distMod = 0, heightMod = 0, rotAxis = Vector3.new(0,1,0), phase = 0}
+            local angle = (omenTime * (orbitSpeed/10)) + (i / #objs) * math.pi * 2
+            
+            -- 半径と高さに詳細設定を反映
+            local curDist = omenBaseRadius + seed.distMod + (math.sin(omenTime + seed.phase) * (omenSpread/3))
+            local curHeight = omenBaseHeight + seed.heightMod + (math.cos(omenTime * 0.7 + seed.phase) * omenVerticalWave)
+            
+            targetPos = hrp.Position + Vector3.new(math.cos(angle) * curDist, curHeight, math.sin(angle) * curDist)
+            currentObjRot = CFrame.fromAxisAngle(seed.rotAxis, omenTime * omenRotationSpeed)
+            currentLerp = omenLerpSpeed -- 個別Lerp
+
+        elseif squareEnabled then
+            -- (既存ロジック...)
+            local totalObjs = #objs
+            local manjiCenter = hrp.Position + Vector3.new(0, liftHeight, 0)
+            local rotationCFrame = CFrame.Angles(0, squareRotation, 0)
+            if totalObjs == 1 then
+                targetPos = manjiCenter
+            else
+                local t = (currentTime * (squareRotationSpeed / 100) + (i / totalObjs)) % 1
+                local function getSquarePos(param, pRadius)
+                    local p = param * 4 
+                    local side = math.floor(p) 
+                    local f = p - side 
+                    local size = pRadius 
+                    if side == 0 then return Vector3.new(size, 0, -size + f * size * 2)
+                    elseif side == 1 then return Vector3.new(size - f * size * 2, 0, size)
+                    elseif side == 2 then return Vector3.new(-size, 0, size - f * size * 2)
+                    else return Vector3.new(-size + f * size * 2, 0, -size) end
+                end
+                local localPos = getSquarePos(t, squareRadius)
+                targetPos = manjiCenter + (rotationCFrame * localPos)
+            end
+            currentLerp = 0.5 
+        elseif manjiEnabled then
+            -- (既存ロジック...)
+            local totalObjs = #objs
+            if totalObjs > 0 then
+                local manjiCenter = hrp.Position + Vector3.new(0, liftHeight, 0)
+                local rotationCFrame = CFrame.Angles(0, manjiRotation, 0)
+                local centerObjCount = 1 
+                if i <= centerObjCount then
+                    targetPos = manjiCenter
+                else
+                    local currentI = i - centerObjCount 
+                    local totalArmObjs = totalObjs - centerObjCount 
+                    local objsPerArm = math.floor(totalArmObjs / 4) 
+                    local extraObjs = totalArmObjs % 4 
+                    local indexInArm, armIndex = 0, 0
+                    local objsAccumulated = 0
+                    for a = 0, 3 do
+                        local objsInThisArm = objsPerArm + (a < extraObjs and 1 or 0)
+                        if currentI <= objsAccumulated + objsInThisArm then armIndex = a; indexInArm = currentI - objsAccumulated; break end
+                        objsAccumulated = objsAccumulated + objsInThisArm
+                    end
+                    local armAngles = {0, math.pi/2, math.pi, math.pi*1.5} 
+                    local armAngle = armAngles[armIndex + 1]
+                    local currentObjsInArm = objsPerArm + (armIndex < extraObjs and 1 or 0)
+                    local segment1Objs = math.ceil(currentObjsInArm * 0.5) 
+                    local localPos 
+                    if indexInArm <= segment1Objs then
+                        local dist = (indexInArm / segment1Objs) * (manjiRadius * 0.6) 
+                        localPos = Vector3.new(math.cos(armAngle) * dist, 0, math.sin(armAngle) * dist)
+                    else
+                        local indexInSegment2 = indexInArm - segment1Objs
+                        local segment2Objs = currentObjsInArm - segment1Objs
+                        local dist1 = manjiRadius * 0.6
+                        local cornerPos = Vector3.new(math.cos(armAngle) * dist1, 0, math.sin(armAngle) * dist1)
+                        local armAngle2 = armAngle - math.pi/2 
+                        local dist2 = (indexInSegment2 / segment2Objs) * (manjiRadius * 0.4) 
+                        localPos = cornerPos + Vector3.new(math.cos(armAngle2) * dist2, 0, math.sin(armAngle2) * dist2)
+                    end
+                    targetPos = manjiCenter + (rotationCFrame * localPos)
+                end
+            else targetPos = hrp.Position + Vector3.new(0, liftHeight, 0) end
+            currentLerp = 0.5 
+        elseif spiritDanceEnabled then
+            local objectSeed = i * 200 
+            local noiseX = math.noise(spiritDanceTime, objectSeed, 0) 
+            local noiseY = math.noise(objectSeed, spiritDanceTime, 0)
+            local noiseZ = math.noise(0, objectSeed, spiritDanceTime)
+            targetPos = hrp.Position + Vector3.new(noiseX * spiritDanceRadius * 2, spiritDanceHeight + (noiseY * 10), noiseZ * spiritDanceRadius * 2)
+            currentObjRot = CFrame.Angles(spiritDanceTime * 0.5 + noiseX * 5, spiritDanceTime * 0.7 + noiseY * 5, spiritDanceTime * 0.3 + noiseZ * 5)
+            currentLerp = 0.1
+        elseif sandstormEnabled then
+            local objectSeed = i * 100 
+            local angle = (sandstormOrbitSpeed * sandstormTime + (i / #objs) * math.pi * 2)
+            local noiseX = math.noise(sandstormTime * sandstormTurbulence, 0, objectSeed)
+            local noiseY = math.noise(sandstormTime * sandstormTurbulence, objectSeed, 0)
+            local noiseZ = math.noise(objectSeed, sandstormTime * sandstormTurbulence, 0)
+            targetPos = hrp.Position + Vector3.new(math.cos(angle) * radius, liftHeight, math.sin(angle) * radius) + Vector3.new(noiseX, noiseY, noiseZ) * sandstormScatter
+            currentObjRot = CFrame.Angles(sandstormTime * 50 + noiseX * 10, sandstormTime * 50 + noiseY * 10, sandstormTime * 50 + noiseZ * 10)
+            currentLerp = 0.5
+        elseif magicCircleEnabled then
+            local starPoints = 5
+            local function getPentagramPos(t, pRadius)
+                local pIdx = math.floor(t * starPoints) % starPoints + 1
+                local order = {1, 3, 5, 2, 4}
+                local a1 = (order[pIdx]-1) * (math.pi * 2 / starPoints) + magicCircleRotation
+                local a2 = (order[(pIdx % starPoints) + 1]-1) * (math.pi * 2 / starPoints) + magicCircleRotation
+                return (Vector3.new(math.cos(a1), 0, math.sin(a1)) * pRadius):Lerp(Vector3.new(math.cos(a2), 0, math.sin(a2)) * pRadius, (t * starPoints) % 1)
+            end
+            local t = (phase + (i/ #objs)) % 1
+            local pulse = math.sin(currentTime * magicPulseSpeed + i) * magicPulseStrength
+            targetPos = centerPos + getPentagramPos(t, radius) + Vector3.new(0, pulse + 1, 0)
+            currentObjRot = CFrame.new(targetPos, centerPos + getPentagramPos((t + 0.01) % 1, radius) + Vector3.new(0, pulse + 1, 0)).Rotation * currentObjRot
+        elseif auraEnabled then
+            local angle = (totalRotation * 2.5 + (i / #objs) * math.pi * 2) 
+            targetPos = hrp.Position + Vector3.new(math.cos(angle) * (radius * 0.7 + (math.cos(currentTime * 2 + i) * 1.5)), liftHeight + (math.sin(currentTime * auraVerticalSpeed + (i * auraRandomness)) * auraVerticalStrength), math.sin(angle) * (radius * 0.7 + (math.cos(currentTime * 2 + i) * 1.5)))
+        elseif sunEnabled then
+            local angle = (totalRotation + (i / #objs) * math.pi * 2)
+            targetPos = hrp.Position + Vector3.new(math.cos(angle) * (radius + (math.sin(currentTime * sunPulsationSpeed) * sunPulsationStrength)), liftHeight, math.sin(angle) * (radius + (math.sin(currentTime * sunPulsationSpeed) * sunPulsationStrength)))
+        elseif wingEnabled then
+            local side = (i % 2 == 0) and 1 or -1; local index = math.ceil(i / 2)
+            local flapAngle = math.sin(currentTime * wingFlapSpeed - (index * wingWaveDelay)) * wingFlapStrength 
+            targetPos = (hrp.CFrame * CFrame.new((wingSideSpacing * index * (1.0 + (index * 0.1))) * side, (wingVertSpacing * index), wingBackOffset)).Position
+            currentObjRot = hrp.CFrame.Rotation * CFrame.Angles(0, math.rad(side * 30) + math.rad(side * 10) * index, 0) * CFrame.Angles(math.rad(flapAngle * 25), 0, math.rad(side * flapAngle * 10)) * CFrame.Angles(totalSpinX, totalSpinY, 0)
+            currentLerp = 0.4 
+        elseif tornadoEnabled then
+            local totalObjs = #objs; local coneFactor = (i / totalObjs) 
+            local dynRad = tornadoBottomRadius + (coneFactor * (tornadoTopRadius - tornadoBottomRadius))
+            local angle = (totalRotation * 2) + ((i / totalObjs) * tornadoHeight * tornadoTightness)
+            targetPos = hrp.Position + Vector3.new(math.cos(angle) * dynRad, (i / totalObjs) * tornadoHeight, math.sin(angle) * dynRad)
+            currentLerp = 0.3 
+        elseif rotateEnabled then
+            local angle = (totalRotation + (i / #objs) * math.pi * 2)
+            targetPos = hrp.Position + Vector3.new(math.cos(angle) * radius, liftHeight, math.sin(angle) * radius)
+        else
+            targetPos = (hrp.CFrame * CFrame.new(math.sin(i)*2, liftHeight, 5)).Position
+        end
+
+        o.CFrame = o.CFrame:Lerp(CFrame.new(targetPos) * currentObjRot, currentLerp)
+        o.AssemblyLinearVelocity, o.AssemblyAngularVelocity = Vector3.zero, Vector3.zero
+    end
+
+    for o, data in pairs(frozenObjects) do if o and o.Parent then o.Anchored = true; o.CFrame = CFrame.new(data.pos) else frozenObjects[o] = nil end end
+end)
