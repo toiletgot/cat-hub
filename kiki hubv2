@@ -1,0 +1,192 @@
+--[[
+    kiki hub - 幾何学配置（色変更なし版）
+    提示された画像の「重なり合う円」の配置のみを再現します。
+    パーツの色や素材には一切干渉しません。
+]]
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UIS = game:GetService("UserInputService")
+local player = Players.LocalPlayer
+
+local mode = "None" 
+local hoveringObjects = {}
+local objectData = {}
+
+local settings = {
+    speed = 0.03,   
+    width = 18,     -- 大きな円の半径
+    height = 5      
+}
+
+-- --- パーツ管理 ---
+local function clearObjects()
+    for o in pairs(hoveringObjects) do
+        pcall(function()
+            if o and o.Parent then
+                o.CanCollide = true
+                if o:FindFirstChild("SyncForce") then o.SyncForce:Destroy() end
+                if o:FindFirstChild("SyncGyro") then o.SyncGyro:Destroy() end
+            end
+        end)
+    end
+    hoveringObjects = {}; objectData = {}
+end
+
+local function registerPart(part)
+    if not part:IsA("BasePart") or part.Anchored or part:IsDescendantOf(player.Character) then return end
+    if hoveringObjects[part] then return end 
+
+    hoveringObjects[part] = true
+    objectData[part] = { 
+        seed = math.random() * 100,
+        phase = math.random() * math.pi * 2
+    }
+    
+    if not part:FindFirstChild("SyncForce") then
+        local bv = Instance.new("BodyVelocity")
+        bv.Name = "SyncForce"; bv.MaxForce = Vector3.new(1,1,1)*1e6; bv.P = 1500; bv.Velocity = Vector3.new(0,0,0); bv.Parent = part
+        local bg = Instance.new("BodyGyro")
+        bg.Name = "SyncGyro"; bg.MaxTorque = Vector3.new(1,1,1)*1e6; bg.P = 4000; bg.D = 500; bg.CFrame = part.CFrame; bg.Parent = part
+    end
+    
+    part.CanCollide = false
+    pcall(function() part:SetNetworkOwner(player) end)
+end
+
+-- --- UI作成 ---
+local gui = Instance.new("ScreenGui", player:WaitForChild("PlayerGui"))
+gui.ResetOnSpawn = false
+local main = Instance.new("Frame", gui)
+main.Size = UDim2.new(0, 160, 0, 260); main.Position = UDim2.new(1, -170, 1, -280); main.BackgroundColor3 = Color3.fromRGB(20, 20, 20); Instance.new("UICorner", main)
+
+local dragBtn = Instance.new("TextLabel", main)
+dragBtn.Size = UDim2.new(1, 0, 0, 25); dragBtn.Text = "kiki hub"; dragBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 60); dragBtn.TextColor3 = Color3.new(1, 1, 1); dragBtn.Font = "Code"; dragBtn.TextScaled = true; dragBtn.Active = true
+
+local scroll = Instance.new("ScrollingFrame", main)
+scroll.Size = UDim2.new(1, 0, 1, -25); scroll.Position = UDim2.new(0, 0, 0, 25); scroll.CanvasSize = UDim2.new(0, 0, 0, 480); scroll.BackgroundTransparency = 1; scroll.ScrollBarThickness = 4
+local uiList = Instance.new("UIListLayout", scroll); uiList.Padding = UDim.new(0, 5); uiList.HorizontalAlignment = "Center"
+
+local buttons = {}
+local function makeBtn(id, text, color)
+    local b = Instance.new("TextButton", scroll)
+    b.Size = UDim2.new(0, 140, 0, 30); b.Text = text .. ": 無効"; b.BackgroundColor3 = color; b.TextColor3 = Color3.new(1,1,1); b.Font = "Code"; Instance.new("UICorner", b)
+    buttons[id] = {btn = b, defaultColor = color, label = text}
+    
+    b.MouseButton1Click:Connect(function()
+        mode = (mode == id) and "None" or id
+        for btnId, data in pairs(buttons) do
+            if mode == btnId then
+                data.btn.Text = data.label .. ": 有効"
+                data.btn.BackgroundColor3 = Color3.fromRGB(200, 200, 200); data.btn.TextColor3 = Color3.new(0,0,0)
+            else
+                data.btn.Text = data.label .. ": 無効"
+                data.btn.BackgroundColor3 = data.defaultColor; data.btn.TextColor3 = Color3.new(1,1,1)
+            end
+        end
+    end)
+end
+
+makeBtn("Orbit", "回転", Color3.fromRGB(80, 40, 40))
+makeBtn("Ghost", "幽霊", Color3.fromRGB(40, 40, 80))
+makeBtn("Divine", "神聖", Color3.fromRGB(80, 80, 40))
+makeBtn("Manji", "卍", Color3.fromRGB(100, 40, 100))
+makeBtn("Geometry", "幾何学の輪", Color3.fromRGB(60, 100, 60)) -- 新しいボタン名
+
+local stopBtn = Instance.new("TextButton", scroll)
+stopBtn.Size = UDim2.new(0, 140, 0, 30); stopBtn.Text = "全解除"; stopBtn.BackgroundColor3 = Color3.fromRGB(150, 50, 50); stopBtn.TextColor3 = Color3.new(1,1,1); stopBtn.Font = "Code"; Instance.new("UICorner", stopBtn)
+stopBtn.MouseButton1Click:Connect(function() clearObjects() end)
+
+-- タッチ
+local function setupTouch(char)
+    for _, child in ipairs(char:GetChildren()) do
+        if child:IsA("BasePart") then
+            child.Touched:Connect(function(hit) if mode ~= "None" then registerPart(hit) end end)
+        end
+    end
+end
+player.CharacterAdded:Connect(setupTouch)
+if player.Character then setupTouch(player.Character) end
+
+local function makeInput(name, default, key)
+    local f = Instance.new("Frame", scroll); f.Size = UDim2.new(0, 140, 0, 45); f.BackgroundTransparency = 1
+    local l = Instance.new("TextLabel", f); l.Size = UDim2.new(1, 0, 0, 15); l.Text = name; l.TextColor3 = Color3.new(0.8,0.8,0.8); l.BackgroundTransparency = 1; l.Font = "Code"; l.TextSize = 12
+    local b = Instance.new("TextBox", f); b.Size = UDim2.new(1, 0, 0, 25); b.Position = UDim2.new(0,0,0,15); b.BackgroundColor3 = Color3.fromRGB(50,50,50); b.TextColor3 = Color3.new(1,1,1); b.Text = tostring(default); b.Font = "Code"; b.ClearTextOnFocus = false; Instance.new("UICorner", b)
+    b.FocusLost:Connect(function() settings[key] = tonumber(b.Text) or settings[key] end)
+end
+makeInput("速度", settings.speed, "speed"); makeInput("広がり", settings.width, "width"); makeInput("高さ", settings.height, "height")
+
+-- ドラッグ
+local dragging, dragStart, startPos
+dragBtn.InputBegan:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then dragging = true; dragStart = input.Position; startPos = main.Position end end)
+UIS.InputChanged:Connect(function(input) if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then local delta = input.Position - dragStart; main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y) end end)
+UIS.InputEnded:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then dragging = false end end)
+
+-- --- メインループ ---
+local timeCounter = 0
+RunService.Heartbeat:Connect(function()
+    if mode == "None" then return end
+    local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+    timeCounter = timeCounter + settings.speed
+
+    local currentParts = {}
+    for o in pairs(objectData) do table.insert(currentParts, o) end
+    local total = #currentParts
+
+    for i, o in ipairs(currentParts) do
+        if o and o.Parent and o:FindFirstChild("SyncForce") then
+            local data = objectData[o]
+            local targetPos
+            
+            if mode == "Orbit" then
+                local spacing = (math.pi * 2) / math.max(1, total)
+                local angle = timeCounter + (i * spacing)
+                targetPos = hrp.Position + Vector3.new(math.cos(angle) * settings.width, settings.height, math.sin(angle) * settings.width)
+                o.SyncGyro.CFrame = CFrame.new(o.Position, hrp.Position)
+            elseif mode == "Geometry" then
+                -- ★幾何学配置ロジック
+                local numSmallCircles = 12 
+                local smallCircleRadius = 5 
+                local groupIndex = (i - 1) % numSmallCircles 
+                
+                -- 小さな円の中での回転
+                local smallAngle = timeCounter * 1.5 + data.phase
+                local sx = math.cos(smallAngle) * smallCircleRadius
+                local sz = math.sin(smallAngle) * smallCircleRadius
+                
+                -- 大きな円の中での配置角度
+                local largeAngle = (groupIndex / numSmallCircles) * math.pi * 2 + (timeCounter * 0.2)
+                local lx = math.cos(largeAngle) * settings.width
+                local lz = math.sin(largeAngle) * settings.width
+                
+                targetPos = hrp.Position + Vector3.new(lx + sx, settings.height, lz + sz)
+                
+                -- 向きを外側へ向かせる
+                local lookDir = targetPos + Vector3.new(math.cos(largeAngle), 0, math.sin(largeAngle))
+                o.SyncGyro.CFrame = CFrame.new(o.Position, lookDir)
+                
+            elseif mode == "Manji" then
+                local branch = (i - 1) % 4
+                local baseAngle = (branch * math.pi / 2) + (timeCounter * 1.5)
+                local segmentIndex = math.floor((i - 1) / 4)
+                local segmentTotal = math.max(1, math.floor(total / 4))
+                local armRatio = math.min(1, segmentIndex / (segmentTotal * 0.6 + 0.1))
+                local x = math.cos(baseAngle) * (armRatio * settings.width * 0.6)
+                local z = math.sin(baseAngle) * (armRatio * settings.width * 0.6)
+                if segmentIndex > (segmentTotal * 0.6) then
+                    local bendRatio = (segmentIndex - segmentTotal * 0.6) / (segmentTotal * 0.4 + 0.1)
+                    x = x + math.cos(baseAngle + math.pi/2) * (bendRatio * settings.width * 0.4)
+                    z = z + math.sin(baseAngle + math.pi/2) * (bendRatio * settings.width * 0.4)
+                end
+                targetPos = hrp.Position + Vector3.new(x, settings.height, z)
+                o.SyncGyro.CFrame = CFrame.new(Vector3.new(0,0,0), Vector3.new(math.cos(baseAngle), 0, math.sin(baseAngle)))
+            end
+            
+            o.SyncForce.Velocity = (targetPos - o.Position) * 18
+            if math.random() > 0.95 then pcall(function() o:SetNetworkOwner(player) end) end
+        else
+            hoveringObjects[o] = nil; objectData[o] = nil
+        end
+    end
+end)
