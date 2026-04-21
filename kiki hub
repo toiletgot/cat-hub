@@ -1,0 +1,76 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local player = Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+
+local hoveringObjects = {}
+local objectData = {}
+
+-- --- 同期設定 ---
+local RANGE = 100
+
+-- --- 【強制同期の秘策】 ---
+local function syncToServer(part)
+    if not part:IsA("BasePart") then return end
+    
+    -- すでに同期用フォースがあるか確認
+    if not part:FindFirstChild("SyncForce") then
+        local bv = Instance.new("BodyVelocity")
+        bv.Name = "SyncForce"
+        bv.MaxForce = Vector3.new(1, 1, 1) * 1e6
+        bv.Velocity = Vector3.new(0, 0, 0)
+        bv.Parent = part
+        
+        local bg = Instance.new("BodyGyro")
+        bg.Name = "SyncGyro"
+        bg.MaxTorque = Vector3.new(1, 1, 1) * 1e6
+        bg.CFrame = part.CFrame
+        bg.Parent = part
+    end
+    
+    -- ネットワークオーナーシップの取得を試行
+    pcall(function()
+        part:SetNetworkOwner(player)
+    end)
+end
+
+-- --- メインループ ---
+RunService.Heartbeat:Connect(function()
+    local hrp = character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+
+    -- 高速スキャン（周辺のオブジェクトを検知）
+    local parts = workspace:GetPartBoundsInRadius(hrp.Position, RANGE)
+    for _, p in ipairs(parts) do
+        if not p.Anchored and not p:IsDescendantOf(character) and not hoveringObjects[p] then
+            hoveringObjects[p] = true
+            syncToServer(p)
+            
+            objectData[p] = {
+                angle = math.rad(math.random(360)),
+                dist = math.random(10, 20),
+                h = math.random(0, 10),
+                s = 0.05
+            }
+            p.CanCollide = false
+        end
+    end
+
+    -- 同期移動（浮遊処理のみ）
+    for o, data in pairs(objectData) do
+        if o and o.Parent and o:FindFirstChild("SyncForce") then
+            data.angle = data.angle + data.s
+            local targetPos = hrp.Position + Vector3.new(math.cos(data.angle)*data.dist, data.h, math.sin(data.angle)*data.dist)
+            
+            -- 物理インスタンスを使って浮遊を維持
+            o.SyncForce.Velocity = (targetPos - o.Position) * 15
+            o.SyncGyro.CFrame = CFrame.new(o.Position, targetPos)
+            
+            -- 落下防止の速度維持
+            o.AssemblyLinearVelocity = (targetPos - o.Position) * 20
+        else
+            hoveringObjects[o] = nil
+            objectData[o] = nil
+        end
+    end
+end)
