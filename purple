@@ -1,0 +1,269 @@
+local OrionLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/BlizTBr/scripts/main/Orion%20X"))()
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local player = Players.LocalPlayer
+local camera = workspace.CurrentCamera
+
+-- [[ 全設定パラメータ ]]
+local Config = {
+    -- システム基本
+    OrbitEnabled = false,
+    StopAttracting = false, -- 新規吸引のみ停止
+    IsCharging = false,
+    
+    -- 吸引物理 (Attract)
+    AttractRange = 150,
+    AttractPower = 30000,
+    AttractDamping = 1200,
+    MaxPartSize = 50,
+    MinDistance = 5,
+    
+    -- 陣形・配置 (Formation)
+    Formation = "左右展開", 
+    OrbitDistanceX = 12,
+    OrbitHeight = 7,
+    OrbitOffsetZ = 0,
+    RotateSpeed = 1.2,
+    WaveIntensity = 1.0,
+    CircleRadius = 15,
+    SpiralHeightMult = 2.0,
+    
+    -- チャージ・凝縮 (Charge)
+    ChargeTime = 1.5,
+    ChargeTightness = 10000000,
+    ChargeDistance = 10,
+    ChargeHeightOffset = 2,
+    FreezePlayer = true, -- チャージ中に足を止めるか
+    
+    -- 射出 (Shoot)
+    ShootSpeed = 2000,
+    ShootSpread = 0, -- 拡散率
+    DestroyTime = 5.0, -- ブーメランOFF時の消滅時間
+    
+    -- ブーメラン・再帰 (Boomerang)
+    BoomerangMode = true,
+    ReturnDelay = 1.5,
+    ReturnSpeedMult = 1.5,
+    ReturnSpin = 150,
+    ReturnThreshold = 15, -- どの距離で回収するか
+    
+    -- 視覚効果 (Visual)
+    BlueColor = Color3.fromRGB(0, 100, 255),
+    RedColor = Color3.fromRGB(255, 50, 50),
+    EffectTransparency = 0.5,
+    LineThickness = 0.05,
+}
+
+local hoveringObjects = {}
+local ignoreList = {} 
+
+-- [[ 物理セットアップ関数 ]]
+local function SetupJujutsuPhysics(p)
+    if not p then return end
+    local bp = p:FindFirstChild("JujutsuPosition") or Instance.new("BodyPosition", p)
+    bp.Name = "JujutsuPosition"
+    bp.MaxForce = Vector3.new(1, 1, 1) * 1e8
+    
+    local sb = p:FindFirstChild("BlueEffect") or Instance.new("SelectionBox", p)
+    sb.Name = "BlueEffect"
+    sb.Adornee = p
+    sb.Transparency = Config.EffectTransparency
+    
+    p.CanCollide = false
+    p.Massless = true
+    return bp
+end
+
+local function ClearPhysics(p)
+    if not p then return end
+    local names = {"JujutsuPosition", "BlueEffect", "PurpleVelocity", "BodyForce"}
+    for _, name in ipairs(names) do
+        local found = p:FindFirstChild(name)
+        if found then found:Destroy() end
+    end
+    p.CanCollide = true
+    p.Massless = false
+end
+
+-- [[ メイン制御ロジック ]]
+RunService.Heartbeat:Connect(function()
+    if not Config.OrbitEnabled or Config.IsCharging then return end
+    local char = player.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+
+    -- 1. 新規パーツの検知 (StopAttractingがfalseの時のみ)
+    if not Config.StopAttracting then
+        for _, p in ipairs(workspace:GetDescendants()) do
+            if p:IsA("BasePart") and not p.Anchored and not p:IsDescendantOf(char) then
+                if p.Name:lower() == "baseplate" or p.Size.Magnitude > Config.MaxPartSize or ignoreList[p] or hoveringObjects[p] then continue end
+                if p.Parent:FindFirstChild("Humanoid") then continue end
+                
+                local dist = (p.Position - hrp.Position).Magnitude
+                if dist < Config.AttractRange and dist > Config.MinDistance then
+                    hoveringObjects[p] = {index = #hoveringObjects + 1}
+                    SetupJujutsuPhysics(p)
+                end
+            end
+        end
+    end
+
+    -- 2. 所有パーツの座標更新
+    local total = 0
+    for _ in pairs(hoveringObjects) do total = total + 1 end
+    local i = 0
+    for p, _ in pairs(hoveringObjects) do
+        if p and p.Parent and p:FindFirstChild("JujutsuPosition") then
+            i = i + 1
+            local t = tick() * Config.RotateSpeed
+            local targetPos
+            
+            if Config.Formation == "円環" then
+                local angle = (i / total) * math.pi * 2 + t
+                targetPos = (hrp.CFrame * CFrame.new(math.cos(angle) * Config.CircleRadius, Config.OrbitHeight + math.sin(t+i) * Config.WaveIntensity, math.sin(angle) * Config.CircleRadius)).p
+            elseif Config.Formation == "左右展開" then
+                local side = (i % 2 == 0) and 1 or -1
+                targetPos = (hrp.CFrame * CFrame.new(Config.OrbitDistanceX * side, Config.OrbitHeight + math.sin(t + i) * Config.WaveIntensity, Config.OrbitOffsetZ)).p
+            elseif Config.Formation == "螺旋" then
+                local angle = i * 0.5 + t
+                targetPos = (hrp.CFrame * CFrame.new(math.cos(angle) * Config.OrbitDistanceX, (i - total/2) * Config.SpiralHeightMult + Config.OrbitHeight, math.sin(angle) * Config.OrbitDistanceX)).p
+            end
+
+            p.JujutsuPosition.Position = targetPos
+            p.JujutsuPosition.P = Config.AttractPower
+            p.JujutsuPosition.D = Config.AttractDamping
+            if p:FindFirstChild("BlueEffect") then
+                p.BlueEffect.Color3 = (i % 2 == 0) and Config.BlueColor or Config.RedColor
+                p.BlueEffect.Transparency = Config.EffectTransparency
+            end
+        else
+            hoveringObjects[p] = nil
+        end
+    end
+end)
+
+-- 足止め処理
+RunService.Stepped:Connect(function()
+    if Config.IsCharging and Config.FreezePlayer then
+        local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+        if hrp then hrp.AssemblyLinearVelocity = Vector3.zero end
+    end
+end)
+
+-- [[ GUI構築 ]]
+local Window = OrionLib:MakeWindow({Name = "Hollow Purple: Absolute Dominion", HidePremium = true, SaveConfig = false})
+
+-- 【メインタブ】
+local MainTab = Window:MakeTab({Name = "術式実行"})
+MainTab:AddToggle({Name = "術式準備 (ON/OFF)", Default = false, Callback = function(v) Config.OrbitEnabled = v end})
+MainTab:AddToggle({Name = "新規吸引を停止 (現在の物を維持)", Default = false, Callback = function(v) Config.StopAttracting = v end})
+
+MainTab:AddButton({
+    Name = "虚式「茈」発動",
+    Callback = function()
+        local hrp = player.Character:FindFirstChild("HumanoidRootPart")
+        if not hrp or not next(hoveringObjects) then return end
+
+        local firingList = {}
+        for p, _ in pairs(hoveringObjects) do firingList[p] = true; ignoreList[p] = true end
+        hoveringObjects = {}
+        Config.IsCharging = true
+
+        -- 超凝縮チャージ
+        local chargeStart = tick()
+        while tick() - chargeStart < Config.ChargeTime do
+            RunService.Heartbeat:Wait()
+            local chargeTarget = (hrp.CFrame * CFrame.new(0, Config.ChargeHeightOffset, -Config.ChargeDistance)).p
+            for p, _ in pairs(firingList) do
+                if p and p.Parent and p:FindFirstChild("JujutsuPosition") then
+                    p.JujutsuPosition.Position = chargeTarget
+                    p.JujutsuPosition.P = Config.ChargeTightness
+                end
+            end
+        end
+
+        Config.IsCharging = false
+        local shootDir = camera.CFrame.LookVector
+
+        for p, _ in pairs(firingList) do
+            if p and p.Parent then
+                if p:FindFirstChild("JujutsuPosition") then p.JujutsuPosition:Destroy() end
+                local bv = Instance.new("BodyVelocity", p)
+                bv.Name = "PurpleVelocity"
+                bv.MaxForce = Vector3.new(1, 1, 1) * 1e9
+                bv.Velocity = (shootDir + Vector3.new(math.random(-Config.ShootSpread, Config.ShootSpread)/100, 0, math.random(-Config.ShootSpread, Config.ShootSpread)/100)).Unit * Config.ShootSpeed
+                
+                task.spawn(function()
+                    task.wait(Config.ReturnDelay)
+                    if Config.BoomerangMode then
+                        local connection
+                        connection = RunService.Heartbeat:Connect(function()
+                            local currentHrp = player.Character:FindFirstChild("HumanoidRootPart")
+                            if p and p.Parent and currentHrp and bv.Parent then
+                                local diff = (currentHrp.Position - p.Position)
+                                bv.Velocity = diff.Unit * (Config.ShootSpeed * Config.ReturnSpeedMult)
+                                p.AssemblyAngularVelocity = Vector3.new(0, Config.ReturnSpin, 0)
+                                if diff.Magnitude < Config.ReturnThreshold then 
+                                    connection:Disconnect()
+                                    if bv then bv:Destroy() end
+                                    ignoreList[p] = nil
+                                    hoveringObjects[p] = {index = 1} 
+                                    SetupJujutsuPhysics(p)
+                                end
+                            else
+                                if connection then connection:Disconnect() end
+                                ignoreList[p] = nil
+                            end
+                        end)
+                    else
+                        task.wait(Config.DestroyTime)
+                        ClearPhysics(p)
+                        ignoreList[p] = nil
+                    end
+                end)
+            end
+        end
+    end
+})
+
+-- 【詳細設定タブ：物理】
+local AttractTab = Window:MakeTab({Name = "物理設定"})
+AttractTab:AddSlider({Name = "吸引範囲", Min = 10, Max = 1000, Default = 150, Callback = function(v) Config.AttractRange = v end})
+AttractTab:AddSlider({Name = "吸引力 (P)", Min = 1000, Max = 200000, Default = 30000, Callback = function(v) Config.AttractPower = v end})
+AttractTab:AddSlider({Name = "安定度 (D)", Min = 10, Max = 10000, Default = 1200, Callback = function(v) Config.AttractDamping = v end})
+AttractTab:AddSlider({Name = "対象パーツの最大サイズ", Min = 10, Max = 500, Default = 50, Callback = function(v) Config.MaxPartSize = v end})
+
+-- 【詳細設定タブ：配置】
+local LayoutTab = Window:MakeTab({Name = "陣形設定"})
+LayoutTab:AddDropdown({Name = "基本陣形", Default = "左右展開", Options = {"左右展開", "円環", "螺旋"}, Callback = function(v) Config.Formation = v end})
+LayoutTab:AddSlider({Name = "左右の間隔", Min = 0, Max = 100, Default = 12, Callback = function(v) Config.OrbitDistanceX = v end})
+LayoutTab:AddSlider({Name = "高さ (ベース)", Min = -50, Max = 100, Default = 7, Callback = function(v) Config.OrbitHeight = v end})
+LayoutTab:AddSlider({Name = "円の半径", Min = 5, Max = 100, Default = 15, Callback = function(v) Config.CircleRadius = v end})
+LayoutTab:AddSlider({Name = "回転速度", Min = 0, Max = 20, Default = 1.2, Increment = 0.1, Callback = function(v) Config.RotateSpeed = v end})
+LayoutTab:AddSlider({Name = "上下の揺れ幅", Min = 0, Max = 20, Default = 1, Callback = function(v) Config.WaveIntensity = v end})
+
+-- 【詳細設定タブ：茈（むらさき）】
+local SpecialTab = Window:MakeTab({Name = "茈 設定"})
+SpecialTab:AddSlider({Name = "射出スピード", Min = 100, Max = 10000, Default = 2000, Callback = function(v) Config.ShootSpeed = v end})
+SpecialTab:AddSlider({Name = "チャージ（溜め）時間", Min = 0.1, Max = 10, Default = 1.5, Increment = 0.1, Callback = function(v) Config.ChargeTime = v end})
+SpecialTab:AddSlider({Name = "凝縮の強さ", Min = 100000, Max = 50000000, Default = 10000000, Callback = function(v) Config.ChargeTightness = v end})
+SpecialTab:AddSlider({Name = "チャージ位置（前方距離）", Min = 1, Max = 50, Default = 10, Callback = function(v) Config.ChargeDistance = v end})
+SpecialTab:AddToggle({Name = "チャージ中に足を止める", Default = true, Callback = function(v) Config.FreezePlayer = v end})
+
+-- 【詳細設定タブ：再帰】
+local ReturnTab = Window:MakeTab({Name = "ブーメラン設定"})
+ReturnTab:AddToggle({Name = "ブーメラン機能有効", Default = true, Callback = function(v) Config.BoomerangMode = v end})
+ReturnTab:AddSlider({Name = "戻り始めるまでの時間", Min = 0.1, Max = 10, Default = 1.5, Increment = 0.1, Callback = function(v) Config.ReturnDelay = v end})
+ReturnTab:AddSlider({Name = "戻り速度倍率", Min = 0.1, Max = 5, Default = 1.5, Increment = 0.1, Callback = function(v) Config.ReturnSpeedMult = v end})
+ReturnTab:AddSlider({Name = "戻り時の回転力", Min = 0, Max = 1000, Default = 150, Callback = function(v) Config.ReturnSpin = v end})
+ReturnTab:AddSlider({Name = "回収判定距離", Min = 5, Max = 50, Default = 15, Callback = function(v) Config.ReturnThreshold = v end})
+
+-- 【詳細設定タブ：視覚】
+local VisualTab = Window:MakeTab({Name = "視覚・エフェクト"})
+VisualTab:AddColorpicker({Name = "蒼の色", Default = Color3.fromRGB(0, 100, 255), Callback = function(v) Config.BlueColor = v end})
+VisualTab:AddColorpicker({Name = "赫の色", Default = Color3.fromRGB(255, 50, 50), Callback = function(v) Config.RedColor = v end})
+VisualTab:AddSlider({Name = "透明度", Min = 0, Max = 1, Default = 0.5, Increment = 0.1, Callback = function(v) Config.EffectTransparency = v end})
+
+MainTab:AddButton({Name = "全支配解除（リセット）", Callback = function() for p, _ in pairs(hoveringObjects) do ClearPhysics(p) end hoveringObjects = {} ignoreList = {} end})
+
+OrionLib:Init()
