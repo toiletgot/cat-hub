@@ -1,0 +1,243 @@
+-- ===== ライブラリ・サービスの初期化 =====
+local OrionLib = loadstring(game:HttpGet(
+    "https://raw.githubusercontent.com/BlizTBr/scripts/main/Orion%20X"
+))()
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local player = Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+
+player.CharacterAdded:Connect(function(char)
+    character = char
+end)
+
+local hoveringObjects = {}
+local objectData = {}
+local orderedActiveObjects = {} 
+
+-- GUI設定値
+local Config = {
+    Enabled = false,
+    Size = 8,           
+    Range = 100,
+    FlapSpeed = 4,      
+    FlapStrength = 1.5, 
+    Spread = 1.0        
+}
+
+-- ===== 改良版オブジェクト判定フィルター =====
+local function isMyObject(part)
+    -- 基礎チェック：パーツであり、固定（Anchored）されていないこと
+    if not part:IsA("BasePart") or part.Anchored then return false end
+    -- 自分の体は除外
+    if part:IsDescendantOf(character) then return false end
+    
+    -- 他のプレイヤーの体の一部、またはNPCの体の一部なら除外
+    if part.Parent:FindFirstChild("Humanoid") or (part.Parent.Parent and part.Parent.Parent:FindFirstChild("Humanoid")) then
+        return false
+    end
+
+    -- 絶対に吸い込んではいけないマップのベースオブジェクトを除外
+    local ignoreNames = {"Baseplate", "Terrain", "SpawnLocation", "Sky", "Map", "Wall", "Floor"}
+    if table.find(ignoreNames, part.Name) then return false end
+
+    -- 【判定1】自分がネットワーク所有権を持っている、またはツール由来のパーツ（最優先）
+    local isOwner = false
+    pcall(function()
+        if part:GetNetworkOwner() == player then
+            isOwner = true
+        end
+    end)
+    if isOwner or part:FindFirstChild("creator") or part.Name == "Handle" or part:GetAttribute("Creator") == player.UserId then 
+        return true 
+    end
+
+    -- 【判定2】サイズによる救済判定（大きすぎる建物や床を除外して、小物を吸い込む）
+    -- 1辺が30スタッド未満の動かせるパーツであれば吸い込み対象にする
+    if part.Size.X < 30 and part.Size.Y < 30 and part.Size.Z < 30 then
+        return true
+    end
+
+    return false
+end
+
+-- ===== 強制同期 =====
+local function syncToServer(part)
+    if not part:FindFirstChild("SyncForce") then
+        local bv = Instance.new("BodyVelocity")
+        bv.Name = "SyncForce"
+        bv.MaxForce = Vector3.new(1, 1, 1) * 1e6
+        bv.Velocity = Vector3.new(0, 0, 0)
+        bv.Parent = part
+        
+        local bg = Instance.new("BodyGyro")
+        bg.Name = "SyncGyro"
+        bg.MaxTorque = Vector3.new(1, 1, 1) * 1e6
+        bg.CFrame = part.CFrame
+        bg.Parent = part
+    end
+    pcall(function() part:SetNetworkOwner(player) end)
+end
+
+-- ===== 物理解放 =====
+local function releaseAllObjects()
+    for o, _ in pairs(objectData) do
+        if o and o.Parent then
+            local force = o:FindFirstChild("SyncForce")
+            local gyro = o:FindFirstChild("SyncGyro")
+            if force then force:Destroy() end
+            if gyro then gyro:Destroy() end
+            o.CanCollide = true
+        end
+    end
+    table.clear(hoveringObjects)
+    table.clear(objectData)
+    table.clear(orderedActiveObjects)
+end
+
+-- ===== メインループ =====
+RunService.Heartbeat:Connect(function()
+    local hrp = character:FindFirstChild("HumanoidRootPart")
+    if not hrp or not Config.Enabled then 
+        if #orderedActiveObjects > 0 then releaseAllObjects() end
+        return 
+    end
+
+    -- 1. スキャンとパーツ追加
+    local parts = workspace:GetPartBoundsInRadius(hrp.Position, Config.Range)
+    for _, p in ipairs(parts) do
+        if isMyObject(p) and not hoveringObjects[p] then
+            hoveringObjects[p] = true
+            syncToServer(p)
+            objectData[p] = true
+            p.CanCollide = false
+            table.insert(orderedActiveObjects, p)
+        end
+    end
+
+    -- 2. 生存チェック
+    for i = #orderedActiveObjects, 1, -1 do
+        local o = orderedActiveObjects[i]
+        if not (o and o.Parent and o:FindFirstChild("SyncForce")) then
+            hoveringObjects[o] = nil
+            objectData[o] = nil
+            table.remove(orderedActiveObjects, i)
+        else
+            o.CanCollide = false
+        end
+    end
+
+    local totalObjects = #orderedActiveObjects
+    if totalObjects == 0 then return end
+
+    local lookCFrame = hrp.CFrame
+    local flapWave = math.sin(tick() * Config.FlapSpeed) * Config.FlapStrength
+
+    -- 3. 密着型ウイング配置計算
+    for i, o in ipairs(orderedActiveObjects) do
+        local side = (i % 2 == 0) and 1 or -1
+        local wingIndex = math.ceil(i / 2)
+        local maxWingObjects = math.ceil(totalObjects / 2)
+        local t = wingIndex / maxWingObjects
+        
+        local xOffset = (1.5 + (t * Config.Size)) * side
+        local yOffset = 1.0 + (t * (Config.Size * 0.4)) + (flapWave * t)
+        local zOffset = 1.0 + (t * 0.5)
+
+        local localOffset = Vector3.new(xOffset, yOffset, zOffset)
+        local targetPos = lookCFrame:PointToWorldSpace(localOffset)
+        
+        o.SyncForce.Velocity = (targetPos - o.Position) * 22
+        
+        local wingAngle = lookCFrame.RightVector * side * 5 + lookCFrame.UpVector * flapWave
+        o.SyncGyro.CFrame = CFrame.lookAt(o.Position, o.Position + wingAngle, lookCFrame.UpVector)
+        
+        o.AssemblyLinearVelocity = (targetPos - o.Position) * 24
+    end
+end)
+
+-- ===== GUI ウィンドウ作成 =====
+local Window = OrionLib:MakeWindow({
+    Name = "Bliz Hub - Close Wing",
+    HidePremium = true,
+    SaveConfig = false,
+    IntroEnabled = true
+})
+
+local MainTab = Window:MakeTab({ Name = "Main", Icon = "rbxassetid://4483345998", PremiumOnly = false })
+local SettingTab = Window:MakeTab({ Name = "Settings", Icon = "rbxassetid://4483345998", PremiumOnly = false })
+
+local MainSection = MainTab:AddSection({ Name = "メインコントロール" })
+
+MainSection:AddToggle({
+    Name = "自分が出した物で翼を展開",
+    Default = false,
+    Callback = function(Value)
+        Config.Enabled = Value
+        if not Value then releaseAllObjects() end
+    end
+})
+
+MainSection:AddSlider({
+    Name = "羽の全体サイズ",
+    Min = 5,
+    Max = 25,
+    Default = 8,
+    Increment = 1,
+    Callback = function(Value) Config.Size = Value end
+})
+
+local SettingSection = SettingTab:AddSection({ Name = "羽ばたき（アニメーション）設定" })
+
+SettingSection:AddSlider({
+    Name = "羽ばたき速度 (Flap Speed)",
+    Min = 1,
+    Max = 15,
+    Default = 4,
+    Increment = 1,
+    Callback = function(Value) Config.FlapSpeed = Value end
+})
+
+SettingSection:AddSlider({
+    Name = "羽ばたきの大きさ (Flap Strength)",
+    Min = 0,
+    Max = 10,
+    Default = 2,
+    Increment = 1,
+    Callback = function(Value) Config.FlapStrength = Value end
+})
+
+SettingSection:AddSlider({
+    Name = "翼の角度・広がり (Wing Spread)",
+    Min = 5,
+    Max = 15,
+    Default = 10,
+    Increment = 1,
+    Callback = function(Value) Config.Spread = Value / 10 end
+})
+
+local ExtraSection = SettingTab:AddSection({ Name = "システム設定" })
+
+ExtraSection:AddSlider({
+    Name = "吸い込み範囲 (Range)",
+    Min = 20,
+    Max = 200,
+    Default = 100,
+    Increment = 5,
+    Callback = function(Value) Config.Range = Value end
+})
+
+ExtraSection:AddButton({
+    Name = "全オブジェクトを即時解放",
+    Callback = function()
+        releaseAllObjects()
+        OrionLib:MakeNotification({
+            Name = "System",
+            Content = "すべてのオブジェクトを解放しました。",
+            Time = 3
+        })
+    end
+})
+
+OrionLib:Init()
