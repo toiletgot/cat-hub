@@ -1,0 +1,663 @@
+-- ==============================================================================
+-- 攻撃用 [ULTIMATE ALL-IN-ONE EDITION]
+-- 統合されたスクリプト: Ownership Kick, Fast Loop Kill, Loop Kick Blob, Blob Kill, Gucci, Packet Lag
+-- ==============================================================================
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
+local LocalPlayer = Players.LocalPlayer
+
+-- === 共有ヘルパー関数 ===
+local function FWC(Parent, Name, Time)
+    return Parent:FindFirstChild(Name) or Parent:WaitForChild(Name, Time or 3)
+end
+
+local function SetOwnerGrab(prt)
+    if prt then
+        local ge = ReplicatedStorage:FindFirstChild("GrabEvents")
+        if ge and ge:FindFirstChild("SetNetworkOwner") then
+            ge.SetNetworkOwner:FireServer(prt, prt.CFrame)
+        end
+    end
+end
+
+local function GetPlayers()
+    local list = {}
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer then
+            table.insert(list, plr.Name)
+        end
+    end
+    return list
+end
+
+-- === Rayfield 初期化 ===
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+local Window = Rayfield:CreateWindow({
+    Name = "攻撃用 [ULTIMATE]",
+    LoadingTitle = "Loading Ultimate Hub...",
+    LoadingSubtitle = "All-in-One Edition",
+    ConfigurationSaving = {
+        Enabled = true,
+        FolderName = "PolarHubUltimate",
+        FileName = "Config"
+    },
+    Discord = { Enabled = false },
+    KeySystem = false
+})
+
+local TargetTab = Window:CreateTab("🎯 Target", 4483362458)
+local CombatTab = Window:CreateTab("⚔️ Combat", 4483362458)
+local BlobTab = Window:CreateTab("🦠 Blob Actions", 4483362458)
+local ServerTab = Window:CreateTab("🌐 Server Lag", 4483362458)
+
+-- ==========================================
+-- 🎯 TARGET TAB (グローバルターゲット指定)
+-- ==========================================
+local GlobalTarget = ""
+
+local TargetDropdown = TargetTab:CreateDropdown({
+    Name = "Select Global Target",
+    Options = GetPlayers(),
+    CurrentOption = {""},
+    MultipleOptions = false,
+    Callback = function(Option)
+        GlobalTarget = Option[1] or ""
+    end,
+})
+
+TargetTab:CreateButton({
+    Name = "🔄 Refresh Player List",
+    Callback = function()
+        TargetDropdown:Refresh(GetPlayers())
+        Rayfield:Notify({Title = "Updated", Content = "Player list refreshed", Duration = 2})
+    end
+})
+
+-- ==========================================
+-- ⚔️ COMBAT TAB
+-- ==========================================
+CombatTab:CreateSection("Ownership Kick")
+local ownershipKickActive = false
+
+local function OwnershipKickFunction(targetName)
+    local target = Players:FindFirstChild(targetName)
+    if not target then return end
+    local GE = ReplicatedStorage:WaitForChild("GrabEvents")
+    local myChar = LocalPlayer.Character
+    local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+    if not myRoot then return end
+    
+    local savedPos = myRoot.CFrame
+    local dragging = false
+    local grabStartTime = 0
+    local checkStartTime = 0
+    local currentFPS = 60
+    local fpsConnection = RunService.RenderStepped:Connect(function(dt) currentFPS = 1 / dt end)
+    local bodyPos, bodyGyro = nil, nil
+    
+    local function cleanupBodies()
+        pcall(function()
+            if bodyPos then bodyPos:Destroy() bodyPos = nil end
+            if bodyGyro then bodyGyro:Destroy() bodyGyro = nil end
+        end)
+    end
+    
+    local function createBodies(targetRoot, pos)
+        cleanupBodies()
+        for _, v in pairs(targetRoot:GetChildren()) do
+            if v:IsA("BodyPosition") or v:IsA("BodyGyro") then v:Destroy() end
+        end
+        bodyPos = Instance.new("BodyPosition")
+        bodyPos.MaxForce = Vector3.new(9e9, 9e9, 9e9)
+        bodyPos.D = 100
+        bodyPos.Position = pos
+        bodyPos.Parent = targetRoot
+        bodyGyro = Instance.new("BodyGyro")
+        bodyGyro.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
+        bodyGyro.D = 100
+        bodyGyro.CFrame = CFrame.new(pos)
+        bodyGyro.Parent = targetRoot
+    end
+    
+    while ownershipKickActive and target.Parent do
+        local tChar = target.Character
+        local tRoot = tChar and tChar:FindFirstChild("HumanoidRootPart")
+        local tHum = tChar and tChar:FindFirstChild("Humanoid")
+        myChar = LocalPlayer.Character
+        myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+        
+        if tRoot and tHum and tHum.Health > 0 and myRoot then
+            if not dragging then
+                myRoot.CFrame = tRoot.CFrame * CFrame.new(0, 0, 3)
+                cleanupBodies()
+                pcall(function()
+                    tHum.PlatformStand = true
+                    tHum.Sit = true
+                    GE.SetNetworkOwner:FireServer(tRoot, tRoot.CFrame)
+                    GE.SetNetworkOwner:FireServer(tRoot, tRoot.CFrame)
+                    GE.DestroyGrabLine:FireServer(tRoot)
+                end)
+                if grabStartTime == 0 then grabStartTime = tick() end
+                if tick() - grabStartTime > 0.35 then
+                    dragging = true
+                    grabStartTime = 0
+                    checkStartTime = tick()
+                    createBodies(tRoot, (savedPos * CFrame.new(0, 17, 0)).Position)
+                end
+            else
+                myRoot.CFrame = savedPos
+                local lockPos = savedPos * CFrame.new(0, 17, 0)
+                if bodyPos and bodyPos.Parent then
+                    bodyPos.Position = lockPos.Position
+                    if bodyGyro then bodyGyro.CFrame = lockPos end
+                else
+                    createBodies(tRoot, lockPos.Position)
+                end
+                tHum.PlatformStand = true
+                pcall(function()
+                    local fires = (currentFPS > 200) and 2 or (currentFPS >= 155 and 3 or 4)
+                    for i = 1, fires do GE.SetNetworkOwner:FireServer(tRoot, lockPos) end
+                    GE.DestroyGrabLine:FireServer(tRoot)
+                end)
+                if checkStartTime > 0 and tick() - checkStartTime > 0.30 then
+                    if (tRoot.Position - lockPos.Position).Magnitude > 10 then
+                        dragging = false
+                        grabStartTime, checkStartTime = 0, 0
+                        cleanupBodies()
+                    else
+                        checkStartTime = tick()
+                    end
+                end
+            end
+        else
+            dragging, grabStartTime, checkStartTime = false, 0, 0
+            cleanupBodies()
+        end
+        RunService.Heartbeat:Wait()
+    end
+    fpsConnection:Disconnect()
+    cleanupBodies()
+    if myRoot then myRoot.CFrame = savedPos end
+end
+
+CombatTab:CreateToggle({
+    Name = "Activate Ownership Kick",
+    CurrentValue = false,
+    Callback = function(Value)
+        ownershipKickActive = Value
+        if Value then
+            if GlobalTarget ~= "" then
+                Rayfield:Notify({Title = "Ownership Kick", Content = "Started on " .. GlobalTarget, Duration = 3})
+                task.spawn(OwnershipKickFunction, GlobalTarget)
+            else
+                Rayfield:Notify({Title = "Error", Content = "Targetタブからターゲットを選択してください", Duration = 3})
+                ownershipKickActive = false
+            end
+        else
+            Rayfield:Notify({Title = "Ownership Kick", Content = "Stopped", Duration = 2})
+        end
+    end,
+})
+
+CombatTab:CreateSection("Fast Loop Kill")
+local loopKillActive = false
+
+local function LoopKillFunction(targetName)
+    local target = Players:FindFirstChild(targetName)
+    if not target then return end
+    local GE = ReplicatedStorage:WaitForChild("GrabEvents")
+    local RagdollRemote = ReplicatedStorage:FindFirstChild("CharacterEvents") and ReplicatedStorage.CharacterEvents:FindFirstChild("RagdollRemote")
+    
+    while loopKillActive and target and target.Parent do
+        if not target.Character then task.wait(0.3) continue end
+        local myChar = LocalPlayer.Character
+        local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+        local tChar = target.Character
+        local tRoot = tChar and tChar:FindFirstChild("HumanoidRootPart")
+        local tHum = tChar and tChar:FindFirstChild("Humanoid")
+        
+        if tRoot and tHum and tHum.Health > 0 and myRoot then
+            local currentPos = myRoot.CFrame
+            local attackStart = tick()
+            while tick() - attackStart < 0.7 and loopKillActive do
+                if not tRoot.Parent then break end
+                myRoot.CFrame = tRoot.CFrame * CFrame.new(0, 0, 2)
+                myRoot.Velocity = Vector3.zero
+                pcall(function()
+                    for i = 1, 3 do GE.SetNetworkOwner:FireServer(tRoot, myRoot.CFrame) end
+                    tHum:ChangeState(Enum.HumanoidStateType.Dead)
+                    tHum.Health = 0
+                    if RagdollRemote then RagdollRemote:FireServer(tRoot, 0) end
+                    GE.CreateGrabLine:FireServer(tRoot, Vector3.zero, tRoot.Position, false)
+                    GE.DestroyGrabLine:FireServer(tRoot)
+                end)
+                RunService.Heartbeat:Wait()
+            end
+            if myRoot then
+                myRoot.CFrame = currentPos
+                myRoot.Velocity = Vector3.zero
+            end
+            task.wait(0.45)
+        else
+            task.wait(0.3)
+        end
+    end
+end
+
+CombatTab:CreateToggle({
+    Name = "🔴 Loop Kill (高速版)",
+    CurrentValue = false,
+    Callback = function(Value)
+        loopKillActive = Value
+        if Value then
+            if GlobalTarget ~= "" then
+                Rayfield:Notify({Title = "Loop Kill", Content = GlobalTarget .. " に高速攻撃中...", Duration = 3})
+                task.spawn(LoopKillFunction, GlobalTarget)
+            else
+                Rayfield:Notify({Title = "Error", Content = "Targetタブからターゲットを選択してください", Duration = 3})
+                loopKillActive = false
+            end
+        else
+            Rayfield:Notify({Title = "Loop Kill", Content = "停止しました", Duration = 2})
+        end
+    end
+})
+
+-- ==========================================
+-- 🦠 BLOB ACTIONS TAB
+-- ==========================================
+BlobTab:CreateSection("Loop Kick Grab + Blob")
+local loopKickBlobActive = false
+
+local function LoopKickBlobFunction(targetName)
+    local GE = ReplicatedStorage:WaitForChild("GrabEvents")
+    local REMOTE_DELAY = 0.002
+    local lastRemote = 0
+    
+    local function BlobGrabKickHard()
+        local target = Players:FindFirstChild(targetName)
+        if not target then return end
+        local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+        local hum = char:WaitForChild("Humanoid")
+        local seat = hum.SeatPart
+        if not seat or seat.Parent.Name ~= "CreatureBlobman" then
+            Rayfield:Notify({Title = "Loop Kick Blob", Content = "CreatureBlobmanに乗ってからONにしてください", Duration = 5})
+            return
+        end
+        local blob = seat.Parent
+        local blobRoot = blob:FindFirstChild("HumanoidRootPart") or blob.PrimaryPart
+        local scriptObj = blob:WaitForChild("BlobmanSeatAndOwnerScript")
+        local CG = scriptObj:WaitForChild("CreatureGrab")
+        local CD = scriptObj:WaitForChild("CreatureDrop")
+        local R_Det = blob:WaitForChild("RightDetector")
+        local savedPos = blobRoot.CFrame
+        local dragging = false
+        local grabStartTime = 0
+        
+        while loopKickBlobActive do
+            local currentTarget = Players:FindFirstChild(targetName)
+            if not currentTarget then break end
+            char = LocalPlayer.Character
+            hum = char and char:FindFirstChild("Humanoid")
+            seat = hum and hum.SeatPart
+            if not seat or seat.Parent.Name ~= "CreatureBlobman" then
+                Rayfield:Notify({Title = "Loop Kick Blob", Content = "Blobから降りました。停止します。", Duration = 4})
+                break
+            end
+            blob = seat.Parent
+            blobRoot = blob:FindFirstChild("HumanoidRootPart") or blob.PrimaryPart
+            local tChar = currentTarget.Character
+            local tRoot = tChar and tChar:FindFirstChild("HumanoidRootPart")
+            local tHum = tChar and tChar:FindFirstChild("Humanoid")
+            
+            if tRoot and tHum and tHum.Health > 0 and blobRoot then
+                tRoot.Velocity = Vector3.zero
+                if not dragging then
+                    blobRoot.CFrame = tRoot.CFrame
+                    blobRoot.Velocity = Vector3.zero
+                    if tick() - lastRemote >= REMOTE_DELAY then
+                        lastRemote = tick()
+                        pcall(function()
+                            tHum.PlatformStand = true
+                            tHum.Sit = true
+                            GE.SetNetworkOwner:FireServer(tRoot, blobRoot.CFrame)
+                            GE.DestroyGrabLine:FireServer(tRoot)
+                        end)
+                    end
+                    if grabStartTime == 0 then grabStartTime = tick() end
+                    if tick() - grabStartTime > 0.35 then
+                        dragging = true
+                        grabStartTime = 0
+                        blobRoot.CFrame = savedPos
+                        blobRoot.Velocity = Vector3.zero
+                    end
+                else
+                    blobRoot.CFrame = savedPos
+                    blobRoot.Velocity = Vector3.zero
+                    local lockPos = savedPos * CFrame.new(0, 23, 0)
+                    tRoot.CFrame = lockPos
+                    tHum.PlatformStand = true
+                    tHum.Sit = true
+                    if tick() - lastRemote >= REMOTE_DELAY then
+                        lastRemote = tick()
+                        pcall(function()
+                            GE.SetNetworkOwner:FireServer(tRoot, lockPos)
+                            GE.DestroyGrabLine:FireServer(tRoot)
+                            local weld = R_Det:FindFirstChild("RightWeld") or R_Det:FindFirstChildWhichIsA("Weld")
+                            if weld then
+                                CD:FireServer(weld)
+                                CG:FireServer(R_Det, tRoot, weld)
+                            end
+                        end)
+                    end
+                end
+            else
+                dragging, grabStartTime = false, 0
+            end
+            RunService.Heartbeat:Wait()
+        end
+        if blobRoot then
+            blobRoot.CFrame = savedPos
+            blobRoot.Velocity = Vector3.zero
+        end
+    end
+    task.spawn(BlobGrabKickHard)
+end
+
+BlobTab:CreateToggle({
+    Name = "Loop Kick Grab + Blob",
+    CurrentValue = false,
+    Callback = function(Value)
+        loopKickBlobActive = Value
+        if Value then
+            if GlobalTarget ~= "" then
+                Rayfield:Notify({Title = "Loop Kick Blob", Content = GlobalTarget .. " を攻撃開始", Duration = 4})
+                LoopKickBlobFunction(GlobalTarget)
+            else
+                Rayfield:Notify({Title = "Error", Content = "Targetタブからターゲットを選択してください", Duration = 4})
+                loopKickBlobActive = false
+            end
+        end
+    end,
+})
+
+BlobTab:CreateSection("Blob Kill")
+local bk_active = false
+
+local function blob_kick(blob, hrp, rl, v)
+    local detec = blob:FindFirstChild(rl .. "Detector")
+    if not detec then return end
+    local script = blob:FindFirstChild("BlobmanSeatAndOwnerScript")
+    if not script then return end
+    local weld = detec:FindFirstChild(rl .. "Weld")
+    
+    if v == "Default" and script:FindFirstChild("CreatureGrab") then
+        script.CreatureGrab:FireServer(detec, hrp, weld)
+    elseif v == "DDrop" and script:FindFirstChild("CreatureDrop") then
+        script.CreatureDrop:FireServer(weld)
+    elseif v == "Release" and script:FindFirstChild("CreatureRelease") then
+        script.CreatureRelease:FireServer(weld, hrp)
+    end
+end
+
+local function BlobKill(targetPlayerName)
+    local MyBlob
+    Rayfield:Notify({Title = "Blob Kill", Content = "Blobに乗るまで待機中...", Duration = 3})
+    while bk_active do
+        local mychar = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+        local myhum = FWC(mychar, "Humanoid")
+        if myhum and myhum.SeatPart then
+            MyBlob = myhum.SeatPart.Parent
+            break
+        end
+        task.wait(0.2)
+    end
+    
+    if not bk_active then return end
+    Rayfield:Notify({Title = "Blob Kill", Content = targetPlayerName .. " を攻撃開始", Duration = 4})
+    
+    while bk_active and task.wait() do
+        local mychar = LocalPlayer.Character
+        local myHRP = mychar and FWC(mychar, "HumanoidRootPart")
+        local myhum = mychar and FWC(mychar, "Humanoid")
+        
+        if not myhum or not myhum.SeatPart then
+            bk_active = false
+            Rayfield:Notify({Title = "Blob Kill", Content = "Blobから降りました。停止します。", Duration = 3})
+            break
+        end
+        if myhum.SeatPart.Parent ~= MyBlob then
+            bk_active = false
+            Rayfield:Notify({Title = "Blob Kill", Content = "Blobが変わりました。停止します。", Duration = 3})
+            break
+        end
+        
+        local plr = Players:FindFirstChild(targetPlayerName)
+        if not plr then task.wait(1) continue end
+        local char = plr.Character
+        if not char then task.wait(1) continue end
+        local hum = FWC(char, "Humanoid", 2)
+        local HRP = FWC(char, "HumanoidRootPart", 2)
+        if not (hum and HRP) then task.wait(1) continue end
+        if hum.Health <= 0 then task.wait(1.5) continue end
+        
+        local LD = MyBlob:FindFirstChild("LeftDetector")
+        local LW = LD and LD:FindFirstChild("LeftWeld")
+        if LD and LW then
+            while LW.Attachment0 ~= HRP.RootAttachment and bk_active do
+                local SavedPosition = myHRP.CFrame
+                while hum.SeatPart and bk_active do
+                    task.spawn(SetOwnerGrab, HRP)
+                    task.wait()
+                end
+                
+                for i = 1, 4 do
+                    if not myhum.SeatPart then bk_active = false break end
+                    myHRP.CFrame = HRP.CFrame - Vector3.new(0, 10, 0)
+                    blob_kick(MyBlob, HRP, "Left", "Default")
+                    task.wait(0.05)
+                    blob_kick(MyBlob, HRP, "Left", "Release")
+                    hum.Health = 0
+                    task.wait()
+                end
+                if not bk_active then break end
+                myHRP.CFrame = SavedPosition
+            end
+        end
+    end
+end
+
+BlobTab:CreateToggle({
+    Name = "Start Blob Kill",
+    CurrentValue = false,
+    Callback = function(Value)
+        bk_active = Value
+        if Value then
+            if GlobalTarget ~= "" then
+                task.spawn(BlobKill, GlobalTarget)
+            else
+                Rayfield:Notify({Title = "Error", Content = "Targetタブからターゲットを選択してください", Duration = 4})
+                bk_active = false
+            end
+        end
+    end,
+})
+
+BlobTab:CreateSection("GUCCI BINDER")
+local gucciRunId = 0
+
+local function toy_spawn_gucci(name, cframe, vector)
+    local menuToys = ReplicatedStorage:FindFirstChild("MenuToys")
+    if not menuToys then return nil end
+    local ToySpawn = menuToys:FindFirstChild("SpawnToyRemoteFunction")
+    if not ToySpawn then return nil end
+    task.spawn(function() ToySpawn:InvokeServer(name, cframe, vector or Vector3.new()) end)
+    
+    local folder = Workspace:WaitForChild(LocalPlayer.Name .. "SpawnedInToys", 5)
+    local toy, start = nil, tick()
+    while tick() - start < 3 do
+        toy = folder and folder:FindFirstChild(name)
+        if toy then break end
+        task.wait(0.1)
+    end
+    return toy
+end
+
+local function GucciAntiGrab()
+    gucciRunId = gucciRunId + 1
+    local MyId = gucciRunId
+    local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+    local hum = FWC(char, "Humanoid")
+    local hrp = FWC(char, "HumanoidRootPart")
+    if not hum or not hrp then return end
+    
+    hum.Sit = true
+    task.wait(0.02)
+    hum.Sit = false
+    task.wait(0.02)
+    
+    task.spawn(function()
+        local t = tick()
+        while tick() - t < 0.8 do
+            for _, v in pairs(char:GetChildren()) do
+                if v:IsA("BasePart") then v.Velocity = Vector3.zero end
+            end
+            task.wait(0.01)
+        end
+    end)
+    
+    local Blob, BHead = nil, nil
+    task.spawn(function()
+        while not Blob and MyId == gucciRunId do task.wait(0.01) end
+        if MyId ~= gucciRunId then return end
+        BHead = FWC(Blob, "Head")
+        local HitBox = FWC(Blob, "GrabbableHitbox")
+        while MyId == gucciRunId and BHead do
+            if not BHead:FindFirstChild("PartOwner") or BHead.PartOwner.Value ~= LocalPlayer.Name then
+                SetOwnerGrab(HitBox)
+            end
+            task.wait(0.01)
+        end
+    end)
+    
+    Blob = toy_spawn_gucci("CreatureBlobman", hrp.CFrame * CFrame.new(0, 0, -5), Vector3.new(0, -15.716, 0))
+    if not Blob then
+        Rayfield:Notify({Title = "GUCCI", Content = "Blobの生成に失敗しました", Duration = 4})
+        return
+    end
+    local Seat = FWC(Blob, "VehicleSeat")
+    
+    task.defer(function()
+        local startTime = tick()
+        while tick() - startTime < 0.35 and MyId == gucciRunId do
+            if Seat then Seat:Sit(hum) end
+            hum:ChangeState(Enum.HumanoidStateType.Jumping)
+            task.wait(0.03)
+        end
+    end)
+    
+    task.defer(function()
+        while MyId == gucciRunId do
+            local RE = ReplicatedStorage:FindFirstChild("CharacterEvents")
+            if RE and RE:FindFirstChild("RagdollRemote") then
+                RE.RagdollRemote:FireServer(hrp, 0.095)
+            end
+            task.wait(0.01)
+        end
+    end)
+    
+    task.wait(0.45)
+    if MyId ~= gucciRunId then return end
+    hum.Sit = false
+    Blob.Name = "Gucci"
+    
+    task.defer(function()
+        while MyId == gucciRunId and Blob and BHead do
+            BHead.CFrame = CFrame.new(BHead.Position.X, 100000, BHead.Position.Z)
+            task.wait(0.01)
+        end
+    end)
+    Rayfield:Notify({Title = "✅ GUCCI SUCCESS", Content = "Gucciが正常に作成されました！", Duration = 5})
+end
+
+BlobTab:CreateKeybind({
+    Name = "Gucci Keybind (デフォルト J)",
+    CurrentKeybind = "J",
+    HoldToInteract = false,
+    Callback = function() GucciAntiGrab() end,
+})
+BlobTab:CreateButton({
+    Name = "Gucci を今すぐ発動",
+    Callback = function() GucciAntiGrab() end
+})
+
+-- ==========================================
+-- 🌐 SERVER TAB (Packet Lag)
+-- ==========================================
+ServerTab:CreateSection("Ultra Packet Lag")
+local packetLagActive = false
+local packetLagTask = nil
+local packetLagStrength = 6250
+local sendInterval = 0.1
+
+ServerTab:CreateToggle({
+    Name = "Ultra Packet Lag",
+    CurrentValue = false,
+    Callback = function(Value)
+        packetLagActive = Value
+        if Value then
+            packetLagTask = task.spawn(function()
+                local GrabEvents = ReplicatedStorage:FindFirstChild("GrabEvents")
+                if not GrabEvents then
+                    Rayfield:Notify({Title = "エラー", Content = "対象のイベントが見つかりません。", Duration = 5})
+                    return
+                end
+                local ExtendGrabLine = GrabEvents:FindFirstChild("ExtendGrabLine")
+                if not ExtendGrabLine then return end
+                
+                local baseString = string.rep("🔥🔥🔥🔥💣💣💣💣", 200)
+                while packetLagActive do
+                    for i = 1, 10 do
+                        pcall(function()
+                            ExtendGrabLine:FireServer(string.rep(baseString, packetLagStrength / 10))
+                        end)
+                    end
+                    task.wait(sendInterval)
+                end
+            end)
+        else
+            if packetLagTask then
+                task.cancel(packetLagTask)
+                packetLagTask = nil
+            end
+        end
+    end,
+})
+
+ServerTab:CreateSlider({
+    Name = "Lag Strength (Data Size)",
+    Range = {0, 20000},
+    Increment = 100,
+    Suffix = " Units",
+    CurrentValue = 6250,
+    Callback = function(Value)
+        packetLagStrength = Value
+    end,
+})
+
+ServerTab:CreateSlider({
+    Name = "Send Interval (Lower is Faster)",
+    Range = {0.05, 1},
+    Increment = 0.05,
+    Suffix = "s",
+    CurrentValue = 0.1,
+    Callback = function(Value)
+        sendInterval = Value
+    end,
+})
+
+-- 最後に設定をロード
+Rayfield:LoadConfiguration()
