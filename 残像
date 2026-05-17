@@ -1,0 +1,289 @@
+-- Orion X (BlizTBr版) 読み込み
+local OrionLib = loadstring(game:HttpGet(
+    "https://raw.githubusercontent.com/BlizTBr/scripts/main/Orion%20X"
+))()
+
+-- ウィンドウ作成
+local Window = OrionLib:MakeWindow({
+    Name = "Orion X - Custom TP Elite",
+    HidePremium = false,
+    SaveConfig = false,
+    IntroEnabled = true
+})
+
+-- ===== タブ（アイコン絵文字を削除し、Settingsへ一本化） =====
+local SettingsTab = Window:MakeTab({
+    Name = "Settings",
+    Icon = nil, -- 絵文字アイコンを削除
+    PremiumOnly = false
+})
+
+-- =========================================================
+-- ===== ⚙️ 超大量のグローバル設定（初期値） =====
+-- =========================================================
+_G.TpDistance = 20       -- 横の移動距離
+_G.VerticalDistance = 0  -- 縦（上下）の移動距離
+_G.AutoTp = false        -- オート連打モード
+_G.AutoTpDelay = 0.1     -- 連打の速さ（秒）
+_G.EnableSound = false   -- TP時の効果音
+_G.EnableCamShake = false-- TP時の画面シェイク
+_G.ButtonTransparency = 0.4 -- 画面ボタンの透明度
+_G.ButtonSize = 80       -- 画面ボタンの大きさ
+_G.LeftKey = "Q"         -- PC用左TPキー
+_G.RightKey = "E"        -- PC用右TPキー
+
+-- ===== セクション：基本のTP設定 =====
+local BaseSection = SettingsTab:AddSection({ Name = "⚡ 基本TP設定" })
+
+-- 1. 横ズレの距離設定
+SettingsTab:AddSlider({
+    Name = "横のTP距離 (Horizontal)",
+    Min = 5, Max = 250, Default = 20, Increment = 1, ValueName = "Studs",
+    Callback = function(v) _G.TpDistance = v end
+})
+
+-- 2. 上下の追加移動設定
+SettingsTab:AddSlider({
+    Name = "上下の追加TP距離 (Vertical)",
+    Min = -50, Max = 50, Default = 0, Increment = 1, ValueName = "Studs",
+    Callback = function(v) _G.VerticalDistance = v end
+})
+
+-- ===== セクション：オート連打設定 =====
+local AutoSection = SettingsTab:AddSection({ Name = "🔄 オート連打（長押し・高速移動）" })
+
+-- 3. 連打機能のON/OFF
+SettingsTab:AddToggle({
+    Name = "長押しオート連打モード",
+    Default = false,
+    Callback = function(v) _G.AutoTp = v end
+})
+
+-- 4. 連打の間隔設定
+SettingsTab:AddSlider({
+    Name = "連打の間隔 (ディレイ)",
+    Min = 0.05, Max = 1.0, Default = 0.1, Increment = 0.05, ValueName = "秒",
+    Callback = function(v) _G.AutoTpDelay = v end
+})
+
+-- ===== セクション：演出・エフェクト設定 =====
+local EffectSection = SettingsTab:AddSection({ Name = "🎨 演出・エフェクト設定" })
+
+-- 5. 効果音のオンオフ
+SettingsTab:AddToggle({
+    Name = "TP効果音を鳴らす",
+    Default = false,
+    Callback = function(v) _G.EnableSound = v end
+})
+
+-- 6. 画面シェイク
+SettingsTab:AddToggle({
+    Name = "画面を少し揺らす (Camera Shake)",
+    Default = false,
+    Callback = function(v) _G.EnableCamShake = v end
+})
+
+-- ===== セクション：PC用キーバインド設定 =====
+local KeySection = SettingsTab:AddSection({ Name = "⌨️ PC用 キーバインド（ショートカットキー）" })
+
+-- 7. 左TPのキー設定
+SettingsTab:AddDropdown({
+    Name = "左TPのキーボード設定",
+    Default = "Q",
+    Options = {"Q", "F", "Z", "X", "C", "V", "LeftShift"},
+    Callback = function(v) _G.LeftKey = v end
+})
+
+-- 8. 右TPのキー設定
+SettingsTab:AddDropdown({
+    Name = "右TPのキー設定",
+    Default = "E",
+    Options = {"E", "G", "C", "V", "B", "N", "RightShift"},
+    Callback = function(v) _G.RightKey = v end
+})
+
+-- ===== セクション：画面ボタンの見た目カスタム =====
+local GuiCustomSection = SettingsTab:AddSection({ Name = "📱 画面丸ボタンの見た目調整" })
+
+-- 9. ボタンの透明度調整
+SettingsTab:AddSlider({
+    Name = "ボタンの透明度 (低いほど濃くなる)",
+    Min = 0, Max = 9, Default = 4, Increment = 1,
+    Callback = function(v)
+        _G.ButtonTransparency = v / 10
+        local gui = game.Players.LocalPlayer.PlayerGui:FindFirstChild("MobileSplitTpGui")
+        if gui and gui:FindFirstChild("BaseCircle") then
+            gui.BaseCircle.ImageTransparency = _G.ButtonTransparency
+        end
+    end
+})
+
+-- 10. ボタンの大きさ変更
+SettingsTab:AddSlider({
+    Name = "ボタンの大きさ (サイズ変更)",
+    Min = 50, Max = 150, Default = 80, Increment = 5, ValueName = "px",
+    Callback = function(v)
+        _G.ButtonSize = v
+        local gui = game.Players.LocalPlayer.PlayerGui:FindFirstChild("MobileSplitTpGui")
+        if gui and gui:FindFirstChild("BaseCircle") then
+            gui.BaseCircle.Size = UDim2.new(0, v, 0, v)
+        end
+    end
+})
+
+-- ===== UI初期化 =====
+OrionLib:Init()
+
+-- =========================================================
+-- ===== 🛠️ 演出用ギミック関数（サウンド＆画面揺らし） =====
+-- =========================================================
+local function playTpSound(hrp)
+    if not _G.EnableSound then return end
+    local sound = Instance.new("Sound")
+    sound.SoundId = "rbxassetid://200785210"
+    sound.Volume = 1
+    sound.Parent = hrp
+    sound:Play()
+    game:GetService("Debris"):AddItem(sound, 1)
+end
+
+local function shakeCamera()
+    if not _G.EnableCamShake then return end
+    local cam = workspace.CurrentCamera
+    for i = 1, 4 do
+        cam.CFrame = cam.CFrame * CFrame.new(math.random(-5,5)/10, math.random(-5,5)/10, 0)
+        task.wait(0.02)
+    end
+end
+
+-- =========================================================
+-- ===== 🚀 核心：すべての設定が連動するTP処理コア =====
+-- =========================================================
+local function teleportCharacter(isLeft)
+    local player = game.Players.LocalPlayer
+    if player and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+        local hrp = player.Character.HumanoidRootPart
+        
+        local horizontalMultiplier = isLeft and -_G.TpDistance or _G.TpDistance
+        local offset = (hrp.CFrame.RightVector * horizontalMultiplier) + Vector3.new(0, _G.VerticalDistance, 0)
+        
+        hrp.CFrame = hrp.CFrame + offset
+        
+        playTpSound(hrp)
+        shakeCamera()
+    end
+end
+
+-- =========================================================
+-- ===== 📱 画面UI：1つの丸に「左」「右」が入ったTPボタン =====
+-- =========================================================
+local PlayerGui = game.Players.LocalPlayer:WaitForChild("PlayerGui")
+if PlayerGui:FindFirstChild("MobileSplitTpGui") then PlayerGui.MobileSplitTpGui:Destroy() end
+
+local MobileSplitTpGui = Instance.new("ScreenGui")
+MobileSplitTpGui.Name = "MobileSplitTpGui"
+MobileSplitTpGui.ResetOnSpawn = false
+MobileSplitTpGui.Parent = PlayerGui
+
+local BaseCircle = Instance.new("ImageLabel")
+BaseCircle.Name = "BaseCircle"
+BaseCircle.Parent = MobileSplitTpGui
+BaseCircle.Image = "rbxassetid://13271424681" 
+BaseCircle.BackgroundTransparency = 1
+BaseCircle.ImageTransparency = _G.ButtonTransparency
+BaseCircle.ImageColor3 = Color3.fromRGB(0, 0, 0) 
+BaseCircle.AnchorPoint = Vector2.new(0.5, 0.5)
+BaseCircle.Position = UDim2.new(0.58, 0, 0.72, 0) 
+BaseCircle.Size = UDim2.new(0, _G.ButtonSize, 0, _G.ButtonSize)
+
+local Divider = Instance.new("Frame")
+Divider.Name = "Divider"
+Divider.Parent = BaseCircle
+Divider.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+Divider.BackgroundTransparency = 0.3
+Divider.BorderSizePixel = 0
+Divider.AnchorPoint = Vector2.new(0.5, 0.5)
+Divider.Position = UDim2.new(0.5, 0, 0.5, 0)
+Divider.Size = UDim2.new(0, 2, 0, 60)
+
+local leftLooping = false
+local rightLooping = false
+
+-- 【左側】
+local LeftBtn = Instance.new("TextButton")
+LeftBtn.Parent = BaseCircle
+LeftBtn.Size = UDim2.new(0.5, -2, 1, -4)
+LeftBtn.Position = UDim2.new(0, 2, 0, 2)
+LeftBtn.BackgroundTransparency = 1 
+LeftBtn.Text = "左"
+LeftBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+LeftBtn.TextSize = 20
+LeftBtn.Font = Enum.Font.SourceSansBold
+LeftBtn.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+LeftBtn.TextStrokeTransparency = 0.2
+
+-- 【右側】
+local RightBtn = Instance.new("TextButton")
+RightBtn.Parent = BaseCircle
+RightBtn.Size = UDim2.new(0.5, -2, 1, -4)
+RightBtn.Position = UDim2.new(0.5, 0, 0, 2)
+RightBtn.BackgroundTransparency = 1
+RightBtn.Text = "右"
+RightBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+RightBtn.TextSize = 20
+RightBtn.Font = Enum.Font.SourceSansBold
+RightBtn.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+RightBtn.TextStrokeTransparency = 0.2
+
+-- アニメーション
+local function clickAnimate(button)
+    button:TweenSize(UDim2.new(0.5, -4, 0.9, -4), "Out", "Quad", 0.05, true, function()
+        button:TweenSize(UDim2.new(0.5, -2, 1, -4), "Out", "Quad", 0.05, true)
+    end)
+end
+
+-- ボタンイベント
+LeftBtn.MouseButton1Down:Connect(function()
+    leftLooping = true
+    teleportCharacter(true)
+    clickAnimate(LeftBtn)
+    if _G.AutoTp then
+        task.spawn(function()
+            while leftLooping and _G.AutoTp do
+                task.wait(_G.AutoTpDelay)
+                if leftLooping then teleportCharacter(true) end
+            end
+        end)
+    end
+end)
+LeftBtn.MouseButton1Up:Connect(function() leftLooping = false end)
+
+RightBtn.MouseButton1Down:Connect(function()
+    rightLooping = true
+    teleportCharacter(false)
+    clickAnimate(RightBtn)
+    if _G.AutoTp then
+        task.spawn(function()
+            while rightLooping and _G.AutoTp do
+                task.wait(_G.AutoTpDelay)
+                if rightLooping then teleportCharacter(false) end
+            end
+        end)
+    end
+end)
+RightBtn.MouseButton1Up:Connect(function() rightLooping = false end)
+
+-- PCユーザー用
+local UserInputService = game:GetService("UserInputService")
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    
+    local leftEnum = Enum.KeyCode[_G.LeftKey]
+    local rightEnum = Enum.KeyCode[_G.RightKey]
+    
+    if input.KeyCode == leftEnum then
+        teleportCharacter(true)
+    elseif input.KeyCode == rightEnum then
+        teleportCharacter(false)
+    end
+end)
