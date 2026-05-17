@@ -1,0 +1,286 @@
+-- Orion X (BlizTBr版) 読み込み
+local OrionLib = loadstring(game:HttpGet(
+    "https://raw.githubusercontent.com/BlizTBr/scripts/main/Orion%20X"
+))()
+
+local HttpService = game:GetService("HttpService")
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
+-- 設定管理
+local Config = {
+    SendEnabled = true,
+    RecvEnabled = true,
+    TargetLang = "en",
+    InputText = "",
+    EveryoneMode = true,
+    SelectedPlayers = {}
+}
+
+-- ===== 【世界全言語網羅】超・拡張言語テーブル =====
+local FullLangTable = {
+    ["アイスランド語"] = "is", ["アイルランド語"] = "ga", ["アゼルバイジャン語"] = "az", ["アフリカーンス語"] = "af",
+    ["アムハラ語"] = "am", ["アラビア語"] = "ar", ["アルバニア語"] = "sq", ["アルメニア語"] = "hy",
+    ["イタリア語"] = "it", ["イディッシュ語"] = "yi", ["イボ語"] = "ig", ["インドネシア語"] = "id",
+    ["ウイグル語"] = "ug", ["ウェールズ語"] = "cy", ["ウクライナ語"] = "uk", ["ウズベク語"] = "uz",
+    ["ウルドゥ語"] = "ur", ["エストニア語"] = "et", ["エスペラント語"] = "eo", ["オランダ語"] = "nl",
+    ["オリヤ語"] = "or", ["オロモ語"] = "om", ["カザフ語"] = "kk", ["カタルーニャ語"] = "ca",
+    ["カンナダ語"] = "kn", ["ガリシア語"] = "gl", ["キニアルワンダ語"] = "rw", ["キルギス語"] = "ky",
+    ["ギリシャ語"] = "el", ["グジャラート語"] = "gu", ["クメール語"] = "km", ["クルド語(クルマンジー)"] = "ku",
+    ["クルド語(ソラニー)"] = "ckb", ["クロアチア語"] = "hr", ["コース語"] = "xh", ["コサ語"] = "xh",
+    ["コルシカ語"] = "co", ["サモア語"] = "sm", ["サンスクリット語"] = "sa", ["ジャワ語"] = "jw",
+    ["ジョージア語"] = "ka", ["ショナ語"] = "sn", ["シンド語"] = "sd", ["シンハラ語"] = "si",
+    ["スウェーデン語"] = "sv", ["ズールー語"] = "zu", ["スコットランド・ゲール語"] = "gd", ["スペイン語"] = "es",
+    ["スロバキア語"] = "sk", ["スロベニア語"] = "sl", ["スワヒリ語"] = "sw", ["スンダ語"] = "su",
+    ["セブアノ語"] = "ceb", ["セルビア語"] = "sr", ["ソト語"] = "st", ["ソマリ語"] = "so",
+    ["タイ語"] = "th", ["タガログ語"] = "tl", ["タジク語"] = "tg", ["タタール語"] = "tt",
+    ["タミル語"] = "ta", ["チェコ語"] = "cs", ["チェワ語"] = "ny", ["チチェワ語"] = "ny",
+    ["ツォンガ語"] = "ts", ["ティグリニャ語"] = "ti", ["ディベヒ語"] = "dv", ["テルグ語"] = "te",
+    ["デンマーク語"] = "da", ["ドイツ語"] = "de", ["トゥイ語"] = "tw", ["トク・ピシン"] = "tpi",
+    ["トルコ語"] = "tr", ["トルクメン語"] = "tk", ["ドグリ語"] = "doi", ["ネパール語"] = "ne",
+    ["ノルウェー語"] = "no", ["ハイチ語"] = "ht", ["ハウサ語"] = "ha", ["パシュト語"] = "ps",
+    ["バスク語"] = "eu", ["ハワイ語"] = "haw", ["ハンガリー語"] = "hu", ["パンジャブ語"] = "pa",
+    ["バンバラ語"] = "bm", ["ヒンディー語"] = "hi", ["フィンランド語"] = "fi", ["フランス語"] = "fr",
+    ["フリースランド語"] = "fy", ["ブルガリア語"] = "bg", ["ベトナム語"] = "vi", ["ヘブライ語"] = "he",
+    ["ベラルーシ語"] = "be", ["ペルシャ語"] = "fa", ["ベンガル語"] = "bn", ["ボージュプリー語"] = "bho",
+    ["ポーランド語"] = "pl", ["ボスニア語"] = "bs", ["ポルトガル語"] = "pt", ["マイティリー語"] = "mai",
+    ["マori語"] = "mi", ["マケドニア語"] = "mk", ["マダガスカル語"] = "mg", ["マラヤーラム語"] = "ml",
+    ["マラーティー語"] = "mr", ["マルタ語"] = "mt", ["マレー語"] = "ms", ["ミゾ語"] = "mzo",
+    ["ミャンマー語(ビルマ語)"] = "my", ["メテイ語(マニプリ語)"] = "mni-Mtei", ["モンゴル語"] = "mn", ["モン語"] = "hmn",
+    ["ヨルバ語"] = "yo", ["ラオ語"] = "lo", ["ラテン語"] = "la", ["ラトビア語"] = "lv",
+    ["リトアニア語"] = "lt", ["リンガラ語"] = "ln", ["ルーマニア語"] = "ro", ["ルガンダ語"] = "lg",
+    ["ルクセンブルク語"] = "lb", ["ロシア語"] = "ru", ["英語"] = "en", ["韓国語"] = "ko",
+    ["広東語"] = "zh-hk", ["中国語(簡体)"] = "zh-cn", ["台湾(繁体字)"] = "zh-tw", ["日本語"] = "ja"
+}
+
+local CodeToName = {}
+for name, code in pairs(FullLangTable) do CodeToName[code:lower()] = name end
+local LList = {}; for n,_ in pairs(FullLangTable) do table.insert(LList, n) end; table.sort(LList)
+
+-- ===== 「ー・」および世界標準「-.」両対応 モールスエンジン =====
+local MorseAlphabet = {
+    ["A"] = "・ー",   ["B"] = "ーー・・", ["C"] = "ー・ー・", ["D"] = "ー・・",  ["E"] = "・",
+    ["F"] = "・・ー・", ["G"] = "ーー・",  ["H"] = "・・・・", ["I"] = "・・",   ["J"] = "・ーーー",
+    ["K"] = "ー・ー",  ["L"] = "・ー・・", ["M"] = "ーー",   ["N"] = "ー・",   ["O"] = "ーーー",
+    ["P"] = "・ーー・", ["Q"] = "ーー・ー", ["R"] = "・ー・",  ["S"] = "・・・",  ["T"] = "ー",
+    ["U"] = "・・ー",  ["V"] = "・・・ー", ["W"] = "・ーー",  ["X"] = "ー・・ー", ["Y"] = "ー・ーー",
+    ["Z"] = "ーー・・",
+    ["1"] = "・ーーーー", ["2"] = "・・ーーー", ["3"] = "・・・ーー", ["4"] = "・・・・ー", ["5"] = "・・・・・",
+    ["6"] = "ー・・・・", ["7"] = "ーー・・・", ["8"] = "ーーー・・", ["9"] = "ーーーー・", ["0"] = "ーーーーー",
+    ["."] = "・ー・ー・ー", [","] = "ーー・・ーー", ["?"] = "・・ーー・・", ["/"] = "ー・・ー・", ["-"] = "ー・・・・ー",
+    [" "] = "／"
+}
+
+-- 解読用の逆引き辞書（内部で全て「・」と「ー」に統一して照合）
+local InverseMorse = {}
+for letter, morse in pairs(MorseAlphabet) do
+    InverseMorse[morse] = letter
+end
+
+-- 送信用変換 (日本語 ➜ 英語 ➜ 「ー・」)
+local function textToMorse(text)
+    text = text:upper()
+    local result = {}
+    for i = 1, #text do
+        local char = text:sub(i, i)
+        local morse = MorseAlphabet[char]
+        if morse then table.insert(result, morse) end
+    end
+    return table.concat(result, " ")
+end
+
+-- 【超強化】受信デコード用 (他人の「-.」も「ー・」も両方解読する)
+local function morseToText(morseText)
+    -- 相手が打ってきた文字を「・」と「ー」と「/」の表記にすべて強制置換（正規化）
+    local normalized = morseText:gsub("%.", "・"):gsub("%-", "ー"):gsub("／", "/"):gsub("%s*/%s*", " / ")
+    
+    local result = {}
+    -- スペースやスラッシュを基準に符号を切り出して解読
+    for code in normalized:gmatch("[^%s]+") do
+        if code == "/" then
+            table.insert(result, " ")
+        else
+            local letter = InverseMorse[code]
+            if letter then 
+                table.insert(result, letter) 
+            end
+        end
+    end
+    return table.concat(result, "")
+end
+
+-- ===== クリップボードコピー関数 =====
+local function copyToClipboard(text)
+    if setclipboard then
+        setclipboard(text)
+        OrionLib:MakeNotification({
+            Name = "コピー完了",
+            Content = "クリップボードにコピーしました",
+            Time = 2
+        })
+    end
+end
+
+-- ===== 万能翻訳関数 =====
+local function translateExtended(text, from, to)
+    if text == "" or not text then return nil, nil end
+    local url = "https://translate.googleapis.com/translate_a/single?client=gtx&sl=" 
+                .. from .. "&tl=" .. to .. "&dt=t&q=" .. HttpService:UrlEncode(text)
+    
+    local response
+    local success = pcall(function() response = game:HttpGet(url) end)
+    
+    if success and response then
+        local data = HttpService:JSONDecode(response)
+        if data and data[1] and data[1][1] then
+            local translatedText = data[1][1][1]
+            local det = data[3] or data[2] or "不明"
+            det = type(det) == "string" and det:lower():split("-")[1] or "unknown"
+            return translatedText, CodeToName[det] or det
+        end
+    end
+    return nil, nil
+end
+
+-- ===== チャット送信 =====
+local function sendChat(msg)
+    pcall(function()
+        local legacy = game:GetService("ReplicatedStorage"):FindFirstChild("DefaultChatSystemChatEvents")
+        if legacy and legacy:FindFirstChild("SayMessageRequest") then
+            legacy.SayMessageRequest:FireServer(msg, "All")
+        end
+        local tcs = game:GetService("TextChatService")
+        if tcs.ChatVersion == Enum.ChatVersion.TextChatService then
+            local channel = tcs:FindFirstChild("RBXGeneral", true)
+            if channel then channel:SendAsync(msg) end
+        end
+    end)
+end
+
+-- ===== ウィンドウ作成 =====
+local Window = OrionLib:MakeWindow({
+    Name = "世界対応 究極翻訳 Hub Pro",
+    HidePremium = true,
+    SaveConfig = false,
+    IntroText = "モールス信号・双方向自動傍受システム稼働！"
+})
+
+-- ==================== 送信タブ ====================
+local SendTab = Window:MakeTab({ Name = "送信・変換", Icon = "rbxassetid://4483345998" })
+SendTab:AddToggle({ Name = "送信翻訳を有効化", Default = true, Callback = function(v) Config.SendEnabled = v end })
+SendTab:AddTextbox({ Name = "日本語で入力", Default = "", TextDisappear = false, Callback = function(v) Config.InputText = v end })
+SendTab:AddDropdown({ Name = "翻訳先の言語", Default = "英語", Options = LList, Callback = function(v) Config.TargetLang = FullLangTable[v] end })
+
+SendTab:AddSection({ Name = "▼ 通常翻訳操作" })
+SendTab:AddButton({ Name = "翻訳してコピー (送信しない)", Callback = function()
+    if Config.InputText ~= "" then
+        local res, _ = translateExtended(Config.InputText, "ja", Config.TargetLang)
+        if res then copyToClipboard(res) end
+    end
+end })
+SendTab:AddButton({ Name = "翻訳して送信", Callback = function()
+    if Config.SendEnabled and Config.InputText ~= "" then
+        local res, _ = translateExtended(Config.InputText, "ja", Config.TargetLang)
+        if res then sendChat(res) end
+    end
+end })
+
+SendTab:AddSection({ Name = "▼ モールス信号操作 (日本語 ➜ 英語 ➜ モールス)" })
+SendTab:AddButton({ Name = "モールス信号に変換してコピー", Callback = function()
+    if Config.InputText ~= "" then
+        local englishText = Config.InputText
+        local res, _ = translateExtended(Config.InputText, "ja", "en")
+        if res then englishText = res end
+        local morse = textToMorse(englishText)
+        if morse ~= "" then copyToClipboard(morse) end
+    end
+end })
+SendTab:AddButton({ Name = "モールス信号で送信", Callback = function()
+    if Config.SendEnabled and Config.InputText ~= "" then
+        local englishText = Config.InputText
+        local res, _ = translateExtended(Config.InputText, "ja", "en")
+        if res then englishText = res end
+        local morse = textToMorse(englishText)
+        if morse ~= "" then sendChat(morse) end
+    end
+end })
+
+-- ==================== ターゲット選択タブ ====================
+local TargetTab = Window:MakeTab({ Name = "ターゲット選択", Icon = "rbxassetid://4483345998" })
+TargetTab:AddToggle({ Name = "全員を翻訳・解読する", Default = true, Callback = function(v) Config.EveryoneMode = v end })
+
+local function refreshTargets()
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer and not Config.SelectedPlayers[p.Name] then
+            Config.SelectedPlayers[p.Name] = false
+            TargetTab:AddToggle({
+                Name = p.Name,
+                Default = false,
+                Callback = function(v) Config.SelectedPlayers[p.Name] = v end
+            })
+        end
+    end
+end
+Players.PlayerAdded:Connect(refreshTargets)
+refreshTargets()
+
+-- ==================== 受信ログタブ ====================
+local LogTab = Window:MakeTab({ Name = "受信・解読ログ", Icon = "rbxassetid://4483345998" })
+local LogSection = LogTab:AddSection({ Name = "ログ一覧 (クリックでコピー)" })
+LogTab:AddToggle({ Name = "受信処理を有効化", Default = true, Callback = function(v) Config.RecvEnabled = v end })
+
+-- 【最強の受信傍受イベント】
+local function onChatted(player, message)
+    if player == LocalPlayer or not Config.RecvEnabled then return end
+    if not (Config.EveryoneMode or Config.SelectedPlayers[player.Name]) then return end
+    
+    task.spawn(function()
+        if message:sub(1, 1) == "【" or message:sub(1, 1) == "[" then return end
+        
+        -- モールス信号のパターン判定を最適化 ( . , - , ー , ・ , / , ／ , スペース のみ)
+        local cleanMsg = message:gsub("%s+", "")
+        if cleanMsg:match("^[%.%-ー・/／]+$") and (cleanMsg:find("%.") or cleanMsg:find("-") or cleanMsg:find("ー") or cleanMsg:find("・")) then
+            
+            -- 他人の打ったモールス信号（どんな形式でも）テキストへデコード
+            local decodedEnglish = morseToText(message)
+            
+            if decodedEnglish and decodedEnglish:gsub("%s+", "") ~= "" then
+                -- 解読された英語を日本語へ翻訳
+                local translatedJa, _ = translateExtended(decodedEnglish, "en", "ja")
+                local finalResult = translatedJa and ("【モールス解読】" .. translatedJa) or ("【モールス英語】" .. decodedEnglish)
+                
+                LogSection:AddButton({
+                    Name = player.Name .. ": " .. finalResult,
+                    Callback = function() copyToClipboard(finalResult) end
+                })
+                
+                OrionLib:MakeNotification({
+                    Name = player.Name .. " (モールス信号を傍受)",
+                    Content = finalResult,
+                    Time = 6
+                })
+                return -- モールス解読が成功したため、通常の翻訳処理はスキップ
+            end
+        end
+        
+        -- 【通常会話】外国語 ➜ 日本語翻訳
+        local translated, langName = translateExtended(message, "auto", "ja")
+        if translated and translated:lower() ~= message:lower() and langName ~= "日本語" then
+            LogSection:AddButton({
+                Name = player.Name .. " (" .. tostring(langName) .. "): " .. translated,
+                Callback = function() copyToClipboard(translated) end
+            })
+            OrionLib:MakeNotification({
+                Name = player.Name .. " (" .. tostring(langName) .. ")",
+                Content = translated,
+                Time = 5
+            })
+        end
+    end)
+end
+
+local function setupPlayer(p) p.Chatted:Connect(function(msg) onChatted(p, msg) end) end
+for _, p in ipairs(Players:GetPlayers()) do setupPlayer(p) end
+Players.PlayerAdded:Connect(setupPlayer)
+
+OrionLib:Init()
