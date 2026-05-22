@@ -1,0 +1,290 @@
+-- Orion X (BlizTBr版) 読み込み
+local OrionLib = loadstring(game:HttpGet(
+    "https://raw.githubusercontent.com/BlizTBr/scripts/main/Orion%20X"
+))()
+
+-- ウィンドウ作成
+local Window = OrionLib:MakeWindow({
+    Name = "竜巻-mod",
+    HidePremium = false,
+    SaveConfig = false,
+    IntroEnabled = true
+})
+
+-- ===== サービス & 変数定義 =====
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local player = Players.LocalPlayer
+
+local tornadoEnabled = false
+local hoveringObjects = {}
+local objectData = {}
+local heartbeatConnection = nil
+
+-- ===== 人間っぽい設定パラメータ =====
+local Config = {
+    Range = 120,          -- 吸引する広さ
+    MaxHeight = 45,       -- 竜巻の高さ
+    RotateSpeed = 0.12,   -- 回転のハイスピード感
+    AscentSpeed = 0.35,   -- 巻き上げパワー
+    Turbulence = 1.5,     -- 暴れ度（風の乱れ）
+    ShapeTightness = 3,   -- 中心の吸い込み限界距離（新設定の初期値）
+    MaxRadius = 25        -- 吹き飛ぶ広さ
+}
+
+-- ===== タブ作成 =====
+local MainTab = Window:MakeTab({
+    Name = "メイン",
+    Icon = "rbxassetid://4483345998",
+    PremiumOnly = false
+})
+
+local ConfigTab = Window:MakeTab({
+    Name = "竜巻の設定",
+    Icon = "rbxassetid://4483345998",
+    PremiumOnly = false
+})
+
+-- ===== セクション作成 =====
+local MainSection = MainTab:AddSection({
+    Name = "コントロール"
+})
+
+local ConfigSection = ConfigTab:AddSection({
+    Name = "風速・挙動の調整"
+})
+
+-- ===== 物理同期関数 =====
+local function syncPart(part)
+    if not part:IsA("BasePart") or part.Anchored then return end
+    
+    if not part:FindFirstChild("TornadoForce") then
+        local bv = Instance.new("BodyVelocity")
+        bv.Name = "TornadoForce"
+        bv.MaxForce = Vector3.new(1, 1, 1) * 2e6
+        bv.Velocity = Vector3.new(0, 0, 0)
+        bv.Parent = part
+        
+        local bg = Instance.new("BodyGyro")
+        bg.Name = "TornadoGyro"
+        bg.MaxTorque = Vector3.new(1, 1, 1) * 2e6
+        bg.CFrame = part.CFrame
+        bg.Parent = part
+    end
+    
+    pcall(function()
+        part:SetNetworkOwner(player)
+    end)
+end
+
+-- ===== 竜巻のメインループ処理 =====
+local function startTornado()
+    heartbeatConnection = RunService.Heartbeat:Connect(function()
+        local character = player.Character
+        local hrp = character and character:FindFirstChild("HumanoidRootPart")
+        if not hrp then return end
+
+        -- 1. 周辺パーツのロックオン
+        local parts = workspace:GetPartBoundsInRadius(hrp.Position, Config.Range)
+        for _, p in ipairs(parts) do
+            if not p.Anchored and not p:IsDescendantOf(character) and not hoveringObjects[p] and p:IsA("BasePart") then
+                hoveringObjects[p] = true
+                syncPart(p)
+                
+                local offset = p.Position - hrp.Position
+                local initialAngle = math.atan2(offset.Z, offset.X)
+                
+                objectData[p] = {
+                    angle = initialAngle,
+                    height = math.clamp(offset.Y, 0, Config.MaxHeight),
+                    wobbleSpeed = math.random(8, 18),
+                    state = "Sucking"
+                }
+                p.CanCollide = false
+            end
+        end
+
+        -- 2. 竜巻の物理シミュレーション
+        for o, data in pairs(objectData) do
+            if o and o.Parent and o:FindFirstChild("TornadoForce") then
+                
+                if data.state == "Sucking" then
+                    -- 【吸入モード】グルグル回りながら上昇
+                    data.angle = data.angle + Config.RotateSpeed
+                    data.height = data.height + Config.AscentSpeed
+                    
+                    -- 高度に応じて綺麗なロート型にする計算（新設定 Config.ShapeTightness を下限にする）
+                    local progress = math.clamp(data.height / Config.MaxHeight, 0, 1)
+                    local currentRadius = math.lerp(Config.ShapeTightness, Config.MaxRadius, progress)
+                    
+                    -- 風の乱れ（暴れ度）を計算
+                    local wobble = math.sin(tick() * data.wobbleSpeed) * Config.Turbulence
+                    
+                    -- 最終的な目標半径（設定された限界距離より小さくならないようにガード）
+                    local finalRadius = math.max(Config.ShapeTightness, currentRadius + wobble)
+
+                    -- 目標位置の計算
+                    local targetPos = hrp.Position + Vector3.new(
+                        math.cos(data.angle) * finalRadius,
+                        data.height,
+                        math.sin(data.angle) * finalRadius
+                    )
+                    
+                    -- 追従速度の適用
+                    o.TornadoForce.Velocity = (targetPos - o.Position) * 18
+                    o.TornadoGyro.CFrame = CFrame.new(o.Position, targetPos) * CFrame.Angles(data.angle, wobble, 0)
+                    o.AssemblyLinearVelocity = (targetPos - o.Position) * 22
+                    
+                    -- テッペンまで来たらワープせず「外へ吹き飛ばすモード」に切り替え
+                    if data.height >= Config.MaxHeight then
+                        data.state = "Ejected"
+                        local pushDirection = (o.Position - hrp.Position).Unit
+                        o.AssemblyLinearVelocity = (pushDirection + Vector3.new(0, 0.5, 0)) * 50
+                        o.CanCollide = true
+                    end
+                    
+                elseif data.state == "Ejected" then
+                    -- 【放出落下モード】自然に落下させる
+                    o.TornadoForce.Velocity = Vector3.new(0, -20, 0)
+                    
+                    -- 地面近くまで落ちる、またはプレイヤーに近づいたら再捕獲
+                    local distanceToPlayer = (o.Position - hrp.Position).Magnitude
+                    if o.Position.Y <= hrp.Position.Y + 3 or distanceToPlayer < (Config.Range * 0.5) then
+                        data.state = "Sucking"
+                        data.height = math.clamp(o.Position.Y - hrp.Position.Y, 0, 5)
+                        data.angle = math.atan2(o.Position.Z - hrp.Position.Z, o.Position.X - hrp.Position.X)
+                        o.CanCollide = false
+                    end
+                end
+            else
+                hoveringObjects[o] = nil
+                objectData[o] = nil
+            end
+        end
+    end)
+end
+
+-- 竜巻停止・片付け
+local function stopTornado()
+    if heartbeatConnection then
+        heartbeatConnection:Disconnect()
+        heartbeatConnection = nil
+    end
+    
+    for o, _ in pairs(objectData) do
+        if o and o.Parent then
+            if o:FindFirstChild("TornadoForce") then o.TornadoForce:Destroy() end
+            if o:FindFirstChild("TornadoGyro") then o.TornadoGyro:Destroy() end
+            o.CanCollide = true
+        end
+    end
+    hoveringObjects = {}
+    objectData = {}
+end
+
+-- ===== メインタブ =====
+MainSection:AddToggle({
+    Name = "竜巻を発生させる",
+    Default = false,
+    Callback = function(Value)
+        tornadoEnabled = Value
+        if tornadoEnabled then
+            startTornado()
+            OrionLib:MakeNotification({
+                Name = "Tornado Mod",
+                Content = "猛烈な竜巻が発生しました！",
+                Image = "rbxassetid://4483345998",
+                Time = 2
+            })
+        else
+            stopTornado()
+            OrionLib:MakeNotification({
+                Name = "Tornado Mod",
+                Content = "竜巻が消滅しました。",
+                Image = "rbxassetid://4483345998",
+                Time = 2
+            })
+        end
+    end
+})
+
+-- ===== 設定タブ =====
+ConfigSection:AddSlider({
+    Name = "吸い込む広さ（遠くのパーツを検知）",
+    Min = 30,
+    Max = 300,
+    Default = 120,
+    Increment = 5,
+    Callback = function(Value)
+        Config.Range = Value
+    end
+})
+
+ConfigSection:AddSlider({
+    Name = "中心部への吸い込み限界（近さ）", -- ★ここがご要望の新しい設定です！
+    Min = 0,
+    Max = 30,
+    Default = 3,
+    Increment = 1,
+    Callback = function(Value)
+        Config.ShapeTightness = Value
+    end
+})
+
+ConfigSection:AddSlider({
+    Name = "巻き上げる高さ",
+    Min = 15,
+    Max = 120,
+    Default = 45,
+    Increment = 5,
+    Callback = function(Value)
+        Config.MaxHeight = Value
+    end
+})
+
+ConfigSection:AddSlider({
+    Name = "回転のハイスピード感",
+    Min = 1,
+    Max = 30,
+    Default = 12,
+    Increment = 1,
+    Callback = function(Value)
+        Config.RotateSpeed = Value / 100
+    end
+})
+
+ConfigSection:AddSlider({
+    Name = "巻き上げパワー（上昇速度）",
+    Min = 5,
+    Max = 100,
+    Default = 35,
+    Increment = 5,
+    Callback = function(Value)
+        Config.AscentSpeed = Value / 100
+    end
+})
+
+ConfigSection:AddSlider({
+    Name = "風の暴れ度（ガタガタ揺れる）",
+    Min = 0,
+    Max = 10,
+    Default = 2,
+    Increment = 1,
+    Callback = function(Value)
+        Config.Turbulence = Value * 0.7
+    end
+})
+
+ConfigSection:AddSlider({
+    Name = "吹き飛ぶ広さ（上空の広がり）",
+    Min = 10,
+    Max = 80,
+    Default = 25,
+    Increment = 5,
+    Callback = function(Value)
+        Config.MaxRadius = Value
+    end
+})
+
+-- ===== UI初期化 =====
+OrionLib:Init()
