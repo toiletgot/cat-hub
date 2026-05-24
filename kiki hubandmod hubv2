@@ -1,0 +1,1043 @@
+--[[
+    kiki hub - 修正版
+    ・「松ぼっくり（Pinecone）」モードの変数名タイポ（iLayerIdx -> inLayerIdx）を修正しました。
+    ・全100モードの構文および動作を完全に維持しています。
+]]
+
+local OrionLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/BlizTBr/scripts/main/Orion%20X"))()
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local player = Players.LocalPlayer
+local camera = workspace.CurrentCamera
+
+-- ループ内最適化のためのローカル化
+local sin, cos, rad, pi, abs, sign, pow, min, max = math.sin, math.cos, math.rad, math.pi, math.abs, math.sign, math.pow, math.min, math.max
+
+-- --- 内部変数 ---
+local mode = "None"
+local hoveringObjects = {}
+local objectData = {}
+local targetPlayerName = "自分自身"
+local settings = {
+    speed = 0.03,
+    width = 18,
+    height = 5,
+    offsetX = 0,
+    offsetY = 0,
+    speedEnabled = false,
+    customSpeed = 100,
+    fov = 70
+}
+
+-- --- バイパス ---
+local mt = getrawmetatable(game)
+local old_index = mt.__index
+setreadonly(mt, false)
+mt.__index = newcclosure(function(t, k)
+    if not checkcaller() and t:IsA("Humanoid") then
+        if k == "WalkSpeed" then return 16 end
+        if k == "JumpPower" then return 50 end
+    end
+    return old_index(t, k)
+end)
+setreadonly(mt, true)
+
+-- --- 物理管理関数 ---
+local function clearObjects()
+    for o in pairs(hoveringObjects) do
+        pcall(function()
+            if o and o.Parent then
+                o.CanCollide = true
+                if o:FindFirstChild("SyncForce") then o.SyncForce:Destroy() end
+                if o:FindFirstChild("SyncGyro") then o.SyncGyro:Destroy() end
+            end
+        end)
+    end
+    hoveringObjects = {}; objectData = {}
+end
+
+local function registerPart(part)
+    if not part:IsA("BasePart") or part.Anchored then return end
+    if player.Character and part:IsDescendantOf(player.Character) then return end
+    if hoveringObjects[part] then return end 
+
+    hoveringObjects[part] = true
+    objectData[part] = { seed = math.random() * 100, phase = math.random() * pi * 2, shootT = math.random() * 5 }
+    
+    local bv = Instance.new("BodyVelocity")
+    bv.Name = "SyncForce"; bv.MaxForce = Vector3.new(1,1,1)*1e6; bv.Velocity = Vector3.zero; bv.Parent = part
+    local bg = Instance.new("BodyGyro")
+    bg.Name = "SyncGyro"; bg.MaxTorque = Vector3.new(1,1,1)*1e6; bg.Parent = part
+    
+    part.CanCollide = false
+    pcall(function() part:SetNetworkOwner(player) end)
+end
+
+-- --- ターゲット取得関数 ---
+local function getTargetHRP()
+    local targetPlr = Players:FindFirstChild(targetPlayerName)
+    if targetPlayerName == "自分自身" or not targetPlr then
+        return player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+    end
+    return targetPlr.Character and targetPlr.Character:FindFirstChild("HumanoidRootPart")
+end
+
+-- --- プレイヤーリストの更新処理 ---
+local function getPlayerList()
+    local list = {"自分自身"}
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= player then table.insert(list, p.Name) end
+    end
+    return list
+end
+
+-- --- UI構築 ---
+local Window = OrionLib:MakeWindow({ Name = "kiki hub", HidePremium = false, IntroText = "kiki hub" })
+
+local MainTab = Window:MakeTab({ Name = "メイン能力", Icon = "rbxassetid://4483345998" })
+local AdjustTab = Window:MakeTab({ Name = "能力調整", Icon = "rbxassetid://4483345998" })
+
+local PlayerDropdown = MainTab:AddDropdown({
+    Name = "ターゲット選択 (エフェクトを付ける相手)",
+    Default = "自分自身",
+    Options = getPlayerList(),
+    Callback = function(Value) targetPlayerName = Value end
+})
+
+local function refreshPlayerDropdown() PlayerDropdown:Refresh(getPlayerList(), true) end
+Players.PlayerAdded:Connect(refreshPlayerDropdown)
+Players.PlayerRemoving:Connect(refreshPlayerDropdown)
+
+MainTab:AddDropdown({
+    Name = "モード選択",
+    Default = "None",
+    Options = {
+        "None", "回転", "魔法陣", "魔法陣2", "魔法陣3", "魔法陣4", "魔法陣5", "魔法陣6", "魔法陣7", "魔法陣8", "魔法陣9", "魔法陣10",
+        "魔法陣11", "魔法陣12", "魔法陣13", "魔法陣14", "魔法陣15", "魔法陣16", "魔法陣17", "魔法陣18", "魔法陣19", "魔法陣20",
+        "幽霊", "神聖", "卍", "幾何学の輪", "対角線", "四角", "スピン", "バリア", "柱", "ブラックホール", 
+        "竜巻", "星", "超新星爆発", "松ぼっくり", "隕石", "石", "水", "ほのお", "こおり", "ボール", 
+        "糸", "電気", "ビーム", "ハンマー", "雪の結晶", "岩", "バグ", "爆発", "爆弾", "マグマ", 
+        "六角形", "米粒", "膨張", "土", "カーペット", "ハート", "三角形", "五角形", "新六角形", "七角形",
+        "太陽", "羽", "宇宙", "ビッグバン", "かさ", "三つの球", "地震", "雲", "流れ星", "概念",
+        "砂", "蝋燭", "光", "神", "クリスタル", "木", "植物", "ダイヤ", "ルビー", "触手", "壁",
+        "畑", "背後射出", "水星", "金星", "地球", "火星", "木星", "土星", "天王星", "海王星", 
+        "小惑星", "彗星", "流星", "準惑星", "冥王星", "銀河", "空気",
+        "ハレー彗星", "67"
+    },
+    Callback = function(Value)
+        local map = {
+            ["None"]="None", ["回転"]="Orbit", ["魔法陣"]="MagicCircle", ["魔法陣2"]="MagicCircle2", ["魔法陣3"]="MagicCircle3",
+            ["魔法陣4"]="MagicCircle4", ["魔法陣5"]="MagicCircle5", ["魔法陣6"]="MagicCircle6", ["魔法陣7"]="MagicCircle7", ["魔法陣8"]="MagicCircle8",
+            ["魔法陣9"]="MagicCircle9", ["魔法陣10"]="MagicCircle10", ["魔法陣11"]="MagicCircle11", ["魔法陣12"]="MagicCircle12", ["魔法陣13"]="MagicCircle13",
+            ["魔法陣14"]="MagicCircle14", ["魔法陣15"]="MagicCircle15", ["魔法陣16"]="MagicCircle16", ["魔法陣17"]="MagicCircle17", ["魔法陣18"]="MagicCircle18",
+            ["魔法陣19"]="MagicCircle19", ["魔法陣20"]="MagicCircle20",
+            ["幽霊"]="Ghost", ["神聖"]="Divine", ["卍"]="Manji", ["幾何学の輪"]="Geometry", ["対角線"]="Diagonal",
+            ["四角"]="Square", ["スピン"]="Spin", ["バリア"]="Barrier", ["柱"]="Pillar", ["ブラックホール"]="Sun",
+            ["竜巻"]="Tornado", ["星"]="Star", ["超新星爆発"]="Supernova", ["松ぼっくり"]="Pinecone", ["隕石"]="Meteor",
+            ["石"]="Stone", ["水"]="Water", ["ほのお"]="Fire", ["こおり"]="Ice",
+            ["ボール"]="Ball", ["糸"]="Thread", ["電気"]="Lightning", ["ビーム"]="Beam", ["ハンマー"]="Hammer", 
+            ["雪の結晶"]="Blackhole",
+            ["岩"]="Rock", ["バグ"]="Bug", ["爆発"]="Explosion", ["爆弾"]="Bomb", ["マグマ"]="Magma", ["六角形"]="Hexagon",
+            ["米粒"]="Rice", ["膨張"]="Expansion", ["土"]="Dirt", ["カーペット"]="Carpet", ["ハート"]="Heart",
+            ["三角形"]="Triangle", ["五角形"]="Pentagon", ["新六角形"]="HexagonNew", ["七角形"]="Heptagon",
+            ["太陽"]="SunNew", ["羽"]="Wings", ["宇宙"]="Cosmos", ["ビッグバン"]="BigBang", ["かさ"]="Umbrella",
+            ["三つの球"]="ThreeSpheres", ["地震"]="Earthquake", ["雲"]="Cloud", ["流れ星"]="ShootingStar", ["概念"]="Concept",
+            ["砂"]="Sand", ["蝋燭"]="Candle", ["光"]="Light", ["神"]="God",
+            ["クリスタル"]="Crystal", ["木"]="Tree", ["植物"]="Plant", ["ダイヤ"]="Diamond", ["ルビー"]="Ruby", ["触手"]="Tentacle", ["壁"]="Wall",
+            ["畑"]="Field", ["背後射出"]="RearShoot", ["水星"]="Mercury", ["金星"]="Venus", ["地球"]="Earth", ["火星"]="Mars",
+            ["木星"]="Jupiter", ["土星"]="Saturn", ["天王星"]="Uranus", ["海王星"]="Neptune", ["小惑星"]="Asteroid",
+            ["彗星"]="Comet", ["流星"]="MeteorShower", ["準惑星"]="MinorPlanet", ["冥王星"]="Pluto", ["銀河"]="Galaxy", ["空気"]="Air",
+            ["ハレー彗星"]="HalleyComet", ["67"]="Mode67"
+        }
+        mode = map[Value] or "None"
+        if mode == "None" then clearObjects() end
+    end
+})
+
+MainTab:AddButton({ Name = "全パーツ解除", Callback = function() clearObjects() end })
+
+-- --- 能力調整 ---
+AdjustTab:AddTextbox({
+    Name = "回転速度 (現在の設定: " .. tostring(settings.speed) .. ")",
+    Default = tostring(settings.speed),
+    TextDisappear = false,
+    Callback = function(Text) local num = tonumber(Text) if num then settings.speed = num end end
+})
+
+AdjustTab:AddTextbox({
+    Name = "広がり (現在の設定: " .. tostring(settings.width) .. ")",
+    Default = tostring(settings.width),
+    TextDisappear = false,
+    Callback = function(Text) local num = tonumber(Text) if num then settings.width = num end end
+})
+
+AdjustTab:AddTextbox({
+    Name = "横 (現在の設定: " .. tostring(settings.offsetX) .. ")",
+    Default = tostring(settings.offsetX),
+    TextDisappear = false,
+    Callback = function(Text) local num = tonumber(Text) if num then settings.offsetX = num end end
+})
+
+AdjustTab:AddTextbox({
+    Name = "縦 (現在の設定: " .. tostring(settings.offsetY) .. ")",
+    Default = tostring(settings.offsetY),
+    TextDisappear = false,
+    Callback = function(Text) local num = tonumber(Text) if num then settings.offsetY = num end end
+})
+
+AdjustTab:AddTextbox({
+    Name = "高さ (現在の設定: " .. tostring(settings.height) .. ")",
+    Default = tostring(settings.height),
+    TextDisappear = false,
+    Callback = function(Text) local num = tonumber(Text) if num then settings.height = num end end
+})
+
+-- --- 実行ループ ---
+RunService.Stepped:Connect(function()
+    if player.Character then
+        local hum = player.Character:FindFirstChildOfClass("Humanoid")
+        if hum then hum.WalkSpeed = settings.speedEnabled and settings.customSpeed or 16 end
+    end
+    camera.FieldOfView = settings.fov
+end)
+
+local function connectCharacter(char)
+    char:WaitForChild("HumanoidRootPart")
+    for _, v in ipairs(char:GetChildren()) do
+        if v:IsA("BasePart") then
+            v.Touched:Connect(function(hit) if mode ~= "None" then registerPart(hit) end end)
+        end
+    end
+end
+player.CharacterAdded:Connect(connectCharacter)
+if player.Character then connectCharacter(player.Character) end
+
+local timeCounter = 0
+RunService.Heartbeat:Connect(function()
+    if mode == "None" then return end
+    
+    local hrp = getTargetHRP()
+    if not hrp then return end
+    
+    local baseCenterPos = hrp.Position + (hrp.CFrame.RightVector * settings.offsetX) + (hrp.CFrame.LookVector * settings.offsetY)
+    
+    timeCounter = timeCounter + settings.speed
+    local currentParts = {}
+    for o in pairs(objectData) do table.insert(currentParts, o) end
+    local total = #currentParts
+
+    for i, o in ipairs(currentParts) do
+        if o and o.Parent and o:FindFirstChild("SyncForce") then
+            local data = objectData[o]
+            local targetPos
+            
+            -- ================= 全モード判定ロジック =================
+            if mode == "MagicCircle" then
+                local angle = (timeCounter * 2) + (i / max(1, total) * pi * 2)
+                local s = settings.width / 2; local res = 0.2
+                local x = sign(cos(angle)) * pow(abs(cos(angle)), res) * s
+                local z = sign(sin(angle)) * pow(abs(sin(angle)), res) * s
+                local tilt = CFrame.Angles(rad(11.5), 0, rad(11.5))
+                targetPos = baseCenterPos + Vector3.new(0, settings.height, 0) + (tilt * Vector3.new(x, 0, z))
+                o.SyncGyro.CFrame = hrp.CFrame * tilt * CFrame.Angles(0, angle, 0)
+            elseif mode == "Orbit" then
+                local angle = timeCounter + (i * (pi * 2 / max(1, total)))
+                targetPos = baseCenterPos + Vector3.new(cos(angle) * settings.width, settings.height, sin(angle) * settings.width)
+                o.SyncGyro.CFrame = CFrame.new(o.Position, baseCenterPos)
+            elseif mode == "Ghost" then
+                local t = timeCounter + data.seed
+                targetPos = baseCenterPos + Vector3.new(sin(t * 0.7) * settings.width, cos(t * 0.5) * (settings.width * 0.5) + settings.height, sin(t * 0.3) * settings.width)
+                o.SyncGyro.CFrame = o.SyncGyro.CFrame * CFrame.Angles(0.05, 0.05, 0.05)
+            elseif mode == "Manji" then
+                local b = (i - 1) % 4
+                local a = (b * pi / 2) + (timeCounter * 1.5)
+                local sIdx = math.floor((i - 1) / 4)
+                local r = min(1, sIdx / (max(1, total/4) * 0.6 + 0.1))
+                targetPos = baseCenterPos + Vector3.new(cos(a) * (r * settings.width), settings.height, sin(a) * (r * settings.width))
+                o.SyncGyro.CFrame = CFrame.new(Vector3.zero, Vector3.new(cos(a), 0, sin(a)))
+            elseif mode == "Divine" then
+                local a = (i / max(1, total)) * pi * 2 + (timeCounter * 0.5)
+                targetPos = baseCenterPos + Vector3.new(cos(a) * settings.width, settings.height + sin(timeCounter + i) * 0.5, sin(a) * settings.width)
+                o.SyncGyro.CFrame = CFrame.new(o.Position, baseCenterPos + Vector3.new(0, 10, 0))
+            elseif mode == "Geometry" then
+                local n = 12 
+                local sA = timeCounter * 1.5 + data.phase
+                local lA = ((i - 1) % n / n) * pi * 2 + (timeCounter * 0.2)
+                targetPos = baseCenterPos + Vector3.new(cos(lA) * settings.width + cos(sA) * 5, settings.height, sin(lA) * settings.width + sin(sA) * 5)
+                o.SyncGyro.CFrame = CFrame.new(o.Position, targetPos + Vector3.new(cos(lA), 0, sin(lA)))
+            elseif mode == "Diagonal" then
+                local progress = (i / max(1, total)) * 2 - 1
+                local angle = timeCounter * 2
+                local offsetDirection
+                if i % 2 == 0 then offsetDirection = Vector3.new(progress, progress, 0)
+                else offsetDirection = Vector3.new(-progress, progress, 0) end
+                local rotatedOffset = CFrame.Angles(0, angle, 0) * (offsetDirection * settings.width)
+                targetPos = baseCenterPos + Vector3.new(0, settings.height, 0) + rotatedOffset
+                o.SyncGyro.CFrame = hrp.CFrame * CFrame.Angles(timeCounter, timeCounter, 0)
+            elseif mode == "Square" then
+                local side = (i - 1) % 4
+                local countPerSide = max(1, total / 4)
+                local inSideIndex = math.floor((i - 1) / 4)
+                local progress = (inSideIndex / countPerSide) * 2 - 1
+                local halfW = settings.width
+                local offsetDirection
+                if side == 0 then offsetDirection = Vector3.new(progress * halfW, 0, -halfW)
+                elseif side == 1 then offsetDirection = Vector3.new(progress * halfW, 0, halfW)
+                elseif side == 2 then offsetDirection = Vector3.new(-halfW, 0, progress * halfW)
+                else offsetDirection = Vector3.new(halfW, 0, progress * halfW) end
+                local angle = timeCounter
+                local rotatedOffset = CFrame.Angles(0, angle, 0) * offsetDirection
+                targetPos = baseCenterPos + Vector3.new(0, settings.height, 0) + rotatedOffset
+                o.SyncGyro.CFrame = hrp.CFrame * CFrame.Angles(0, angle, 0)
+            elseif mode == "Spin" then
+                local orbitAngle = (timeCounter * 3) + (i / max(1, total) * pi * 2)
+                local radius = settings.width * (0.6 + (i % 3) * 0.2)
+                local yOffset = settings.height + sin(timeCounter * 2 + i) * 2
+                targetPos = baseCenterPos + Vector3.new(cos(orbitAngle) * radius, yOffset, sin(orbitAngle) * radius)
+                local spinAngle = timeCounter * 15
+                o.SyncGyro.CFrame = CFrame.new(o.Position, targetPos) * CFrame.Angles(spinAngle, spinAngle * 0.5, spinAngle * 0.2)
+            elseif mode == "MagicCircle2" then
+                local angle, radius
+                local halfTotal = max(1, total / 2)
+                if i % 2 == 0 then
+                    angle = (timeCounter * 1.8) + ((i / 2) / halfTotal * pi * 2)
+                    radius = settings.width
+                else
+                    angle = -(timeCounter * 1.8) + (((i + 1) / 2) / halfTotal * pi * 2)
+                    radius = settings.width * 0.55
+                end
+                local res = 0.25
+                local x = sign(cos(angle)) * pow(abs(cos(angle)), res) * radius
+                local z = sign(sin(angle)) * pow(abs(sin(angle)), res) * radius
+                local wave = sin(timeCounter * 2.5 + i) * 1.5
+                local tilt = CFrame.Angles(rad(8), 0, rad(8))
+                targetPos = baseCenterPos + Vector3.new(0, settings.height + wave, 0) + (tilt * Vector3.new(x, 0, z))
+                o.SyncGyro.CFrame = hrp.CFrame * tilt * CFrame.Angles(0, angle, timeCounter)
+            elseif mode == "Barrier" then
+                local limb = (i - 1) % 6
+                local countPerLimb = max(1, total / 6)
+                local inLimbIndex = math.floor((i - 1) / 6)
+                local progress = inLimbIndex / countPerLimb
+                local scale = settings.width * 0.4
+                local localOffset = Vector3.zero
+                local behindDist = -scale * 1.2
+                local baseHeight = settings.height
+                if limb == 0 then
+                    local angle = progress * pi * 2 + (timeCounter * 2)
+                    localOffset = Vector3.new(cos(angle) * (scale * 0.3), baseHeight + scale * 1.2 + sin(angle) * (scale * 0.1), behindDist)
+                elseif limb == 1 then
+                    local yPos = baseHeight + (1 - progress * 2) * (scale * 0.5)
+                    localOffset = Vector3.new(0, yPos, behindDist)
+                elseif limb == 2 then
+                    localOffset = Vector3.new(scale * 0.4 + progress * scale * 0.8, baseHeight + scale * 0.3 - progress * scale * 0.4, behindDist)
+                elseif limb == 3 then
+                    localOffset = Vector3.new(-(scale * 0.4 + progress * scale * 0.8), baseHeight + scale * 0.3 - progress * scale * 0.4, behindDist)
+                elseif limb == 4 then
+                    localOffset = Vector3.new(scale * 0.2 + progress * scale * 0.6, baseHeight - scale * 0.5 - progress * scale * 1.0, behindDist)
+                    localOffset = localOffset + Vector3.new(0, 0, sin(timeCounter * 3 + progress) * 0.5)
+                else
+                    localOffset = Vector3.new(-(scale * 0.2 + progress * scale * 0.6), baseHeight - scale * 0.5 - progress * scale * 1.0, behindDist)
+                    localOffset = localOffset + Vector3.new(0, 0, -sin(timeCounter * 3 + progress) * 0.5)
+                end
+                targetPos = (hrp.CFrame * CFrame.new(localOffset)).Position
+                o.SyncGyro.CFrame = hrp.CFrame
+            elseif mode == "Pillar" then
+                local pillarIndex = (i - 1) % 6
+                local inPillarIndex = math.floor((i - 1) / 6)
+                local angle = (pillarIndex * (pi * 2 / 6)) + (timeCounter * 0.5)
+                local radius = settings.width
+                local baseX = cos(angle) * radius
+                local baseZ = sin(angle) * radius
+                local heightSpacing = 2.2
+                local yPos = settings.height + (inPillarIndex * heightSpacing)
+                targetPos = baseCenterPos + Vector3.new(baseX, yPos, baseZ)
+                o.SyncGyro.CFrame = CFrame.new(targetPos, baseCenterPos + Vector3.new(0, yPos - settings.height, 0))
+            elseif mode == "MagicCircle3" then
+                local ring = (i - 1) % 3
+                local countPerRing = max(1, total / 3)
+                local inRingIdx = math.floor((i - 1) / 3)
+                local angle, radius
+                if ring == 0 then
+                    angle = (timeCounter * 1.5) + (inRingIdx / countPerRing * pi * 2)
+                    radius = settings.width
+                elseif ring == 1 then
+                    angle = -(timeCounter * 2.2) + (inRingIdx / countPerRing * pi * 2)
+                    radius = settings.width * 0.65
+                else
+                    angle = (timeCounter * 3.0) + (inRingIdx / countPerRing * pi * 2)
+                    radius = settings.width * 0.35
+                end
+                local wave = sin(timeCounter * 4 - radius * 0.2) * 2
+                targetPos = baseCenterPos + Vector3.new(cos(angle) * radius, settings.height + wave, sin(angle) * radius)
+                o.SyncGyro.CFrame = hrp.CFrame * CFrame.Angles(0, angle, 0)
+            elseif mode == "MagicCircle4" then
+                local angle = (i % 2 == 0) and (timeCounter * 2.5) or -(timeCounter * 1.5)
+                local radius = (i % 2 == 0) and settings.width or settings.width * 0.5
+                angle = angle + (i / max(1, total) * pi * 2)
+                local waveY = sin(timeCounter + i) * 1.2
+                targetPos = baseCenterPos + Vector3.new(cos(angle) * radius, settings.height + waveY, sin(angle) * radius)
+                o.SyncGyro.CFrame = hrp.CFrame * CFrame.Angles(0, angle, 0)
+            elseif mode == "MagicCircle5" then
+                local arm = (i - 1) % 3
+                local inArm = math.floor((i - 1) / 3)
+                local progress = inArm / max(1, total / 3)
+                local angle = (arm * (pi * 2 / 3)) + timeCounter + (progress * 2)
+                local radius = progress * settings.width
+                targetPos = baseCenterPos + Vector3.new(cos(angle) * radius, settings.height, sin(angle) * radius)
+                o.SyncGyro.CFrame = CFrame.new(o.Position, baseCenterPos)
+            elseif mode == "MagicCircle6" then
+                local angle = timeCounter * 1.8 + (i / max(1, total) * pi * 2)
+                local radius = settings.width * 0.7
+                local localOffset = Vector3.new(cos(angle) * radius, sin(angle) * radius, -4)
+                targetPos = (hrp.CFrame * CFrame.new(localOffset + Vector3.new(0, settings.height - 5, 0))).Position
+                o.SyncGyro.CFrame = hrp.CFrame * CFrame.Angles(0, 0, angle)
+            elseif mode == "MagicCircle7" then
+                local step = (i / max(1, total)) * pi * 2
+                local starAngle = timeCounter * 1.2 + step
+                local r = settings.width * (0.6 + 0.4 * sin(starAngle * 5))
+                targetPos = baseCenterPos + Vector3.new(cos(starAngle) * r, settings.height, sin(starAngle) * r)
+                o.SyncGyro.CFrame = hrp.CFrame * CFrame.Angles(0, starAngle, 0)
+            elseif mode == "MagicCircle8" then
+                local progress = (i / max(1, total))
+                local angle = (progress * pi * 6) + timeCounter * 3
+                local radius = settings.width * 0.6
+                local yOffset = (settings.height - 3) + (progress * 6)
+                if i % 2 == 0 then angle = angle + pi end
+                targetPos = baseCenterPos + Vector3.new(cos(angle) * radius, yOffset, sin(angle) * radius)
+                o.SyncGyro.CFrame = CFrame.Angles(0, angle, 0)
+            elseif mode == "Sun" then
+                local isFlare = (i % 3 == 0)
+                local t = timeCounter + data.seed
+                local sunScale = settings.width * 0.3
+                if not isFlare then
+                    local phi = data.seed * pi
+                    local theta = (i / max(1, total)) * pi * 2 + timeCounter
+                    local localOffset = Vector3.new(cos(theta) * sin(phi), cos(phi), sin(theta) * sin(phi)) * sunScale
+                    targetPos = baseCenterPos + Vector3.new(0, settings.height + 6, 0) + localOffset
+                else
+                    local angle = (i / max(1, total)) * pi * 2 + (timeCounter * 0.5)
+                    local flareDist = settings.width * (0.3 + abs(sin(timeCounter * 3 + data.seed)) * 0.7)
+                    targetPos = baseCenterPos + Vector3.new(cos(angle) * flareDist, settings.height + 6 + sin(t)*2, sin(angle) * flareDist)
+                end
+                o.SyncGyro.CFrame = CFrame.Angles(t, t, t)
+            elseif mode == "Tornado" then
+                local progress = ((i / max(1, total)) + (timeCounter * 1.2)) % 1
+                local yOffset = (settings.height - 4) + (progress * settings.width * 1.5)
+                local radius = (progress * settings.width * 0.8) + 1.5
+                local angle = (timeCounter * 12) + (progress * pi * 4) + (i * (pi * 2 / 8))
+                local swayX = sin(timeCounter * 3 + (yOffset * 0.2)) * 1.5
+                local swayZ = cos(timeCounter * 3 + (yOffset * 0.2)) * 1.5
+                targetPos = baseCenterPos + Vector3.new((cos(angle) * radius) + swayX, yOffset, (sin(angle) * radius) + swayZ)
+                o.SyncGyro.CFrame = CFrame.new(o.Position, baseCenterPos + Vector3.new(swayX, yOffset - settings.height, swayZ)) * CFrame.Angles(0, timeCounter * 4, 0)
+            elseif mode == "Star" then
+                local pointIdx = (i - 1) % 5
+                local countPerLine = max(1, total / 5)
+                local inLineIdx = math.floor((i - 1) / 5)
+                local progress = inLineIdx / countPerLine
+                local starPoints = {0, 2, 4, 1, 3, 0}
+                local p1 = starPoints[pointIdx + 1]
+                local p2 = starPoints[pointIdx + 2]
+                local function getStarVertex(idx)
+                    local a = (idx * (pi * 2 / 5)) - (pi / 2) + timeCounter
+                    return Vector3.new(cos(a), 0, sin(a)) * settings.width
+                end
+                targetPos = baseCenterPos + Vector3.new(0, settings.height, 0) + getStarVertex(p1):Lerp(getStarVertex(p2), progress)
+                o.SyncGyro.CFrame = hrp.CFrame * CFrame.Angles(0, timeCounter, 0)
+            elseif mode == "Pinecone" then
+                -- 松ぼっくりモードのタイポ（iLayerIdx -> inLayerIdx）を修正
+                local layer = (i - 1) % 5
+                local inLayerIdx = math.floor((i - 1) / 5)
+                local countPerLayer = max(1, total / 5)
+                local progress = inLayerIdx / countPerLayer
+                local yOffset = settings.height + (layer * 1.8) - 2.5
+                local radius = (settings.width * 0.45) * (1 - (layer / 6) * 0.7)
+                local angle = (progress * pi * 2) + (layer * pi / 3) + (timeCounter * 0.5)
+                targetPos = baseCenterPos + Vector3.new(cos(angle) * radius, yOffset, sin(angle) * radius)
+                o.SyncGyro.CFrame = CFrame.new(o.Position, baseCenterPos + Vector3.new(0, yOffset, 0)) * CFrame.Angles(rad(15), angle, 0)
+            elseif mode == "Meteor" then
+                local t = (timeCounter * 2 + data.seed * 5) % 5
+                local startOffset = Vector3.new(15, 30, 15)
+                local endOffset = Vector3.new(cos(data.phase) * settings.width, settings.height - 2, sin(data.phase) * settings.width)
+                local progress = t / 5
+                targetPos = baseCenterPos + startOffset:Lerp(endOffset, progress)
+                o.SyncGyro.CFrame = CFrame.new(startOffset, endOffset)
+            elseif mode == "Stone" then
+                local angle = data.phase + (timeCounter * 0.05)
+                local radius = (i / max(1, total)) * (settings.width * 0.6)
+                local groundY = settings.height - 3.5 + abs(sin(i * 10)) * 0.5
+                targetPos = baseCenterPos + Vector3.new(cos(angle) * radius, groundY, sin(angle) * radius)
+                o.SyncGyro.CFrame = CFrame.Angles(data.seed, data.phase, i)
+            elseif mode == "Water" then
+                local waveT = (timeCounter * 1.5 + (i / max(1, total)) * pi * 2) % (pi * 2)
+                local radius = settings.width * 0.4 + sin(waveT) * (settings.width * 0.3)
+                local angle = (i / max(1, total)) * pi * 2 + (timeCounter * 0.2)
+                targetPos = baseCenterPos + Vector3.new(cos(angle) * radius, settings.height - 3, sin(angle) * radius)
+                o.SyncGyro.CFrame = hrp.CFrame * CFrame.Angles(0, angle + pi/2, 0)
+            elseif mode == "Fire" then
+                local progress = ((i / max(1, total)) + (timeCounter * 0.8)) % 1
+                local yPos = (settings.height - 3) + (progress * settings.width * 0.8)
+                local radius = (1 - progress) * (settings.width * 0.4)
+                local angle = (i * 13) + (timeCounter * 4)
+                targetPos = baseCenterPos + Vector3.new(cos(angle) * radius, yPos, sin(angle) * radius)
+                o.SyncGyro.CFrame = CFrame.Angles(timeCounter, i, 0)
+            elseif mode == "Ice" then
+                local segment = (i - 1) % 6
+                local inSegment = math.floor((i - 1) / 6)
+                local progress = inSegment / max(1, total / 6)
+                local angle = (segment * (pi * 2 / 6)) + timeCounter * 0.2
+                local radius = progress * settings.width * 0.8
+                local iceY = (settings.height - 3.8) + (progress * settings.height * 1.2)
+                targetPos = baseCenterPos + Vector3.new(cos(angle) * radius, iceY, sin(angle) * radius)
+                o.SyncGyro.CFrame = CFrame.new(o.Position, baseCenterPos + Vector3.new(0, settings.height, 0)) * CFrame.Angles(rad(45), 0, 0)
+            elseif mode == "Ball" then
+                local phi = (i / max(1, total)) * pi
+                local theta = (i * 1.618033) * (pi * 2) + timeCounter
+                local radius = settings.width * 0.6
+                targetPos = baseCenterPos + Vector3.new(cos(theta) * sin(phi), cos(phi), sin(theta) * sin(phi)) * radius + Vector3.new(0, settings.height, 0)
+                o.SyncGyro.CFrame = CFrame.new(targetPos, baseCenterPos + Vector3.new(0, settings.height, 0))
+            elseif mode == "Thread" then
+                local spacing = 1.2
+                local trailIndex = i
+                local angle = (timeCounter * 4) - (trailIndex * 0.15)
+                local waveY = sin(angle) * 2
+                targetPos = (CFrame.new(baseCenterPos) * hrp.CFrame.Rotation * CFrame.new(sin(angle * 0.5) * 2, settings.height + waveY, -(trailIndex * spacing))).Position
+                o.SyncGyro.CFrame = hrp.CFrame
+            elseif mode == "Lightning" then
+                local step = math.floor(timeCounter * 8)
+                local randX = sin(step + i * 7) * (settings.width * 0.5)
+                local randY = cos(step + i * 3) * (settings.width * 0.3) + settings.height
+                local randZ = sin(step - i * 5) * (settings.width * 0.5)
+                targetPos = baseCenterPos + Vector3.new(randX, randY, randZ)
+                o.SyncGyro.CFrame = CFrame.Angles(randX, randY, randZ)
+            elseif mode == "Beam" then
+                local progress = (i / max(1, total))
+                local length = settings.width * 2.5
+                targetPos = (CFrame.new(baseCenterPos) * hrp.CFrame.Rotation * CFrame.new(0, settings.height, -(progress * length))).Position
+                o.SyncGyro.CFrame = hrp.CFrame
+            elseif mode == "Hammer" then
+                local isHandle = (i % 3 ~= 0)
+                local scale = settings.width * 0.4
+                if isHandle then
+                    local progress = (i / max(1, total))
+                    targetPos = (CFrame.new(baseCenterPos) * hrp.CFrame.Rotation * CFrame.new(scale * 1.5, settings.height - scale + (progress * scale * 2), -scale * 0.5)).Position
+                else
+                    local progress = ((i % 10) / 10) * 2 - 1
+                    targetPos = (CFrame.new(baseCenterPos) * hrp.CFrame.Rotation * CFrame.new(scale * 1.5 + (progress * scale * 0.6), settings.height + scale, -scale * 0.5)).Position
+                end
+                o.SyncGyro.CFrame = hrp.CFrame * CFrame.Angles(0, 0, rad(-20))
+            elseif mode == "Blackhole" then
+                local angle = (timeCounter * 5) + (i * (pi * 2 / 8))
+                local pullProgress = (data.seed + timeCounter * 0.4) % 1
+                local radius = settings.width * 0.8 * (1 - pullProgress)
+                local zOffset = sin(timeCounter + i) * 0.5
+                targetPos = baseCenterPos + Vector3.new(cos(angle) * radius, settings.height + 5 + zOffset, sin(angle) * radius)
+                o.SyncGyro.CFrame = CFrame.new(targetPos, baseCenterPos + Vector3.new(0, settings.height + 5, 0)) * CFrame.Angles(timeCounter, 0, 0)
+            elseif mode == "Rock" then
+                local row = (i - 1) % 4
+                local col = math.floor((i - 1) / 4) % 4
+                local heightLayer = math.floor((i - 1) / 16)
+                local scale = settings.width * 0.2
+                local localX = (row - 1.5) * scale + sin(i) * 0.3
+                local localY = (heightLayer) * scale + settings.height - 2
+                local localZ = -settings.width * 0.5 + (col - 1.5) * scale + cos(i) * 0.3
+                targetPos = (CFrame.new(baseCenterPos) * hrp.CFrame.Rotation * CFrame.new(localX, localY, localZ)).Position
+                o.SyncGyro.CFrame = hrp.CFrame * CFrame.Angles(data.seed, data.phase, 0)
+            elseif mode == "Bug" then
+                local bugStep = math.floor(timeCounter * 6)
+                local offsetX = sin(bugStep + i) * settings.width * 0.6
+                local offsetY = settings.height + cos(bugStep * 1.5 + i) * (settings.width * 0.3)
+                local offsetZ = sin(bugStep * 2 - i) * settings.width * 0.6
+                targetPos = baseCenterPos + Vector3.new(offsetX, offsetY, offsetZ)
+                o.SyncGyro.CFrame = CFrame.Angles(offsetX, offsetY, offsetZ)
+            elseif mode == "Supernova" then
+                local cycle = 3.5
+                local t = (timeCounter % cycle) / cycle
+                local radius
+                if t < 0.6 then radius = settings.width * 1.2 * (1 - t/0.6) + 0.1
+                elseif t < 0.75 then radius = 0.1 + (((t - 0.6) / 0.15) * settings.width * 1.6)
+                else radius = (settings.width * 1.6) + (((t - 0.75) / 0.25) * settings.width * 0.2) end
+                local phi = data.seed * pi
+                local theta = (i / max(1, total)) * pi * 2 + (timeCounter * 0.5)
+                targetPos = baseCenterPos + Vector3.new(cos(theta) * sin(phi), cos(phi), sin(theta) * sin(phi)) * radius + Vector3.new(0, settings.height, 0)
+                o.SyncGyro.CFrame = CFrame.Angles(timeCounter * 6, timeCounter * 4, i)
+            elseif mode == "Explosion" then
+                local cycle = 2.0
+                local t = (timeCounter % cycle) / cycle
+                local radius, yDrop
+                if t < 0.2 then radius = (t / 0.2) * settings.width * (0.8 + sin(i)*0.4); yDrop = 0
+                else radius = settings.width * (0.8 + sin(i)*0.4) + ((t - 0.2)/0.8 * 2); yDrop = -((t - 0.2)/0.8) * 4.5 end
+                local angle = (i / max(1, total)) * pi * 2 + data.phase
+                local heightOffset = settings.height + (cos(i * 7) * settings.width * 0.3) + yDrop
+                targetPos = baseCenterPos + Vector3.new(cos(angle) * radius, heightOffset, sin(angle) * radius)
+                o.SyncGyro.CFrame = CFrame.Angles(timeCounter * 12, i, timeCounter * 5)
+            elseif mode == "Bomb" then
+                local bombScale = settings.width * 0.4
+                local phi = data.seed * pi
+                local theta = (i / max(1, total)) * pi * 2 + (timeCounter * 0.2)
+                targetPos = (CFrame.new(baseCenterPos) * hrp.CFrame.Rotation * CFrame.new(cos(theta) * sin(phi) * bombScale, settings.height + sin(theta) * sin(phi) * bombScale, -bombScale * 1.5)).Position
+                o.SyncGyro.CFrame = hrp.CFrame
+            elseif mode == "Magma" then
+                local angle = (i / max(1, total)) * pi * 2
+                local radius = settings.width * 0.5 + sin(timeCounter + i) * 2
+                local waveY = settings.height - 3.8 + sin(timeCounter * 2 + (i % 5)) * 0.6
+                targetPos = baseCenterPos + Vector3.new(cos(angle) * radius, waveY, sin(angle) * radius)
+                o.SyncGyro.CFrame = hrp.CFrame * CFrame.Angles(rad(90), 0, angle)
+            elseif mode == "Hexagon" then
+                local side = (i - 1) % 6
+                local countPerSide = max(1, total / 6)
+                local inSideIdx = math.floor((i - 1) / 6)
+                local progress = inSideIdx / countPerSide
+                local function getHexVertex(idx)
+                    local a = (idx * (pi * 2 / 6)) + (timeCounter * 0.6)
+                    return Vector3.new(cos(a), sin(a), 0) * (settings.width * 0.5)
+                end
+                local localOffset = getHexVertex(side):Lerp(getHexVertex(side + 1), progress) + Vector3.new(0, settings.height, -settings.width * 0.6)
+                targetPos = (hrp.CFrame * CFrame.new(localOffset)).Position
+                o.SyncGyro.CFrame = hrp.CFrame * CFrame.Angles(0, 0, timeCounter * 0.6)
+            elseif mode == "Rice" then
+                local t = timeCounter * 3 + data.seed * 10
+                local radius = settings.width * 0.4 + sin(timeCounter * 0.5 + data.phase) * 3
+                local angle = data.phase + (timeCounter * 0.3)
+                local hoverY = settings.height + sin(t) * 1.2
+                targetPos = baseCenterPos + Vector3.new(cos(angle) * radius, hoverY, sin(angle) * radius)
+                o.SyncGyro.CFrame = CFrame.Angles(t, angle, sin(t * 2))
+            elseif mode == "Expansion" then
+                local cycle = 4.0
+                local t = (timeCounter % cycle) / cycle
+                local phi = data.seed * pi
+                local theta = (i / max(1, total)) * pi * 2 + (timeCounter * 0.2)
+                local radius = settings.width * 0.9 * t
+                targetPos = baseCenterPos + Vector3.new(cos(theta) * sin(phi), cos(phi), sin(theta) * sin(phi)) * radius + Vector3.new(0, settings.height, 0)
+                o.SyncGyro.CFrame = CFrame.new(targetPos, baseCenterPos + Vector3.new(0, settings.height, 0))
+            elseif mode == "Dirt" then
+                local t = timeCounter * 2 + data.seed * 8
+                local radius = (abs(sin(t * 0.5)) * settings.width * 0.7) + 2
+                local angle = data.phase + (timeCounter * 0.4)
+                local dirtY = settings.height - 3.8 + (abs(cos(t * 3)) * 1.5)
+                targetPos = baseCenterPos + Vector3.new(cos(angle) * radius, dirtY, sin(angle) * radius)
+                o.SyncGyro.CFrame = CFrame.Angles(t, i, t * 0.5)
+            elseif mode == "Carpet" then
+                local sideSize = math.ceil(math.sqrt(max(1, total)))
+                local spacing = 2.5
+                local offsetX = ((i - 1) % sideSize - (sideSize / 2)) * spacing
+                local offsetZ = (math.floor((i - 1) / sideSize) - (sideSize / 2)) * spacing
+                targetPos = (hrp.CFrame * CFrame.new(offsetX, settings.height - 3.8, offsetZ)).Position
+                o.SyncGyro.CFrame = hrp.CFrame
+            elseif mode == "Heart" then
+                local angle = (i / max(1, total)) * pi * 2
+                local hx = 16 * pow(sin(angle), 3)
+                local hz = 13 * cos(angle) - 5 * cos(2 * angle) - 2 * cos(3 * angle) - cos(4 * angle)
+                local scale = settings.width * 0.05
+                local localOffset = Vector3.new(hx * scale, hz * scale + settings.height, -5)
+                targetPos = baseCenterPos + (CFrame.Angles(0, timeCounter, 0) * localOffset)
+                o.SyncGyro.CFrame = hrp.CFrame * CFrame.Angles(0, timeCounter, 0)
+            elseif mode == "Triangle" or mode == "Pentagon" or mode == "HexagonNew" or mode == "Heptagon" then
+                local sidesMap = {Triangle = 3, Pentagon = 5, HexagonNew = 6, Heptagon = 7}
+                local sides = sidesMap[mode]
+                local side = (i - 1) % sides
+                local progress = math.floor((i - 1) / sides) / max(1, total / sides)
+                local function getVertex(idx)
+                    local a = (idx * (pi * 2 / sides)) + timeCounter
+                    return Vector3.new(cos(a), 0, sin(a)) * settings.width
+                end
+                targetPos = baseCenterPos + Vector3.new(0, settings.height, 0) + getVertex(side):Lerp(getVertex(side + 1), progress)
+                o.SyncGyro.CFrame = CFrame.new(o.Position, baseCenterPos)
+            elseif mode == "SunNew" then
+                local t = timeCounter + data.seed * 5
+                local radius = settings.width * 0.35
+                local flare = sin(timeCounter * 4 + i) * (settings.width * 0.15)
+                local phi = (i / max(1, total)) * pi
+                local theta = (i * 1.7) * pi * 2 + (timeCounter * 0.5)
+                targetPos = baseCenterPos + Vector3.new(cos(theta) * sin(phi), cos(phi), sin(theta) * sin(phi)) * (radius + flare) + Vector3.new(0, settings.height + 5, 0)
+                o.SyncGyro.CFrame = CFrame.Angles(t, t, 0)
+            elseif mode == "Wings" then
+                local isRight = (i % 2 == 0)
+                local idx = math.floor((i - 1) / 2)
+                local countPerWing = max(1, total / 2)
+                local progress = idx / countPerWing
+                local flap = sin(timeCounter * 3) * rad(20)
+                local wingAngle = isRight and (rad(30) + flap) or (-rad(30) - flap)
+                local extX = isRight and (progress * settings.width * 0.6) or (-progress * settings.width * 0.6)
+                local extY = progress * settings.height * 0.8 - (progress * progress * 2)
+                local localOffset = Vector3.new(extX + (isRight and 1.5 or -1.5), settings.height + extY, -1.2)
+                targetPos = (hrp.CFrame * CFrame.new(localOffset)).Position
+                o.SyncGyro.CFrame = hrp.CFrame * CFrame.Angles(0, wingAngle, 0)
+            elseif mode == "Cosmos" then
+                local orbitIdx = (i % 3) + 1
+                local radius = settings.width * (0.3 * orbitIdx)
+                local angle = (timeCounter * (2 / orbitIdx)) + (i * (pi * 2 / max(1, total)))
+                local tilt = CFrame.Angles(rad(15 * (orbitIdx - 2)), 0, rad(10 * (orbitIdx - 2)))
+                targetPos = baseCenterPos + Vector3.new(0, settings.height, 0) + (tilt * Vector3.new(cos(angle) * radius, sin(timeCounter + i) * 0.5, sin(angle) * radius))
+                o.SyncGyro.CFrame = CFrame.Angles(timeCounter, timeCounter, 0)
+            elseif mode == "BigBang" then
+                local cycle = 3.0
+                local t = (timeCounter % cycle) / cycle
+                local radius
+                if t < 0.25 then radius = 0.1 + (t / 0.25) * 1.5
+                else radius = 1.5 + ((t - 0.25) / 0.75) * settings.width * 1.8 end
+                local phi = data.seed * pi
+                local theta = (i * 2.3) * pi * 2 + timeCounter
+                targetPos = baseCenterPos + Vector3.new(cos(theta) * sin(phi), cos(phi), sin(theta) * sin(phi)) * radius + Vector3.new(0, settings.height, 0)
+                o.SyncGyro.CFrame = CFrame.Angles(timeCounter * 8, i, 0)
+            elseif mode == "Umbrella" then
+                local angle = (i / max(1, total)) * pi * 2 + timeCounter
+                local radius = settings.width * 0.6
+                local slopeY = (1 - (radius / settings.width)) * 3
+                targetPos = baseCenterPos + Vector3.new(cos(angle) * radius, settings.height + 4 - slopeY, sin(angle) * radius)
+                o.SyncGyro.CFrame = hrp.CFrame * CFrame.Angles(0, angle, rad(15))
+            elseif mode == "ThreeSpheres" then
+                local group = i % 3
+                local groupAngle = (timeCounter * 1.5) + (group * pi * 2 / 3)
+                local groupCenter = baseCenterPos + Vector3.new(cos(groupAngle) * settings.width, settings.height, sin(groupAngle) * settings.width)
+                local inGroupIdx = math.floor((i - 1) / 3)
+                local phi = (inGroupIdx * 0.1) * pi
+                local theta = (inGroupIdx * 1.5) * pi * 2 + (timeCounter * 4)
+                local subRadius = 2.5
+                targetPos = groupCenter + Vector3.new(cos(theta) * sin(phi), cos(phi), sin(theta) * sin(phi)) * subRadius
+                o.SyncGyro.CFrame = CFrame.new(targetPos, groupCenter)
+            elseif mode == "Earthquake" then
+                local step = math.floor(timeCounter * 10)
+                local shakeX = sin(step + i) * 2.5
+                local shakeY = cos(step * 1.3 + i) * 1.8
+                local shakeZ = cos(step + i * 2) * 2.5
+                local radius = settings.width * 0.5
+                local angle = data.phase
+                targetPos = baseCenterPos + Vector3.new(cos(angle) * radius + shakeX, settings.height - 3.8 + shakeY, sin(angle) * radius + shakeZ)
+                o.SyncGyro.CFrame = CFrame.Angles(shakeX, shakeZ, 0)
+            elseif mode == "Cloud" then
+                local t = timeCounter * 0.5 + data.seed
+                local cloudW = settings.width * 0.6
+                local cx = sin(t * 0.6 + i) * cloudW
+                local cy = settings.height + 5 + cos(t * 0.8 + i) * 2.0
+                local cz = cos(t * 0.5 - i) * cloudW
+                targetPos = baseCenterPos + Vector3.new(cx, cy, cz)
+                o.SyncGyro.CFrame = CFrame.Angles(0, t, 0)
+            elseif mode == "ShootingStar" then
+                local fallT = (timeCounter * 1.8 + data.seed * 10) % 6
+                local progress = fallT / 6
+                local startPos = Vector3.new(cos(data.phase) * settings.width * 1.5, 25, sin(data.phase) * settings.width * 1.5)
+                local endPos = Vector3.new(cos(data.phase) * settings.width * 0.4, settings.height - 3.5, sin(data.phase) * settings.width * 0.4)
+                targetPos = baseCenterPos + startPos:Lerp(endPos, progress)
+                o.SyncGyro.CFrame = CFrame.new(startPos, endPos)
+            elseif mode == "Concept" then
+                local warpCycle = math.floor(timeCounter * 1.5)
+                if warpCycle % 2 == 0 then
+                    local angle = (i / max(1, total)) * pi * 2 + (timeCounter * 5)
+                    targetPos = baseCenterPos + Vector3.new(cos(angle) * settings.width, settings.height + sin(timeCounter * 10) * 4, sin(angle) * settings.width)
+                else
+                    local randX = sin(warpCycle + i * 5) * (settings.width * 1.2)
+                    local randY = cos(warpCycle - i * 3) * settings.height
+                    local randZ = cos(warpCycle + i * 2) * (settings.width * 1.2)
+                    targetPos = baseCenterPos + Vector3.new(randX, randY, randZ)
+                end
+                o.SyncGyro.CFrame = CFrame.Angles(timeCounter, timeCounter, timeCounter)
+            elseif mode == "Sand" then
+                local t = timeCounter * 2 + data.seed * 5
+                local radius = settings.width * 0.5 + sin(t * 0.5) * 2
+                local angle = data.phase + (timeCounter * 1.2)
+                local sandY = settings.height - 3.8 + (sin(t + i) * 0.8)
+                targetPos = baseCenterPos + Vector3.new(cos(angle) * radius, sandY, sin(angle) * radius)
+                o.SyncGyro.CFrame = CFrame.Angles(t, angle, 0)
+            elseif mode == "Candle" then
+                local angle = (i / max(1, total)) * pi * 2
+                local radius = settings.width * 0.6
+                local flicker = sin(timeCounter * 4 + i) * 0.6
+                targetPos = baseCenterPos + Vector3.new(cos(angle) * radius, settings.height - 2 + flicker, sin(angle) * radius)
+                o.SyncGyro.CFrame = hrp.CFrame
+            elseif mode == "Light" then
+                local speedMult = 5
+                local length = settings.width * 0.8
+                local pulse = abs(sin(timeCounter * speedMult + data.seed * pi)) * length
+                local phi = data.seed * pi
+                local theta = (i / max(1, total)) * pi * 2
+                targetPos = baseCenterPos + Vector3.new(cos(theta) * sin(phi), cos(phi), sin(theta) * sin(phi)) * pulse + Vector3.new(0, settings.height, 0)
+                o.SyncGyro.CFrame = CFrame.new(baseCenterPos, targetPos)
+            elseif mode == "God" then
+                local innerI = (i - 1) % 2
+                local ringIdx = math.floor((i - 1) / 2)
+                local angle = (ringIdx / max(1, total / 2)) * pi * 2 + (timeCounter * 0.5)
+                local radius = (innerI == 0) and (settings.width * 0.5) or (settings.width * 0.8)
+                local localOffset = Vector3.new(cos(angle) * radius, sin(angle) * radius + settings.height + 2, -2.5)
+                targetPos = baseCenterPos + (hrp.CFrame.Rotation * localOffset)
+                o.SyncGyro.CFrame = hrp.CFrame * CFrame.Angles(0, 0, angle)
+            elseif mode == "Crystal" then
+                local phi = (i / max(1, total)) * pi
+                local theta = (i * 3) + timeCounter
+                local radius = settings.width * 0.4 * (0.5 + abs(sin(phi)) * 0.5)
+                targetPos = baseCenterPos + Vector3.new(cos(theta) * radius, settings.height + 6 + cos(phi) * 3, sin(theta) * radius)
+                o.SyncGyro.CFrame = CFrame.Angles(theta, phi, 0)
+            elseif mode == "Tree" then
+                local layer = (i - 1) % 6
+                local idxInLayer = math.floor((i - 1) / 6)
+                local angle = (idxInLayer * pi * 2) / 8 + (timeCounter * 0.1)
+                local radius = (layer / 6) * settings.width * 0.7 + 1.5
+                targetPos = baseCenterPos + Vector3.new(cos(angle) * radius, settings.height - 3.8 + (layer * 2), sin(angle) * radius)
+                o.SyncGyro.CFrame = CFrame.new(o.Position, baseCenterPos + Vector3.new(0, settings.height, 0))
+            elseif mode == "Plant" then
+                local progress = ((i / max(1, total)) + (timeCounter * 0.5)) % 1
+                local angle = progress * pi * 8 + (i * pi / 2)
+                local radius = progress * settings.width * 0.5 + 1.0
+                targetPos = baseCenterPos + Vector3.new(cos(angle) * radius, settings.height - 3.8 + (progress * 12), sin(angle) * radius)
+                o.SyncGyro.CFrame = CFrame.Angles(0, angle, 0)
+            elseif mode == "Diamond" then
+                local side = (i - 1) % 4
+                local progress = math.floor((i - 1) / 4) / max(1, total / 4)
+                local angle = timeCounter
+                local function getDVertex(idx)
+                    local a = (idx * pi / 2) + angle
+                    return Vector3.new(cos(a), 0, sin(a)) * settings.width * 0.6
+                end
+                local edgePos = getDVertex(side):Lerp(getDVertex(side + 1), progress)
+                local heightOffset = sin(progress * pi) * (settings.height * 0.5)
+                targetPos = baseCenterPos + Vector3.new(edgePos.X, settings.height + heightOffset, edgePos.Z)
+                o.SyncGyro.CFrame = CFrame.new(o.Position, baseCenterPos + Vector3.new(0, settings.height, 0))
+            elseif mode == "Ruby" then
+                local pulse = sin(timeCounter * 4 + (i * 0.5)) * settings.width * 0.5
+                local angle = (i / max(1, total)) * pi * 2 + timeCounter
+                targetPos = baseCenterPos + Vector3.new(cos(angle) * (settings.width * 0.4 + pulse), settings.height + cos(timeCounter + i), sin(angle) * (settings.width * 0.4 + pulse))
+                o.SyncGyro.CFrame = CFrame.Angles(timeCounter, angle, i)
+            elseif mode == "Tentacle" then
+                local tIdx = (i - 1) % 4
+                local segIdx = math.floor((i - 1) / 4)
+                local segProgress = segIdx / 6
+                local baseAngle = (tIdx * pi / 2) + timeCounter * 0.5
+                local wave = sin(timeCounter * 5 - (segProgress * 4)) * 2
+                local tOffset = Vector3.new(cos(baseAngle) * (3 + segProgress * settings.width * 0.5), settings.height - 2 + (segProgress * 6) + wave, sin(baseAngle) * (3 + segProgress * settings.width * 0.5))
+                targetPos = baseCenterPos + tOffset
+                o.SyncGyro.CFrame = CFrame.Angles(wave * 0.1, baseAngle, 0)
+            elseif mode == "Wall" then
+                local row = (i - 1) % 5
+                local col = math.floor((i - 1) / 5)
+                local maxCol = max(1, total / 5)
+                local progressX = (col / maxCol) * 2 - 1
+                local localOffset = Vector3.new(progressX * settings.width * 0.6, settings.height - 2 + (row * 1.8), -6)
+                targetPos = (hrp.CFrame * CFrame.new(localOffset)).Position
+                o.SyncGyro.CFrame = hrp.CFrame
+            elseif mode == "MagicCircle11" then
+                local pulse = (timeCounter * 3 + (i / max(1, total)) * pi) % pi
+                local radius = pulse * settings.width
+                local angle = (i / max(1, total)) * pi * 2 + timeCounter
+                targetPos = baseCenterPos + Vector3.new(cos(angle) * radius, settings.height, sin(angle) * radius)
+                o.SyncGyro.CFrame = hrp.CFrame * CFrame.Angles(0, angle, 0)
+            elseif mode == "MagicCircle12" then
+                local angle = (i / max(1, total)) * pi * 2 + timeCounter
+                local waveY = sin(timeCounter * 4 + angle * 3) * 2.5
+                targetPos = baseCenterPos + Vector3.new(cos(angle) * settings.width, settings.height + waveY, sin(angle) * settings.width)
+                o.SyncGyro.CFrame = hrp.CFrame * CFrame.Angles(0, angle, 0)
+            elseif mode == "MagicCircle13" then
+                local blade = (i - 1) % 3
+                local progress = math.floor((i - 1) / 3) / max(1, total / 3)
+                local angle = (blade * pi * 2 / 3) + timeCounter * 4 + (progress * 0.5)
+                local radius = progress * settings.width
+                targetPos = baseCenterPos + Vector3.new(cos(angle) * radius, settings.height, sin(angle) * radius)
+                o.SyncGyro.CFrame = hrp.CFrame * CFrame.Angles(0, angle, 0)
+            elseif mode == "MagicCircle14" then
+                local t = (i / max(1, total)) * pi * 2 + timeCounter
+                local x = sin(t) * settings.width
+                local z = sin(t) * cos(t) * settings.width
+                targetPos = baseCenterPos + Vector3.new(x, settings.height, z)
+                o.SyncGyro.CFrame = CFrame.new(o.Position, baseCenterPos)
+            elseif mode == "MagicCircle15" then
+                local sub = (i - 1) % 4
+                local idx = math.floor((i - 1) / 4)
+                local subAngle = (sub * pi / 2) + timeCounter * 0.5
+                local subCenter = baseCenterPos + Vector3.new(cos(subAngle) * settings.width * 0.8, settings.height, sin(subAngle) * settings.width * 0.8)
+                local innerAngle = (idx / max(1, total / 4)) * pi * 2 - timeCounter * 2
+                targetPos = subCenter + Vector3.new(cos(innerAngle) * 3, 0, sin(innerAngle) * 3)
+                o.SyncGyro.CFrame = hrp.CFrame * CFrame.Angles(0, innerAngle, 0)
+            elseif mode == "MagicCircle16" then
+                local layer = (i - 1) % 3
+                local idx = math.floor((i - 1) / 3)
+                local speedMult = (layer == 1) and -2 or 1.5
+                local angle = (idx / max(1, total / 3)) * pi * 2 + timeCounter * speedMult
+                local radius = settings.width * (0.4 + layer * 0.3)
+                targetPos = baseCenterPos + Vector3.new(cos(angle) * radius, settings.height + (layer * 1.5) - 1.5, sin(angle) * radius)
+                o.SyncGyro.CFrame = hrp.CFrame * CFrame.Angles(0, angle, 0)
+            elseif mode == "MagicCircle17" then
+                local isTop = (i % 2 == 0)
+                local angle = (i / max(1, total)) * pi * 2 + timeCounter * 2
+                local yPos = isTop and (settings.height + 4) or (settings.height - 4)
+                targetPos = baseCenterPos + Vector3.new(cos(angle) * settings.width * 0.8, yPos, sin(angle) * settings.width * 0.8)
+                o.SyncGyro.CFrame = hrp.CFrame * CFrame.Angles(0, angle, 0)
+            elseif mode == "MagicCircle18" then
+                local progress = (i / max(1, total))
+                local angle = progress * pi * 8 + timeCounter * 2
+                local radius = progress * settings.width
+                targetPos = baseCenterPos + Vector3.new(cos(angle) * radius, settings.height, sin(angle) * radius)
+                o.SyncGyro.CFrame = CFrame.new(o.Position, baseCenterPos)
+            elseif mode == "MagicCircle19" then
+                local point = (i - 1) % 5
+                local progress = math.floor((i - 1) / 5) / max(1, total / 5)
+                local rot = timeCounter * 2
+                local function getV(idx)
+                    local a = (idx * pi * 2 / 5) + rot
+                    return Vector3.new(cos(a), 0, sin(a)) * settings.width
+                end
+                targetPos = baseCenterPos + Vector3.new(0, settings.height, 0) + getV(point):Lerp(getV(point + 1), progress)
+                o.SyncGyro.CFrame = hrp.CFrame * CFrame.Angles(0, rot * 2, 0)
+            elseif mode == "MagicCircle20" then
+                local t = timeCounter + (i * 0.1)
+                local x = sin(t * 1.1) * settings.width * 0.7
+                local y = settings.height + cos(t * 1.5) * 3
+                local z = sin(t * 0.7) * settings.width * 0.7
+                targetPos = baseCenterPos + Vector3.new(x, y, z)
+                o.SyncGyro.CFrame = CFrame.Angles(t, t*1.2, 0)
+            elseif mode == "Field" then
+                local size = math.ceil(math.sqrt(max(1, total)))
+                local gap = 2.4
+                local gx = ((i - 1) % size - (size / 2)) * gap
+                local gz = (math.floor((i - 1) / size) - (size / 2)) * gap
+                targetPos = baseCenterPos + Vector3.new(gx, settings.height - 3.8, gz)
+                o.SyncGyro.CFrame = hrp.CFrame
+            elseif mode == "RearShoot" then
+                local shootInterval = 3.0
+                local phaseTime = timeCounter % shootInterval
+                if phaseTime < 2.0 then
+                    local cols = 5; local idx = i - 1
+                    local r = math.floor(idx / cols); local c = idx % cols
+                    local lx = (c - (cols / 2)) * 2.0; local ly = r * 2.0 + settings.height
+                    targetPos = (hrp.CFrame * CFrame.new(lx, ly, 4 + (r * 1.5))).Position
+                    o.SyncGyro.CFrame = hrp.CFrame
+                else
+                    local progress = (phaseTime - 2.0) / (shootInterval - 2.0)
+                    local cols = 5; local idx = i - 1
+                    local r = math.floor(idx / cols); local c = idx % cols
+                    local lx = (c - (cols / 2)) * 2.0; local ly = r * 2.0 + settings.height
+                    local startPos = (hrp.CFrame * CFrame.new(lx, ly, 4 + (r * 1.5))).Position
+                    local forwardPos = (hrp.CFrame * CFrame.new(lx, ly, -settings.width * 4)).Position
+                    targetPos = startPos:Lerp(forwardPos, progress)
+                    o.SyncGyro.CFrame = hrp.CFrame * CFrame.Angles(timeCounter * 5, 0, 0)
+                end
+            elseif mode == "Mercury" then
+                local angle = timeCounter * 3.5 + (i * (pi * 2 / max(1, total)))
+                targetPos = baseCenterPos + Vector3.new(cos(angle) * (settings.width * 0.25), settings.height - 1, sin(angle) * (settings.width * 0.25))
+                o.SyncGyro.CFrame = CFrame.new(o.Position, baseCenterPos)
+            elseif mode == "Venus" then
+                local angle = timeCounter * 2.2 + (i * (pi * 2 / max(1, total)))
+                local waveY = sin(timeCounter * 5 + i) * 1.5
+                targetPos = baseCenterPos + Vector3.new(cos(angle) * (settings.width * 0.45), settings.height + waveY, sin(angle) * (settings.width * 0.45))
+                o.SyncGyro.CFrame = CFrame.Angles(timeCounter, angle, 0)
+            elseif mode == "Earth" then
+                local angle = timeCounter * 1.5 + (i * (pi * 2 / max(1, total)))
+                local baseOrbit = baseCenterPos + Vector3.new(cos(angle) * (settings.width * 0.6), settings.height, sin(angle) * (settings.width * 0.6))
+                if i == 1 then
+                    local moonAngle = timeCounter * 6
+                    targetPos = baseOrbit + Vector3.new(cos(moonAngle) * 2.5, sin(moonAngle) * 0.8, sin(moonAngle) * 2.5)
+                else targetPos = baseOrbit end
+                o.SyncGyro.CFrame = CFrame.Angles(0, timeCounter * 3, 0)
+            elseif mode == "Mars" then
+                local angle = timeCounter * 1.2 + (i * (pi * 2 / max(1, total)))
+                local rx = settings.width * 0.75; local rz = settings.width * 0.5
+                targetPos = baseCenterPos + Vector3.new(cos(angle) * rx, settings.height + sin(angle) * 0.5, sin(angle) * rz)
+                o.SyncGyro.CFrame = CFrame.new(o.Position, baseCenterPos)
+            elseif mode == "Jupiter" then
+                local angle = timeCounter * 0.8 + (i * (pi * 2 / max(1, total)))
+                local isSpot = (i % 4 == 0)
+                local r = isSpot and (settings.width * 0.95) or (settings.width * 0.9)
+                local y = isSpot and (settings.height - 1 + sin(timeCounter * 4) * 0.5) or (settings.height + cos(i) * 2)
+                targetPos = baseCenterPos + Vector3.new(cos(angle) * r, y, sin(angle) * r)
+                o.SyncGyro.CFrame = CFrame.Angles(0, timeCounter, i)
+            elseif mode == "Saturn" then
+                local half = max(1, total / 2)
+                local angle = timeCounter * 0.6 + (i * (pi * 2 / max(1, total)))
+                if i <= half then
+                    local ringR = settings.width * 1.0 + (i % 3) * 0.6
+                    targetPos = baseCenterPos + Vector3.new(cos(angle) * ringR, settings.height, sin(angle) * ringR)
+                    o.SyncGyro.CFrame = hrp.CFrame * CFrame.Angles(rad(90), 0, 0)
+                else
+                    targetPos = baseCenterPos + Vector3.new(cos(angle) * (settings.width * 1.1), settings.height + 2 + sin(timeCounter + i), sin(angle) * (settings.width * 1.1))
+                    o.SyncGyro.CFrame = CFrame.new(o.Position, baseCenterPos)
+                end
+            elseif mode == "Uranus" then
+                local angle = timeCounter * 0.5 + (i * (pi * 2 / max(1, total)))
+                targetPos = baseCenterPos + Vector3.new(0, cos(angle) * (settings.width * 1.2) + settings.height, sin(angle) * (settings.width * 1.2))
+                o.SyncGyro.CFrame = CFrame.Angles(angle, 0, 0)
+            elseif mode == "Neptune" then
+                local angle = timeCounter * 0.3 + (i * (pi * 2 / max(1, total)))
+                targetPos = baseCenterPos + Vector3.new(cos(angle) * (settings.width * 1.4), settings.height + sin(timeCounter * 0.5 + i) * 0.5, sin(angle) * (settings.width * 1.4))
+                o.SyncGyro.CFrame = CFrame.new(o.Position, baseCenterPos)
+            elseif mode == "Asteroid" then
+                local randR = settings.width * 0.7 + sin(i * 45) * (settings.width * 0.25)
+                local angle = timeCounter * 0.8 + data.phase; local randY = settings.height - 1 + cos(i * 12) * 2
+                targetPos = baseCenterPos + Vector3.new(cos(angle) * randR, randY, sin(angle) * randR)
+                o.SyncGyro.CFrame = CFrame.Angles(data.seed, timeCounter, data.phase)
+            elseif mode == "Comet" then
+                local t = (timeCounter * 0.7 + (i / max(1, total)) * 0.4) % 4
+                local p = t / 4; local a = data.phase
+                local factor = (1 - p) * (1 - p)
+                local r = settings.width * 0.3 + factor * (settings.width * 2.5)
+                targetPos = baseCenterPos + Vector3.new(cos(a) * r, settings.height + (factor * 8), sin(a) * r)
+                o.SyncGyro.CFrame = CFrame.Angles(timeCounter, 0, timeCounter)
+            elseif mode == "MeteorShower" then
+                local fallT = (timeCounter * 2.2 + (i * 0.3)) % 4; local p = fallT / 4
+                local startPos = Vector3.new(sin(i) * 12 - 10, 20, cos(i) * 12 + 10)
+                local endPos = Vector3.new(sin(i) * 12 + 10, settings.height - 3.8, cos(i) * 12 - 10)
+                targetPos = baseCenterPos + startPos:Lerp(endPos, p)
+                o.SyncGyro.CFrame = CFrame.new(startPos, endPos)
+            elseif mode == "MinorPlanet" then
+                local angle = timeCounter * 1.0 + (i * (pi * 2 / max(1, total)))
+                local tilt = CFrame.Angles(rad(25), 0, rad(15))
+                targetPos = baseCenterPos + Vector3.new(0, settings.height, 0) + (tilt * Vector3.new(cos(angle) * settings.width * 0.8, 0, sin(angle) * settings.width * 0.8))
+                o.SyncGyro.CFrame = CFrame.new(o.Position, baseCenterPos)
+            elseif mode == "Pluto" then
+                local angle = timeCounter * 0.4 + data.phase; local tilt = CFrame.Angles(rad(35), rad(20), 0)
+                targetPos = baseCenterPos + Vector3.new(0, settings.height + sin(timeCounter) * 3, 0) + (tilt * Vector3.new(cos(angle) * settings.width * 1.5, 0, sin(angle) * settings.width * 0.8))
+                o.SyncGyro.CFrame = CFrame.Angles(timeCounter, timeCounter, 0)
+            elseif mode == "Galaxy" then
+                local arm = i % 2; local progress = math.floor((i - 1) / 2) / max(1, total / 2)
+                local spiralAngle = progress * pi * 4 + (timeCounter * 1.2) + (arm * pi)
+                local r = progress * settings.width * 1.1 + 1.0
+                targetPos = baseCenterPos + Vector3.new(cos(spiralAngle) * r, settings.height + sin(timeCounter + i) * 0.3, sin(spiralAngle) * r)
+                o.SyncGyro.CFrame = hrp.CFrame * CFrame.Angles(0, spiralAngle, 0)
+            elseif mode == "Air" then
+                local t = timeCounter * 1.5 + data.seed; local pulse = 0.8 + sin(timeCounter * 2) * 0.2
+                targetPos = baseCenterPos + Vector3.new(sin(t) * settings.width * 0.7 * pulse, cos(t * 1.3) * settings.height * pulse + settings.height, cos(t * 0.8) * settings.width * 0.7 * pulse)
+                o.SyncGyro.CFrame = CFrame.Angles(t, t, t)
+
+            -- ================= 新規追加モード（2種） =================
+            elseif mode == "HalleyComet" then
+                local cometT = (timeCounter * 0.4 - (i * 0.08)) % 5
+                local progress = cometT / 5
+                local angle = data.phase
+                local curve = pow(2.5, (1 - progress) * 4) / 39
+                local r = settings.width * 0.2 + (curve * settings.width * 3.5)
+                local h = settings.height + (curve * 6) - 2
+                targetPos = baseCenterPos + Vector3.new(cos(angle) * r, h, sin(angle) * r)
+                o.SyncGyro.CFrame = CFrame.new(o.Position, baseCenterPos) * CFrame.Angles(timeCounter * 2, 0, 0)
+
+            elseif mode == "Mode67" then
+                local half = max(1, total / 2)
+                if i <= half then
+                    local progress = i / half
+                    local angle = timeCounter * 2.5 + (progress * pi * 3)
+                    local r = (1 - (progress * 0.5)) * (settings.width * 0.6)
+                    targetPos = baseCenterPos + Vector3.new(cos(angle) * r, settings.height - 1 + (progress * 2), sin(angle) * r)
+                    o.SyncGyro.CFrame = hrp.CFrame * CFrame.Angles(0, angle, 0)
+                else
+                    local progress = (i - half) / (total - half)
+                    local angle = -timeCounter * 1.5
+                    local localX, localZ
+                    if progress < 0.4 then
+                        localX = (progress / 0.4) * (settings.width * 0.6) - (settings.width * 0.3)
+                        localZ = -settings.width * 0.4
+                    else
+                        local p2 = (progress - 0.4) / 0.6
+                        localX = (settings.width * 0.3) - (p2 * settings.width * 0.5)
+                        localZ = (-settings.width * 0.4) + (p2 * settings.width * 0.8)
+                    end
+                    local rotated = CFrame.Angles(0, angle, 0) * Vector3.new(localX, settings.height + 4 - (progress * 3), localZ)
+                    targetPos = baseCenterPos + rotated
+                    o.SyncGyro.CFrame = hrp.CFrame * CFrame.Angles(timeCounter, 0, timeCounter)
+                end
+            end
+            
+            if targetPos then o.SyncForce.Velocity = (targetPos - o.Position) * 18 end
+            if math.random() > 0.95 then pcall(function() o:SetNetworkOwner(player) end) end
+        else
+            objectData[o] = nil; hoveringObjects[o] = nil
+        end
+    end
+end)
+
+OrionLib:Init()
