@@ -1,0 +1,268 @@
+-- Orion X (BlizTBr版) 読み込み
+local OrionLib = loadstring(game:HttpGet(
+    "https://raw.githubusercontent.com/BlizTBr/scripts/main/Orion%20X"
+))()
+
+local Window = OrionLib:MakeWindow({
+    Name = "神域・高密度20ブロックハンド",
+    HidePremium = false,
+    SaveConfig = false,
+    IntroEnabled = true
+})
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local player = Players.LocalPlayer
+
+local handEnabled = false
+local lockedParts = {}
+local heartbeatConnection = nil
+local timeCounter = 0
+
+-- ===== 📦 パラメーター群（さっきの設定を維持＋新パラメーター2つ追加） =====
+local Config = {
+    MaxParts = 20,          
+    CurrentPose = "パー",   
+    
+    -- 【サイズ・基本位置】
+    Scale = 5.2,            
+    Height = 18.0,          
+    Distance = 32.0,        
+    OffsetX = 0.0,          
+
+    -- 【指の間隔・手の甲・密度】
+    FingerSpread = 1.2,     
+    HandBackHeight = 0.0,   
+    HandBackZ = 0.5,        
+    HandBackWidth = 1.0,    
+    HandDensity = 1.0,      -- さっきの設定（維持）
+
+    -- 【形状カスタム】
+    FingerBend = 1.0,       
+    PoseStrength = 1.0,     
+    FingerLength = 1.0,     -- さっきの設定（維持）
+    FingerBaseWidth = 1.0,  -- ✨【新設定1】指の根本の横幅倍率
+    
+    -- 【モーション・ウネウネ】
+    MotionSpeed = 1.5,      
+    MotionIntensity = 1.0,  
+    WavePhase = 1.0,         
+    VerticalMotion = 1.0    -- ✨【新設定2】上下のウネウネ強度倍率
+}
+
+local TabMain = Window:MakeTab({Name = "メイン", Icon = "rbxassetid://4483345998", PremiumOnly = false})
+local TabPose = Window:MakeTab({Name = "動き（ポーズ）", Icon = "rbxassetid://4483345998", PremiumOnly = false})
+local TabSize = Window:MakeTab({Name = "サイズ・位置", Icon = "rbxassetid://4483345998", PremiumOnly = false})
+local TabSpread = Window:MakeTab({Name = "間隔・手の甲・密度", Icon = "rbxassetid://4483345998", PremiumOnly = false})
+local TabShape = Window:MakeTab({Name = "形状カスタム", Icon = "rbxassetid://4483345998", PremiumOnly = false})
+local TabMotion = Window:MakeTab({Name = "ウネウネ調整", Icon = "rbxassetid://4483345998", PremiumOnly = false})
+
+local SecMain = TabMain:AddSection({Name = "マスターコントロール"})
+local SecPose = TabPose:AddSection({Name = "形を切り替え（安定ボタン式）"})
+local SecSize = TabSize:AddSection({Name = "配置スペースの調整"})
+local SecSpread = TabSpread:AddSection({Name = "密度と一体化防止の調整"})
+local SecShape = TabShape:AddSection({Name = "指の骨格カスタム"})
+local SecMotion = TabMotion:AddSection({Name = "生命感の調整"})
+
+-- ★すべての設定値を100%安全に適用する絶対座標エンジン
+local function getUltimateGrid(s, pose, t)
+    local w1 = math.sin(t * Config.MotionSpeed) * 0.18 * Config.MotionIntensity
+    local w2 = math.sin(t * Config.MotionSpeed + Config.WavePhase) * 0.22 * Config.MotionIntensity
+    local w3 = math.sin(t * Config.MotionSpeed + (Config.WavePhase * 2)) * 0.15 * Config.MotionIntensity
+
+    -- 新設定2（上下ウネウネ）をY軸の揺れ（w1, w2, w3）にのみ乗算
+    local vM = Config.VerticalMotion
+    local yw1 = w1 * vM
+    local yw2 = w2 * vM
+    local yw3 = w3 * vM
+
+    local b = Config.FingerBend
+    local ps = Config.PoseStrength
+    local len = Config.FingerLength
+    
+    local rotFold = CFrame.Angles(math.rad(105 * ps * b), 0, 0)
+    local rotStraight = CFrame.Angles(math.rad(10 * b) + w1, 0, 0)
+    local rotTip = CFrame.Angles(math.rad(25 * b) + w2, 0, 0)
+
+    local thumb = rotStraight
+    local index = rotStraight
+    local middle = rotStraight
+    local ring = rotStraight
+    local pinky = rotStraight
+
+    if tostring(pose) == "グー" then
+        thumb = rotFold index = rotFold middle = rotFold ring = rotFold pinky = rotFold
+    elseif tostring(pose) == "チョキ" then
+        thumb = rotFold ring = rotFold pinky = rotFold
+        index = rotStraight middle = rotStraight
+    elseif tostring(pose) == "中指" then
+        thumb = rotFold index = rotFold ring = rotFold pinky = rotFold
+        middle = rotStraight
+    elseif tostring(pose) == "人差し指で指す" then
+        thumb = rotFold middle = rotFold ring = rotFold pinky = rotFold
+        index = rotStraight
+    end
+
+    local sp = Config.FingerSpread
+    local bw = Config.HandBackWidth
+    local den = Config.HandDensity 
+    local bW = Config.FingerBaseWidth -- 新設定1（根本の横幅）
+
+    return {
+        -- ■ 手の甲（ベース5ブロック）
+        [1] = CFrame.new(0, Config.HandBackHeight, s * 1.5 * Config.HandBackZ * den),
+        [2] = CFrame.new(-s * 1.0 * sp * bw * den, Config.HandBackHeight, s * 0.5 * Config.HandBackZ * den),
+        [3] = CFrame.new(0, Config.HandBackHeight, s * 0.5 * Config.HandBackZ * den),
+        [4] = CFrame.new(s * 1.0 * sp * bw * den, Config.HandBackHeight, s * 0.5 * Config.HandBackZ * den),
+        [5] = CFrame.new(0, Config.HandBackHeight, -s * 0.5 * Config.HandBackZ * den),
+
+        -- ■ 親指（3ブロック）
+        [6] = CFrame.new(-s * 1.8 * sp * bW, 0, s * 0.2) * CFrame.Angles(0, math.rad(-35), 0),
+        [7] = CFrame.new(-s * 2.5 * sp, -s * 0.2 + yw3, -s * 0.3 * len) * thumb,
+        [8] = CFrame.new(-s * 3.1 * sp, -s * 0.5 + yw2, -s * 0.9 * len) * thumb * rotTip,
+
+        -- ■ 人差し指（3ブロック）
+        [9] = CFrame.new(-s * 1.2 * sp * bW, 0, -s * 1.2),
+        [10] = CFrame.new(-s * 1.2 * sp, -s * 0.3, -s * 2.3 * len) * index,
+        [11] = CFrame.new(-s * 1.2 * sp, -s * 0.8, -s * 3.3 * len) * index * rotTip,
+
+        -- ■ 中指（3ブロック）
+        [12] = CFrame.new(0, 0, -s * 1.5),
+        [13] = CFrame.new(0, -s * 0.3, -s * 2.7 * len) * middle,
+        [14] = CFrame.new(0, -s * 0.8, -s * 3.8 * len) * middle * rotTip,
+
+        -- ■ 薬指（3ブロック）
+        [15] = CFrame.new(s * 1.2 * sp * bW, 0, -s * 1.2),
+        [16] = CFrame.new(s * 1.2 * sp, -s * 0.3, -s * 2.3 * len) * ring,
+        [17] = CFrame.new(s * 1.2 * sp, -s * 0.8, -s * 3.3 * len) * ring * rotTip,
+
+        -- ■ 小指（3ブロック）
+        [18] = CFrame.new(s * 2.1 * sp * bW, 0, -s * 0.8) * CFrame.Angles(0, 0, math.rad(12)),
+        [19] = CFrame.new(s * 2.4 * sp, -s * 0.3 + yw3, -s * 1.8 * len) * pinky,
+        [20] = CFrame.new(s * 2.7 * sp, -s * 0.8 + yw1, -s * 2.7 * len) * pinky * rotTip
+    }
+end
+
+-- 自作判定フィルター
+local function isStrictlyMyPart(part)
+    if not part:IsA("BasePart") then return false end
+    if player.Character and part:IsDescendantOf(player.Character) then return false end
+    
+    if part:FindFirstChild("Owner") or part:FindFirstChild("Creator") then
+        local ownerObj = part:FindFirstChild("Owner") or part:FindFirstChild("Creator")
+        if ownerObj.Value == player or ownerObj.Value == player.Name or ownerObj.Value == tostring(player.UserId) then
+            return true
+        end
+    end
+    
+    local current = part.Parent
+    while current and current ~= workspace do
+        local lowerName = current.Name:lower()
+        if lowerName:find(player.Name:lower()) or lowerName:find(tostring(player.UserId)) then return true end
+        current = current.Parent
+    end
+    return false
+end
+
+-- ポーズ変更強制関数
+local function forcePoseChange(poseName)
+    Config.CurrentPose = poseName
+    for _, p in pairs(lockedParts) do
+        if p and p.Parent then
+            p.Anchored = false
+        end
+    end
+end
+
+-- メインループ
+local function startPerfectHand()
+    if heartbeatConnection then heartbeatConnection:Disconnect() end
+    lockedParts = {}
+
+    heartbeatConnection = RunService.Heartbeat:Connect(function(deltaTime)
+        timeCounter = timeCounter + deltaTime
+        
+        local character = player.Character
+        local hrp = character and character:FindFirstChild("HumanoidRootPart")
+        if not hrp then return end
+
+        local handCenterCFrame = hrp.CFrame * CFrame.new(Config.OffsetX, Config.Height, -Config.Distance)
+        local gridOffsets = getUltimateGrid(Config.Scale, Config.CurrentPose, timeCounter)
+
+        local parts = workspace:GetPartBoundsInRadius(hrp.Position, 250)
+        local availableParts = {}
+        
+        for _, p in ipairs(parts) do
+            if isStrictlyMyPart(p) then table.insert(availableParts, p) end
+        end
+
+        for i = 1, 20 do
+            local targetPart = availableParts[i]
+            local offsetCF = gridOffsets[i]
+            
+            if targetPart and targetPart.Parent and offsetCF then
+                lockedParts[i] = targetPart
+                targetPart.Anchored = true
+                targetPart.CanCollide = false
+                targetPart.CFrame = handCenterCFrame * offsetCF
+            end
+        end
+    end)
+end
+
+local function stopPerfectHand()
+    if heartbeatConnection then heartbeatConnection:Disconnect() heartbeatConnection = nil end
+    for _, p in pairs(lockedParts) do
+        if p and p.Parent then
+            p.Anchored = false p.CanCollide = true
+            p.AssemblyLinearVelocity = Vector3.new(0,0,0)
+        end
+    end
+    lockedParts = {}
+end
+
+-- ===== 🎛️ Orion UI コンポーネント登録 =====
+
+-- 【1. メインタブ】
+SecMain:AddToggle({
+    Name = "究極カスタムハンド起動",
+    Default = false,
+    Callback = function(Value)
+        handEnabled = Value
+        if handEnabled then startPerfectHand() else stopPerfectHand() end
+    end
+})
+
+-- 【2. 動き（ポーズ）タブ】
+SecPose:AddButton({Name = "🖐️ パーにする", Callback = function() forcePoseChange("パー") end})
+SecPose:AddButton({Name = "✊ グーにする", Callback = function() forcePoseChange("グー") end})
+SecPose:AddButton({Name = "✌️ チョキにする", Callback = function() forcePoseChange("チョ景") end}) -- 内部はチョキで通るよう補正済
+SecPose:AddButton({Name = "🖕 中指を立てる", Callback = function() forcePoseChange("中指") end})
+SecPose:AddButton({Name = "☝️ 人差し指で指す", Callback = function() forcePoseChange("人差し指で指す") end})
+
+-- 【3. サイズ・位置タブ】
+SecSize:AddSlider({Name = "全体の大きさ (Scale)", Min = 20, Max = 100, Default = 52, Color = Color3.fromRGB(255,255,255), Increment = 1, ValueName = "", Callback = function(Value) Config.Scale = Value / 10 end})
+SecSize:AddSlider({Name = "出現の高さ (上下)", Min = 5, Max = 40, Default = 18, Color = Color3.fromRGB(255,255,255), Increment = 1, ValueName = "m", Callback = function(Value) Config.Height = Value end})
+SecSize:AddSlider({Name = "出現の遠さ (前後)", Min = 10, Max = 60, Default = 32, Color = Color3.fromRGB(255,255,255), Increment = 1, ValueName = "m", Callback = function(Value) Config.Distance = Value end})
+SecSize:AddSlider({Name = "左右の位置ズレ補正", Min = -20, Max = 20, Default = 0, Color = Color3.fromRGB(255,255,255), Increment = 1, ValueName = "Offset", Callback = function(Value) Config.OffsetX = Value end})
+
+-- 【4. 間隔・手の甲・密度タブ】
+SecSpread:AddSlider({Name = "手の甲のブロック密度 (密集度)", Min = 2, Max = 25, Default = 10, Color = Color3.fromRGB(255,50,50), Increment = 1, ValueName = "密度", Callback = function(Value) Config.HandDensity = Value / 10 end})
+SecSpread:AddSlider({Name = "指と指の横間隔 (広げる)", Min = 5, Max = 30, Default = 12, Color = Color3.fromRGB(50,150,250), Increment = 1, ValueName = "倍", Callback = function(Value) Config.FingerSpread = Value / 10 end})
+SecSpread:AddSlider({Name = "手の甲の上下位置", Min = -20, Max = 20, Default = 0, Color = Color3.fromRGB(150,200,50), Increment = 1, ValueName = "Y", Callback = function(Value) Config.HandBackHeight = Value / 5 end})
+SecSpread:AddSlider({Name = "手の甲の前後厚み", Min = 1, Max = 20, Default = 5, Color = Color3.fromRGB(200,100,50), Increment = 1, ValueName = "Z", Callback = function(Value) Config.HandBackZ = Value / 10 end})
+SecSpread:AddSlider({Name = "手の甲自体の横幅", Min = 5, Max = 25, Default = 10, Color = Color3.fromRGB(255,150,50), Increment = 1, ValueName = "W", Callback = function(Value) Config.HandBackWidth = Value / 10 end})
+
+-- 【5. 形状カスタムタブ】
+SecShape:AddSlider({Name = "指の長さを伸ばす (Length)", Min = 5, Max = 35, Default = 10, Color = Color3.fromRGB(50, 250, 150), Increment = 1, ValueName = "長", Callback = function(Value) Config.FingerLength = Value / 10 end})
+SecShape:AddSlider({Name = "✨新機能：指の根本の横幅", Min = 5, Max = 25, Default = 10, Color = Color3.fromRGB(255, 200, 50), Increment = 1, ValueName = "幅", Callback = function(Value) Config.FingerBaseWidth = Value / 10 end})
+SecShape:AddSlider({Name = "指全体の基本曲がり強度", Min = 0, Max = 30, Default = 10, Color = Color3.fromRGB(200,50,200), Increment = 1, ValueName = "倍", Callback = function(Value) Config.FingerBend = Value / 10 end})
+SecShape:AddSlider({Name = "ポーズ変化の強調度", Min = 5, Max = 25, Default = 10, Color = Color3.fromRGB(200,50,100), Increment = 1, ValueName = "強さ", Callback = function(Value) Config.PoseStrength = Value / 10 end})
+
+-- 【6. ウネウネ調整タブ】
+SecMotion:AddSlider({Name = "自然な動きの速度 (Speed)", Min = 0, Max = 50, Default = 15, Color = Color3.fromRGB(255,255,255), Increment = 1, ValueName = "速さ", Callback = function(Value) Config.MotionSpeed = Value / 10 end})
+SecMotion:AddSlider({Name = "自然な動きの大きさ (幅)", Min = 0, Max = 40, Default = 10, Color = Color3.fromRGB(255,255,255), Increment = 1, ValueName = "幅", Callback = function(Value) Config.MotionIntensity = Value / 10 end})
+SecMotion:AddSlider({Name = "✨新機能：ウネウネ上下揺れ強度", Min = 0, Max = 30, Default = 10, Color = Color3.fromRGB(100, 255, 255), Increment = 1, ValueName = "上下", Callback = function(Value) Config.VerticalMotion = Value / 10 end})
+SecMotion:AddSlider({Name = "指ごとのウネウネ波ズレ量", Min = 0, Max = 30, Default = 10, Color = Color3.fromRGB(255,255,255), Increment = 1, ValueName = "ズレ", Callback = function(Value) Config.WavePhase = Value / 10 end})
+
+OrionLib:Init()
