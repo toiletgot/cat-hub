@@ -1,0 +1,284 @@
+-- =========================================================================
+--  リスポーン（死亡）完全対応版：必中マルチハブ（Kick / Kill / Fling）
+-- =========================================================================
+
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+
+local LocalPlayer = Players.LocalPlayer
+
+-- 変数をグローバルに宣言（リスポーン時に毎回書き換えるため）
+local Character = nil
+local HumanoidRootPart = nil
+local Humanoid = nil
+local spawnedToysFolder = nil
+
+local selectedPlayerName = "全員 (All)"
+local actionMethod = "Kick (FATP悪用)"
+local running = false
+local customWalkSpeed = 50
+
+-- === 【重要】リスポーン時に全ての参照を完全に新しくする関数 ===
+local function initializeCharacter(newCharacter)
+    Character = newCharacter
+    HumanoidRootPart = newCharacter:WaitForChild("HumanoidRootPart", 10)
+    Humanoid = newCharacter:FindFirstChildWhichIsA("Humanoid")
+    
+    -- 自分の名前がついたおもちゃフォルダを再取得
+    spawnedToysFolder = Workspace:WaitForChild(LocalPlayer.Name .. "SpawnedInToys", 10)
+    
+    -- 死んだら強制的に実行状態を安全にリセットする
+    running = false
+end
+
+-- 初回起動時の初期化
+if LocalPlayer.Character then
+    initializeCharacter(LocalPlayer.Character)
+end
+
+-- 自分が死んで復活するたびに自動実行
+LocalPlayer.CharacterAdded:Connect(function(newCharacter)
+    task.wait(0.5) -- キャラクターが完全に生成されるまでわずかに待機
+    initializeCharacter(newCharacter)
+end)
+
+-- ブロブマンの取得関数（最新のキャラクター状態から検索）
+local function getBlob()
+    if not Character or not spawnedToysFolder then return nil end
+    
+    -- まず現在のワークスペース全体から自分が乗っているブロブマンを探す
+    for _, desc in pairs(Workspace:GetDescendants()) do
+        if desc.Name == "CreatureBlobman" then
+            local vs = desc:FindFirstChild("VehicleSeat")
+            if vs and vs:FindFirstChild("SeatWeld") and vs.SeatWeld.Part1 and vs.SeatWeld.Part1:IsDescendantOf(Character) then
+                return desc
+            end
+        end
+    end
+    -- 乗っていなければフォルダ内から探す
+    return spawnedToysFolder:FindFirstChild("CreatureBlobman")
+end
+
+local function setFloating(part, enable)
+    if not part then return end
+    local bv = part:FindFirstChild("AntiSink")
+    if enable then
+        if not bv then
+            bv = Instance.new("BodyVelocity")
+            bv.Name = "AntiSink"
+            bv.Velocity = Vector3.new(0, 0, 0)
+            bv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+            bv.Parent = part
+        end
+    else
+        if bv then bv:Destroy() end
+    end
+end
+
+-- === 各種ハック実行ロジック ===
+local function executeMethod(targetCharacter)
+    local hrp = targetCharacter:FindFirstChild("HumanoidRootPart")
+    local tHum = targetCharacter:FindFirstChildWhichIsA("Humanoid")
+    if not hrp then return end
+
+    if actionMethod == "Kick (FATP悪用)" then
+        task.spawn(function()
+            if tHum then tHum.PlatformStand = true end
+            for i = 1, 10 do
+                hrp.CFrame = CFrame.new(999999, math.random(-9999, 9999), 999999)
+                RunService.Heartbeat:Wait()
+            end
+        end)
+
+    elseif actionMethod == "Kill (強制即死)" then
+        task.spawn(function()
+            if tHum then tHum.PlatformStand = true end
+            hrp.CFrame = CFrame.new(hrp.Position.X, -5000, hrp.Position.Z)
+        end)
+
+    elseif actionMethod == "Fling (宇宙の彼方へ)" then
+        if hrp:FindFirstChild("FlingForce") then hrp.FlingForce:Destroy() end
+        
+        local bav = Instance.new("BodyAngularVelocity")
+        bav.Name = "FlingForce"
+        bav.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+        bav.AngularVelocity = Vector3.new(0, 99999, 0)
+        bav.Parent = hrp
+        
+        local bv = Instance.new("BodyVelocity")
+        bv.Name = "FlingVelocity"
+        bv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+        bv.Velocity = Vector3.new(0, 500, 0)
+        bv.Parent = hrp
+    end
+end
+
+local function getPlayerList()
+    local list = {"全員 (All)"}
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then table.insert(list, p.Name) end
+    end
+    return list
+end
+
+-- 移動速度常時監視ループ（自分が死んでも新しいHumanoidに追従するよう修正）
+task.spawn(function()
+    while true do
+        task.wait(0.1)
+        if Humanoid and Humanoid.Parent and Humanoid.WalkSpeed ~= customWalkSpeed then
+            Humanoid.WalkSpeed = customWalkSpeed
+        end
+    end
+end)
+
+-- === UI構築 (OrionLibrary) ===
+local success, OrionLib = pcall(function()
+    return loadstring(game:HttpGet("https://raw.githubusercontent.com/shlexware/Orion/main/source"))()
+end)
+if not success or type(OrionLib) ~= "table" then
+    OrionLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/Siro-script/FtaP.90hub/refs/heads/main/Orion"))()
+end
+
+local Window = OrionLib:MakeWindow({ 
+    Name = "FATP悪用・死後復活対応マルチハブ", 
+    IntroText = "ANTI-RESET SYSTEM", 
+    HidePremium = false, 
+    SaveConfig = false 
+})
+
+local MainTab = Window:MakeTab({ Name = "コントロール", Icon = "rbxassetid://4483345998" })
+
+-- スピード設定
+local SpeedSection = MainTab:AddSection({ Name = "プレイヤー速度" })
+SpeedSection:AddSlider({
+    Name = "歩く速度", Min = 16, Max = 250, Default = 50, Increment = 5,
+    Callback = function(v) customWalkSpeed = v end
+})
+
+-- ターゲット選択
+local TargetSection = MainTab:AddSection({ Name = "ターゲット" })
+local PlayerDropdown = TargetSection:AddDropdown({
+    Name = "対象を選択", Default = "全員 (All)", Options = getPlayerList(),
+    Callback = function(Value) selectedPlayerName = Value end
+})
+TargetSection:AddButton({ Name = "リスト更新", Callback = function() PlayerDropdown:Refresh(getPlayerList(), true) end })
+
+-- モード選択
+local ModeSection = MainTab:AddSection({ Name = "制責モード選択" })
+ModeSection:AddDropdown({
+    Name = "実行する機能を選択",
+    Default = "Kick (FATP悪用)",
+    Options = {"Kick (FATP悪用)", "Kill (強制即死)", "Fling (宇宙の彼方へ)"},
+    Callback = function(Value) actionMethod = Value end
+})
+
+-- トグル実行
+local ActionSection = MainTab:AddSection({ Name = "ハック実行" })
+local MainToggle = ActionSection:AddToggle({
+    Name = "⚡️ システムを稼働 (トグル式)",
+    Default = false,
+    Callback = function(Value)
+        running = Value
+
+        if not running then
+            local blob = getBlob()
+            if blob then
+                local mainPart = blob:FindFirstChild("HumanoidRootPart") or blob:FindFirstChild("Body")
+                if mainPart then setFloating(mainPart, false) end
+            end
+            return
+        end
+
+        local targets = {}
+        if selectedPlayerName == "全員 (All)" then
+            for _, p in ipairs(Players:GetPlayers()) do
+                if p ~= LocalPlayer and p.Character then table.insert(targets, p) end
+            end
+        else
+            local p = Players:FindFirstChild(selectedPlayerName)
+            if p and p.Character then table.insert(targets, p) end
+        end
+
+        if #targets == 0 then
+            running = false
+            return
+        end
+
+        task.spawn(function()
+            local blob = getBlob()
+            if not blob then 
+                running = false 
+                OrionLib:MakeNotification({Name = "エラー", Content = "Blobmanがいないか、乗っていません！再召喚してください。", Time = 3})
+                return 
+            end
+
+            local bScript = blob:WaitForChild("BlobmanSeatAndOwnerScript", 5)
+            if not bScript then running = false return end
+
+            local grabRemote = bScript:WaitForChild("CreatureGrab", 5)
+            local releaseRemote = bScript:WaitForChild("CreatureRelease", 5)
+            local dropRemote = bScript:WaitForChild("CreatureDrop", 5)
+            local rDet = blob:WaitForChild("RightDetector", 5)
+            local rw = rDet and rDet:WaitForChild("RightWeld", 5)
+            local mainPart = blob:FindFirstChild("HumanoidRootPart") or blob:FindFirstChild("Body")
+
+            if not grabRemote or not rDet or not rw then
+                running = false
+                OrionLib:MakeNotification({Name = "エラー", Content = "ブロブマンのコンポーネント取得に失敗しました", Time = 3})
+                return
+            end
+
+            -- 0.05秒間隔の確実な掴みループ
+            for _, target in ipairs(targets) do
+                if not running then break end
+                if not target.Character then continue end
+                local tHrp = target.Character:FindFirstChild("HumanoidRootPart")
+                if not tHrp then continue end
+
+                pcall(function()
+                    for _, child in ipairs(rDet:GetChildren()) do
+                        if child:IsA("Weld") or child:IsA("ManualWeld") then child:Destroy() end
+                    end
+                    if mainPart then setFloating(mainPart, true) end
+
+                    for i = 1, 10 do
+                        if not running then break end
+                        local currentPivot = blob:GetPivot()
+                        local armOffset = currentPivot:Inverse() * rDet.CFrame
+                        blob:PivotTo(tHrp.CFrame * armOffset:Inverse())
+                        
+                        grabRemote:FireServer(rDet, tHrp, rw)
+                        
+                        if rDet:FindFirstChildOfClass("Weld") or rDet:FindFirstChildOfClass("ManualWeld") then 
+                            break 
+                        end
+                        task.wait(0.05)
+                    end
+                 pcall(function()
+                end)
+            end
+
+            if running then
+                task.wait(0.05)
+                for _, target in ipairs(targets) do
+                    if target.Character then
+                        pcall(function()
+                            releaseRemote:FireServer()
+                            dropRemote:FireServer()
+                            for _, child in ipairs(rDet:GetChildren()) do
+                                if child:IsA("Weld") or child:IsA("ManualWeld") then child:Destroy() end
+                            end
+                            executeMethod(target.Character)
+                        end)
+                    end
+                end
+            end
+            
+            running = false
+        end)
+    end
+})
+
+OrionLib:Init()
