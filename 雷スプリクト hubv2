@@ -1,0 +1,718 @@
+local r = "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/"
+local Library = loadstring(game:HttpGet(r .. "Library.lua"))()
+local ThemeManager = loadstring(game:HttpGet(r .. "addons/ThemeManager.lua"))()
+local SaveManager = loadstring(game:HttpGet(r .. "addons/SaveManager.lua"))()
+
+-- ウィンドウの作成
+local Window = Library:CreateWindow({
+    Title = "スクリプト hub",
+    Footer = "バージョン: 0.0",
+    Icon = 102816031861909,
+})
+
+-- タブの作成
+local ScriptTab = Window:AddTab({
+    Name = "スクリプト",
+    Icon = "code"
+})
+
+local OtherScriptTab = Window:AddTab({
+    Name = "他スクリプト",
+    Icon = "list"
+})
+
+-- 新しい「鍵」タブを追加
+local KeyTab = Window:AddTab({
+    Name = "鍵",
+    Icon = "key"
+})
+
+-- 各タブのセクション（グループボックス）作成
+local MainGroup = ScriptTab:AddLeftGroupbox("スクリプト")
+local OtherGroup = OtherScriptTab:AddLeftGroupbox("他スクリプト")
+local KeyGroup = KeyTab:AddLeftGroupbox("スクリプトの鍵一覧")
+
+-- スクリプトデータ
+local hubs = {
+    {name = "kiki hubv0", repo = "cat-hub", url = "kiki%20hub"},
+    {name = "kiki hub v1", repo = "cat-hub", url = "kikh%20hub"},
+    {name = "kiki hub v2", repo = "cat-hub", url = "kiki%20hubv2"},
+    {name = "kiki hub v3", repo = "cat-hub", url = "kiki%20hubv3"},
+    {name = "kiki hub v3.5", repo = "cat-hub", url = "kiki%20hubv3.5"},
+    {name = "kiki hub v4", repo = "cat-hub", url = "kikiv4"},
+    {name = "kiki hub v4.5", repo = "cat-hub", url = "kiki%20hubv4.5"},
+    {name = "kiki hub v5", repo = "cat-hub", url = "kiki%20hubv5"},
+    {name = "kiki hub v6", repo = "cat-hub", url = "kiki%20hubv6"},
+    {name = "kiki hub v7", repo = "cat-hub", url = "kiki%20hubv7"},
+    {name = "kiki hub v8", repo = "cat-hub", url = "kiki%20hubv8"},
+    {name = "バグ kiki hub", repo = "cat-hub", url = "バグ%20kiki%20hub"},
+    {name = "cat hub v1", repo = "cat-hub", url = "cat%20hub"},
+    {name = "cat hub v2", repo = "cat-hub", url = "cat%20hubv2"},
+    {name = "cat hub v3", repo = "cat-hub", url = "cat%20hubv3"},
+    {name = "cat hub v4", repo = "cat-hub", url = "cat%20hubv4"},
+    {name = "cat hub v5", repo = "cat-hub", url = "cat%20hubv5"},
+    {name = "cat hub v6", repo = "cat-hub", url = "cat%20hubv6"},
+    {name = "翻訳 hub", repo = "cat-hub", url = "翻訳%20hub", isMain = true},
+    {name = "神翻訳 hub", repo = "cat-hub", url = "神翻訳%20hub"},
+    {name = "purple", repo = "cat-hub", url = "purple"},
+    {name = "羽", repo = "cat-hub", url = "羽"},
+    {name = "sentou hub", repo = "cat-hub", url = "sentou"},
+    {name = "残像", repo = "cat-hub", url = "残像"},
+    {name = "オートタロット", repo = "Sprict", url = "オートタロット"},
+    {name = "後ろに回る", repo = "Sprict", url = "後ろに回る"},
+    {name = "監視", repo = "Sprict", url = "監視"},
+    {name = "ゴムバンド", repo = "Sprict", url = "ゴムバンド"},
+    {name = "無限ジャンプ", repo = "Sprict", url = "無限ジャンプ"},
+    {name = "esp", repo = "Sprict", url = "esp"},
+    {name = "スピード", repo = "Sprict", url = "スピード"},
+    {name = "tp", repo = "Sprict", url = "tp"},
+    {name = "ノークリップ", repo = "Sprict", url = "ノークリップ"},
+    {name = "物を透視", repo = "Sprict", url = "物を透視"},
+    {name = "コピー", repo = "Sprict", url = "コピー"},
+    {name = "大ジャンプ", repo = "Sprict", url = "大ジャンプ"},
+    {name = "画面の遅延", repo = "Sprict", url = "画面の遅延"},
+    {name = "画面縮める", repo = "Sprict", url = "画面縮める"},
+    {name = "回避", repo = "Sprict", url = "回避"},
+    {name = "ゴースト", repo = "Sprict", url = "ゴースト"},
+    {name = "視点戻す", repo = "Sprict", url = "視点戻す"},
+    {name = "反復横跳び", repo = "Sprict", url = "反復横跳び"},
+    {name = "最強オートクリックv1", repo = "Sprict", url = "最強オートクリックv1"},
+    {name = "最強オートクリックv2", repo = "Sprict", url = "最強オートクリックv2"},
+    {name = "Fe fling", repo = "Sprict", url = "Fe%20fling"},
+    {name = "魔法陣−mod", repo = "Sprict", url = "mahouzin"},
+    {name = "昔のスプリクト hub", repo = "cat-hub", url = "スプリクト%20hub"},
+    {name = "mod hubv1", repo = "cat-hub", url = "mod%20hub%20-andkiki%20hub"},
+    {name = "mod hubv2.5", repo = "cat-hub", url = "mod%20hubv2.5"},
+    {name = "moti hub", repo = "cat-hub", url = "moti%20hub"},
+    {name = "moti hub v1.5", repo = "cat-hub", url = "moti%20hubv1.5"},
+    {name = "moti hub v2", repo = "cat-hub", url = "moti%20hubv2"},
+    {name = "kill ブロブ", repo = "cat-hub", url = "kill%20ブロブ"},
+    {name = "hando", repo = "cat-hub", url = "hando"}
+}
+
+-- 「スクリプト」タブ側のボタンを自動生成
+for _, hub in ipairs(hubs) do
+    MainGroup:AddButton({
+        Text = hub.name .. " を読み込む",
+        Func = function()
+            local baseUrl = "https://raw.githubusercontent.com/toiletgot/" .. hub.repo .. "/"
+            local path = hub.isMain and "main/" or "refs/heads/main/"
+            
+            loadstring(game:HttpGet(baseUrl .. path .. hub.url))()
+            Library:Notify(hub.name .. " を読み込みました！", 3)
+        end,
+        DoubleClick = false
+    })
+end
+
+-- 「他スクリプト」タブ：ボタン群
+OtherGroup:AddButton({
+    Text = "dex を読み込む",
+    Func = function()
+        loadstring(game:HttpGet("https://pastebin.com/raw/e9SiGtSM"))()
+        Library:Notify("dex を読み込みました！", 3)
+    end,
+    DoubleClick = false
+})
+
+OtherGroup:AddButton({
+    Text = "bloody を読み込む",
+    Func = function()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/BloodyV2/BloodyScript/refs/heads/main/Free", true))()
+        Library:Notify("bloody を読み込みました！", 3)
+    end,
+    DoubleClick = false
+})
+
+OtherGroup:AddButton({
+    Text = "gojo を読み込む",
+    Func = function()
+        loadstring(game:HttpGet("https://rawscripts.net/raw/KJ-The-Strongest-Battlegrounds-battleground-gojo-script-saitama-to-gojo-26980"))()
+        Library:Notify("gojo を読み込みました！", 3)
+    end,
+    DoubleClick = false
+})
+
+OtherGroup:AddButton({
+    Text = "太陽 hub を読み込む",
+    Func = function()
+        local url = "https://pastefy.app/Waz5y9Ts/raw"
+        local source = game:HttpGet(url)
+        local func = loadstring(source)
+        func()
+        Library:Notify("太陽 hub を読み込みました！", 3)
+    end,
+    DoubleClick = false
+})
+
+OtherGroup:AddButton({
+    Text = "Nove hub を読み込む",
+    Func = function()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/toiletgot/cat-hub/refs/heads/main/Nove%20hub"))()
+        Library:Notify("Nove hub を読み込みました！", 3)
+    end,
+    DoubleClick = false
+})
+
+OtherGroup:AddButton({
+    Text = "波 hub を読み込む",
+    Func = function()
+        loadstring(game:HttpGet("https://pastefy.app/mKo56cLR/raw"))()
+        Library:Notify("波 hub を読み込みました！", 3)
+    end,
+    DoubleClick = false
+})
+
+OtherGroup:AddButton({
+    Text = "Zero hub を読み込む",
+    Func = function()
+        loadstring(game:HttpGet("https://rawscripts.net/raw/Universal-Script-STARBORN-FONT-SCRIPT-HAS-A-LOAD-DELAY-SO-DONT-LEAVE-212793"))()
+        Library:Notify("Zero hub を読み込みました！", 3)
+    end,
+    DoubleClick = false
+})
+
+OtherGroup:AddButton({
+    Text = "Aro hub を読み込む",
+    Func = function()
+        loadstring(game:HttpGet("https://pastefy.app/egExeYyX/raw"))()
+        Library:Notify("Aro hub を読み込みました！", 3)
+    end,
+    DoubleClick = false
+})
+
+OtherGroup:AddButton({
+    Text = "アイス hub を読み込む",
+    Func = function()
+        loadstring(game:HttpGet("https://pastebin.com/raw/4cDMpGJm"))()
+        Library:Notify("アイス hub を読み込みました！", 3)
+    end,
+    DoubleClick = false
+})
+
+OtherGroup:AddButton({
+    Text = "攻撃 hub を読み込む",
+    Func = function()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/toiletgot/cat-hub/refs/heads/main/攻撃"))()
+        Library:Notify("攻撃 hub を読み込みました！", 3)
+    end,
+    DoubleClick = false
+})
+
+OtherGroup:AddButton({
+    Text = "Aki hub を読み込む",
+    Func = function()
+        loadstring(game:HttpGet("https://pastefy.app/fv47EdiS/raw"))()
+        Library:Notify("Aki hub を読み込みました！", 3)
+    end,
+    DoubleClick = false
+})
+
+OtherGroup:AddButton({
+    Text = "tokra hub を読み込む",
+    Func = function()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/toiletgot/cat-hub/refs/heads/main/tokra%20hub"))()
+        Library:Notify("tokra hub を読み込みました！", 3)
+    end,
+    DoubleClick = false
+})
+
+OtherGroup:AddButton({
+    Text = "桜 hub を読み込む",
+    Func = function()
+        loadstring(game:HttpGet("https://pastefy.app/7BWmFfgM/raw"))()
+        Library:Notify("桜 hub を読み込みました！", 3)
+    end,
+    DoubleClick = false
+})
+
+OtherGroup:AddButton({
+    Text = "無能outo aim を読み込む",
+    Func = function()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/expseller/triggerbot-main/refs/heads/main/triggerbot%20ftap"))()
+        Library:Notify("無能outo aim を読み込みました！", 3)
+    end,
+    DoubleClick = false
+})
+
+OtherGroup:AddButton({
+    Text = "自動連打 を読み込む",
+    Func = function()
+        loadstring(game:HttpGet('https://raw.githubusercontent.com/catwljz/dz/refs/heads/main/autoclick.txt'))()
+        Library:Notify("自動連打 を読み込みました！", 3)
+    end,
+    DoubleClick = false
+})
+
+OtherGroup:AddButton({
+    Text = "チャット連打 を読み込む",
+    Func = function()
+        loadstring(game:HttpGet("https://pastebin.com/raw/Jzxpymw5"))()
+        Library:Notify("チャット連打 を読み込みました！", 3)
+    end,
+    DoubleClick = false
+})
+
+OtherGroup:AddButton({
+    Text = "いやん hub を読み込む",
+    Func = function()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/toiletgot/cat-hub/refs/heads/main/いやん%20hub"))()
+        Library:Notify("いやん hub を読み込みました！", 3)
+    end,
+    DoubleClick = false
+})
+
+OtherGroup:AddButton({
+    Text = "megabliz hub を読み込む",
+    Func = function()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/LuluFTAP/Script/refs/heads/main/FTAP.lua"))()
+        Library:Notify("megabliz hub を読み込みました！", 3)
+    end,
+    DoubleClick = false
+})
+
+OtherGroup:AddButton({
+    Text = "bliz hub を読み込む",
+    Func = function()
+        loadstring(game:HttpGet("https://rawscripts.net/raw/Fling-Things-and-People-BlizT-hub-103294"))()
+        Library:Notify("bliz hub を読み込みました！", 3)
+    end,
+    DoubleClick = false
+})
+
+OtherGroup:AddButton({
+    Text = "歩き方がかっこよくなる を読み込む",
+    Func = function()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/somethingsimade/KDV3-Fixed/refs/heads/main/KrystalDance3"))()
+        Library:Notify("歩き方がかっこよくなる を読み込みました！", 3)
+    end,
+    DoubleClick = false
+})
+
+OtherGroup:AddButton({
+    Text = "でかくなるスプリクト を読み込む",
+    Func = function()
+        local a,b,c,g="/STEVE-916-create/Uhhhhhh/","/source/reanim.lua",".github","https://"
+        local d=request({Url=`{g}api{c}.com/repos{a}contents{b}`,Headers={Accept=`application/vnd{c}.VERSION.raw`}})
+        if d.StatusCode~=200 then d.Body=game:HttpGet(`{g}raw{c}usercontent.com{a}main{b}`)end 
+        local e,f=loadstring(d.Body)
+        if not e then warn(f)else e()end
+        Library:Notify("でかくなるスプリクト を読み込みました！", 3)
+    end,
+    DoubleClick = false
+})
+
+OtherGroup:AddButton({
+    Text = "五条スプリクト1 を読み込む",
+    Func = function()
+        loadstring(game:HttpGet("https://rawscripts.net/raw/The-Strongest-Battlegrounds-YUJI-X-SUKUNA-moveset-50302"))()
+        Library:Notify("五条スプリクト1 を読み込みました！", 3)
+    end,
+    DoubleClick = false
+})
+
+OtherGroup:AddButton({
+    Text = "五条スプリクト2 を読み込む",
+    Func = function()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/skibiditoiletfan2007/BaldyToSorcerer/refs/heads/main/LatestV2.lua"))()
+        Library:Notify("五条スプリクト2 を読み込みました！", 3)
+    end,
+    DoubleClick = false
+})
+
+OtherGroup:AddButton({
+    Text = "違うタイプの虚式紫 を読み込む",
+    Func = function()
+        loadstring(game:HttpGet("https://pastefy.app/Ng4K4ZXZ/raw"))()
+        Library:Notify("違うタイプの虚式紫 を読み込みました！", 3)
+    end,
+    DoubleClick = false
+})
+
+OtherGroup:AddButton({
+    Text = "tokyo hub を読み込む",
+    Func = function()
+        loadstring(game:HttpGet("https://pastefy.app/ZUA73s8u/raw"))()
+        Library:Notify("tokyo hub を読み込みました！", 3)
+    end,
+    DoubleClick = false
+})
+
+OtherGroup:AddButton({
+    Text = "キーボード を読み込む",
+    Func = function()
+        loadstring(game:HttpGet("https://rawscripts.net/raw/Universal-Script-Delta-keyboard-28340"))()
+        Library:Notify("キーボード を読み込みました！", 3)
+    end,
+    DoubleClick = false
+})
+
+OtherGroup:AddButton({
+    Text = "物を動かす を読み込む",
+    Func = function()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/cytj777i/6669178/main/%E5%8D%95%E4%B8%80%E7%89%A9%E4%BD%93%E9%A3%9E%E8%A1%8C%E8%BD%BD%E8%87%AA%E5%B7%B1%E6%9C%80%E7%BB%88%E4%BC%98%E5%8C%96%E7%89%88"))()
+        Library:Notify("物を動かす を読み込みました！", 3)
+    end,
+    DoubleClick = false
+})
+
+OtherGroup:AddButton({
+    Text = "FATP hub を読み込む",
+    Func = function()
+        loadstring(game:HttpGet("https://files.manuscdn.com/user_upload_by_module/session_file/310519663337716503/MxGpvJiVtheQAGbt.lua"))()
+        Library:Notify("FATP hub を読み込みました！", 3)
+    end,
+    DoubleClick = false
+})
+
+OtherGroup:AddButton({
+    Text = "シェーダー を読み込む",
+    Func = function()
+        loadstring(game:HttpGet('https://raw.githubusercontent.com/randomstring0/pshade-ultimate/refs/heads/main/src/cd.lua'))()
+        Library:Notify("シェーダー を読み込みました！", 3)
+    end,
+    DoubleClick = false
+})
+
+OtherGroup:AddButton({
+    Text = "vfly を読み込む",
+    Func = function()
+        loadstring(game:HttpGet("https://rawscripts.net/raw/Universal-Script-VFly-gui-and-noclip-78112"))()
+        Library:Notify("vfly を読み込みました！", 3)
+    end,
+    DoubleClick = false
+})
+
+OtherGroup:AddButton({
+    Text = "op hub を読み込む",
+    Func = function()
+        loadstring(game:HttpGet("https://rawscripts.net/raw/Fling-Things-and-People-OP-HUB-80884"))()
+        Library:Notify("op hub を読み込みました！", 3)
+    end,
+    DoubleClick = false
+})
+
+OtherGroup:AddButton({
+    Text = "auto check を読み込む",
+    Func = function()
+        loadstring(game:HttpGet("https://gist.githubusercontent.com/nooou0925-netizen/ca9778172766f4bc7be451cf0a8d407f/raw/Auto%20click.lua"))()
+        Library:Notify("auto check を読み込みました！", 3)
+    end,
+    DoubleClick = false
+})
+
+OtherGroup:AddButton({
+    Text = "蘇生スプリクト を読み込む",
+    Func = function()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/IdkRandomUsernameok/PublicAssets/refs/heads/main/Releases/MUI.lua"))()
+        Library:Notify("蘇生スプリクト を読み込みました！", 3)
+    end,
+    DoubleClick = false
+})
+
+OtherGroup:AddButton({
+    Text = "嫌がらせで送るやつ を読み込む",
+    Func = function()
+        loadstring(game:HttpGet("https://pastefy.app/kzKrISRZ/raw", true))()
+        Library:Notify("嫌がらせで送るやつ を読み込みました！", 3)
+    end,
+    DoubleClick = false
+})
+
+OtherGroup:AddButton({
+    Text = "holon hub を読み込む",
+    Func = function()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/hololove1021/HolonHUB/refs/heads/main/language/hub-jp.lua"))()
+        Library:Notify("holon hub を読み込みました！", 3)
+    end,
+    DoubleClick = false
+})
+
+OtherGroup:AddButton({
+    Text = "虚式紫 を読み込む",
+    Func = function()
+        loadstring(game:HttpGet("https://pastefy.app/vLdqpn3f/raw"))()
+        Library:Notify("虚式紫 を読み込みました！", 3)
+    end,
+    DoubleClick = false
+})
+
+OtherGroup:AddButton({
+    Text = "Fe fling2 を読み込む",
+    Func = function()
+        loadstring(game:HttpGet("https://pastefy.app/O7r6YZcb/raw"))()
+        Library:Notify("Fe fling2 を読み込みました！", 3)
+    end,
+    DoubleClick = false
+})
+
+OtherGroup:AddButton({
+    Text = "ろくでなし hub を読み込む",
+    Func = function()
+        loadstring(game:HttpGet("https://pastebin.com/raw/aczrx3t5"))()
+        Library:Notify("ろくでなし hub を読み込みました！", 3)
+    end,
+    DoubleClick = false
+})
+
+OtherGroup:AddButton({
+    Text = "99日 を読み込む",
+    Func = function()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/VapeVoidware/VW-Add/main/nightsintheforest.lua", true))()
+        Library:Notify("99日 を読み込みました！", 3)
+    end,
+    DoubleClick = false
+})
+
+OtherGroup:AddButton({
+    Text = "poop hub を読み込む",
+    Func = function()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/ilovepoop0653/PoopHUB/refs/heads/main/PoopHUB%20by%20Poop"))()
+        Library:Notify("poop hub を読み込みました！", 3)
+    end,
+    DoubleClick = false
+})
+
+OtherGroup:AddButton({
+    Text = "fly gui を読み込む",
+    Func = function()
+        loadstring(game:HttpGet("https://rawscripts.net/raw/Universal-Script-fly-gui-v3-46328"))()
+        Library:Notify("fly gui を読み込みました！", 3)
+    end,
+    DoubleClick = false
+})
+
+OtherGroup:AddButton({
+    Text = "無敵 を読み込む",
+    Func = function()
+        loadstring(game:HttpGet("https://rawscripts.net/raw/Universal-Script-Invisible-script-20557"))()
+        Library:Notify("無敵 を読み込みました！", 3)
+    end,
+    DoubleClick = false
+})
+
+OtherGroup:AddButton({
+    Text = "dance を読み込む",
+    Func = function()
+        loadstring(game:HttpGet(('https://pastebin.com/raw/1p6xnBNf'),true))()
+        Library:Notify("dance を読み込みました！", 3)
+    end,
+    DoubleClick = false
+})
+
+OtherGroup:AddButton({
+    Text = "ラッキーブロック壊す を読み込む",
+    Func = function()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/kingmagro2525-netizen/yajuhub/refs/heads/main/L.Block.lua"))()
+        Library:Notify("ラッキーブロック壊す を読み込みました！", 3)
+    end,
+    DoubleClick = false
+})
+
+OtherGroup:AddButton({
+    Text = "yaju hub を読み込む",
+    Func = function()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/kingmagro2525-netizen/yajuhub/main/Qop.Xxc.lua"))()
+        Library:Notify("yaju hub を読み込みました！", 3)
+    end,
+    DoubleClick = false
+})
+
+OtherGroup:AddButton({
+    Text = "板スポーン を読み込む",
+    Func = function()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/kingmagro2525-netizen/yajuhub/refs/heads/main/Aaa.lua"))()
+        Library:Notify("板スポーン を読み込みました！", 3)
+    end,
+    DoubleClick = false
+})
+
+OtherGroup:AddButton({
+    Text = "ジョジョスプリクト を読み込む",
+    Func = function()
+        loadstring(game:HttpGet("https://pastefy.app/jWi4DcHZ/raw"))()
+        Library:Notify("ジョジョスプリクト を読み込みました！", 3)
+    end,
+    DoubleClick = false
+})
+
+OtherGroup:AddButton({
+    Text = "Fe fling (別版) を読み込む",
+    Func = function()
+        loadstring(game:HttpGet(('https://raw.githubusercontent.com/0Ben1/fe/main/obf_rf6iQURzu1fqrytcnLBAvW34C9N55kS9g9G3CKz086rC47M6632sEd4ZZYB0AYgV.lua.txt'),true))()
+        Library:Notify("Fe fling (別版) を読み込みました！", 3)
+    end,
+    DoubleClick = false
+})
+
+OtherGroup:AddButton({
+    Text = "ようつべスプリクト を読み込む",
+    Func = function()
+        loadstring(game:HttpGet("https://rawscripts.net/raw/Universal-Script-YouTube-Music-Player-72222"))()
+        Library:Notify("ようつべスプリクト を読み込みました！", 3)
+    end,
+    DoubleClick = false
+})
+
+OtherGroup:AddButton({
+    Text = "blizt を読み込む",
+    Func = function()
+        loadstring(game:HttpGet('https://raw.githubusercontent.com/212happybirthday-debug/script/refs/heads/main/Blizt%20Crack.luau'))()
+        Library:Notify("blizt を読み込みました！", 3)
+    end,
+    DoubleClick = false
+})
+
+OtherGroup:AddButton({
+    Text = "飛行機エモート を読み込む",
+    Func = function()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/xVicity/GLACIER/main/LATEST.lua"))()
+        Library:Notify("飛行機エモート を読み込みました！", 3)
+    end,
+    DoubleClick = false
+})
+
+OtherGroup:AddButton({
+    Text = "物全消し を読み込む",
+    Func = function()
+        loadstring(game:HttpGet("https://rawscripts.net/raw/Fling-Things-and-People-FTAP-lag-reducer-87140"))()
+        Library:Notify("物全消し を読み込みました！", 3)
+    end,
+    DoubleClick = false
+})
+
+OtherGroup:AddButton({
+    Text = "k hub を読み込む",
+    Func = function()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/makkurokurosukescript/K-hub-beta/refs/heads/main/.gitignore", true))()
+        Library:Notify("k hub を読み込みました！", 3)
+    end,
+    DoubleClick = false
+})
+
+OtherGroup:AddButton({
+    Text = "コミックス hub を読み込む",
+    Func = function()
+        loadstring(game:HttpGet("https://rawscripts.net/raw/Fling-Things-and-People-CRACKED-COSMICHUB-FTAP-73528"))()
+        Library:Notify("コミックス hub を読み込みました！", 3)
+    end,
+    DoubleClick = false
+})
+
+OtherGroup:AddButton({
+    Text = "オートエイム を読み込む",
+    Func = function()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/LOLnoob106/aimbot.noobhub.free/refs/heads/main/aimbotnoobhub.lua"))()
+        Library:Notify("オートエイム を読み込みました！", 3)
+    end,
+    DoubleClick = false
+})
+
+OtherGroup:AddButton({
+    Text = "座標が見れる を読み込む",
+    Func = function()
+        loadstring(game:HttpGet("https://pastefy.app/wIPbedUN/raw"))()
+        Library:Notify("座標が見れる を読み込みました！", 3)
+    end,
+    DoubleClick = false
+})
+
+-- 🆕 新しく追加された5つのスクリプト（他スクリプトタブ内）
+OtherGroup:AddButton({
+    Text = "vexon hub を読み込む",
+    Func = function()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/DiosDi/VexonHub/refs/heads/main/VexonHub"))()
+        Library:Notify("vexon hub を読み込みました！", 3)
+    end,
+    DoubleClick = false
+})
+
+OtherGroup:AddButton({
+    Text = "キックおーるソース を読み込む",
+    Func = function()
+        loadstring(game:HttpGet("https://pastefy.app/RaE6Yf4D/raw"))() -- 💡修正：末尾に /raw を追加
+        Library:Notify("キックおーるソース を読み込みました！", 3)
+    end,
+    DoubleClick = false
+})
+
+OtherGroup:AddButton({
+    Text = "ブラックチーター用 を読み込む",
+    Func = function()
+        loadstring(game:HttpGet("https://pastefy.app/JHwl2LCW/raw"))()
+        Library:Notify("ブラックチーター用 を読み込みました！", 3)
+    end,
+    DoubleClick = false
+})
+
+OtherGroup:AddButton({
+    Text = "ホワイトチーター用 を読み込む",
+    Func = function()
+        loadstring(game:HttpGet("https://pastefy.app/SAcN9MRO/raw"))()
+        Library:Notify("ホワイトチーター用 を読み込みました！", 3)
+    end,
+    DoubleClick = false
+})
+
+OtherGroup:AddButton({
+    Text = "hacker hub を読み込む",
+    Func = function()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/hackerhub0624/hacker-hub-script/main/hackerhub.lua"))()
+        Library:Notify("hacker hub を読み込みました！", 3)
+    end,
+    DoubleClick = false
+})
+
+-- 「鍵」タブの中身
+KeyGroup:AddButton({
+    Text = "bloody の鍵をコピー",
+    Func = function()
+        setclipboard("BestScriptYK")
+        Library:Notify("bloody の鍵をコピーしました！", 3)
+    end,
+    DoubleClick = false
+})
+
+KeyGroup:AddButton({
+    Text = "holon hub の鍵をコピー",
+    Func = function()
+        setclipboard("holox")
+        Library:Notify("holon hub の鍵をコピーしました！", 3)
+    end,
+    DoubleClick = false
+})
+
+KeyGroup:AddButton({
+    Text = "k hub の鍵をコピー",
+    Func = function()
+        setclipboard("ftap k hub beta")
+        Library:Notify("k hub の鍵をコピーしました！", 3)
+    end,
+    DoubleClick = false
+})
+
+KeyGroup:AddButton({
+    Text = "megabliz hub の鍵をコピー",
+    Func = function()
+        setclipboard("Mega")
+        Library:Notify("megabliz hub の鍵をコピーしました！", 3)
+    end,
+    DoubleClick = false
+})
+
+-- マネージャーの設定
+ThemeManager:SetLibrary(Library)
+SaveManager:SetLibrary(Library)
+ThemeManager:SetFolder("ScriptHub")
+SaveManager:SetFolder("ScriptHub/configs")
+
+-- 設定セクションの自動ビルド
+SaveManager:BuildConfigSection(Window)
+
+-- UIの初期状態（合計数を 59 に更新しました）
+Library:SetWatermarkVisibility(true)
+Library:SetWatermark("スクリプト hub (Total: 59)")
+
+-- 初期タブの選択と起動通知
+Library:SelectTab(ScriptTab)
+Library:Notify("sentou hub の設定を更新しました", 3)
