@@ -1,0 +1,378 @@
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local CoreGui = game:GetService("CoreGui")
+local Workspace = game:GetService("Workspace")
+
+local hubName = "みたらしハブ" 
+
+local player = Players.LocalPlayer
+local camera = Workspace.CurrentCamera
+
+if CoreGui:FindFirstChild("SiratamaKeySystem") then CoreGui.SiratamaKeySystem:Destroy() end
+if CoreGui:FindFirstChild("SiratamaHubFluentCustom") then CoreGui.SiratamaHubFluentCustom:Destroy() end
+
+local isInfiniteJumpEnabled = false
+local isNoclipEnabled = false
+local isAimbotEnabled = false
+local isEspEnabled = false
+local isFullbrightEnabled = false
+
+local aimPart = "HumanoidRootPart"
+local origAmbient = game:GetService("Lighting").Ambient
+
+local function makeDraggable(frame)
+   local dragging, dragInput, dragStart, startPos
+   frame.InputBegan:Connect(function(input)
+      if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+         dragging = true
+         dragStart = input.Position
+         startPos = frame.Position
+         input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then dragging = false end
+         end)
+      end
+   end)
+   frame.InputChanged:Connect(function(input)
+      if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+         dragInput = input
+      end
+   end)
+   UserInputService.InputChanged:Connect(function(input)
+      if input == dragInput and dragging then
+         local delta = input.Position - dragStart
+         frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+      end
+   end)
+end
+
+local KeyGui = Instance.new("ScreenGui")
+KeyGui.Name = "SiratamaKeySystem"
+KeyGui.ResetOnSpawn = false
+KeyGui.Parent = CoreGui
+
+local KeyFrame = Instance.new("Frame")
+KeyFrame.Size = UDim2.new(0, 300, 0, 180)
+KeyFrame.Position = UDim2.new(0.5, -150, 0.5, -90)
+KeyFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
+KeyFrame.BorderSizePixel = 0
+KeyFrame.Active = true
+KeyFrame.Parent = KeyGui
+makeDraggable(KeyFrame)
+
+local KeyCorner = Instance.new("UICorner")
+KeyCorner.CornerRadius = UDim.new(0, 10)
+KeyCorner.Parent = KeyFrame
+
+local KeyTitle = Instance.new("TextLabel")
+KeyTitle.Size = UDim2.new(1, 0, 0, 40)
+KeyTitle.BackgroundColor3 = Color3.fromRGB(40, 40, 45)
+KeyTitle.Text = hubName .. " - キー入力"
+KeyTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+KeyTitle.TextSize = 16
+KeyTitle.Font = Enum.Font.SourceSansBold
+KeyTitle.Parent = KeyFrame
+
+local TitleCorner = Instance.new("UICorner")
+TitleCorner.CornerRadius = UDim.new(0, 10)
+TitleCorner.Parent = KeyTitle
+
+local KeyInput = Instance.new("TextBox")
+KeyInput.Size = UDim2.new(0, 240, 0, 40)
+KeyInput.Position = UDim2.new(0, 30, 0, 65)
+KeyInput.BackgroundColor3 = Color3.fromRGB(45, 45, 50)
+KeyInput.Text = ""
+KeyInput.PlaceholderText = "キーを入力してください"
+KeyInput.TextColor3 = Color3.fromRGB(255, 255, 255)
+KeyInput.TextSize = 16
+KeyInput.Font = Enum.Font.SourceSans
+KeyInput.Parent = KeyFrame
+
+local InputCorner = Instance.new("UICorner")
+InputCorner.CornerRadius = UDim.new(0, 6)
+InputCorner.Parent = KeyInput
+
+local KeyButton = Instance.new("TextButton")
+KeyButton.Size = UDim2.new(0, 240, 0, 35)
+KeyButton.Position = UDim2.new(0, 30, 0, 120)
+KeyButton.BackgroundColor3 = Color3.fromRGB(0, 120, 200)
+KeyButton.Text = "認証する"
+KeyButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+KeyButton.TextSize = 16
+KeyButton.Font = Enum.Font.SourceSansBold
+KeyButton.Parent = KeyFrame
+
+local ButtonCorner = Instance.new("UICorner")
+ButtonCorner.CornerRadius = UDim.new(0, 6)
+ButtonCorner.Parent = KeyButton
+
+local function runMainScript()
+   local MainGui = Instance.new("ScreenGui")
+   MainGui.Name = "SiratamaHubFluentCustom"
+   MainGui.ResetOnSpawn = false
+   MainGui.Parent = CoreGui
+
+   local MainFrame = Instance.new("Frame")
+   MainFrame.Size = UDim2.new(0, 500, 0, 350)
+   MainFrame.Position = UDim2.new(0.5, -225, 0.5, -150)
+   MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+   MainFrame.BorderSizePixel = 0
+   MainFrame.Active = true
+   MainFrame.Parent = MainGui
+   makeDraggable(MainFrame)
+
+   local MainCorner = Instance.new("UICorner")
+   MainCorner.CornerRadius = UDim.new(0, 12)
+   MainCorner.Parent = MainFrame
+
+   local SideBar = Instance.new("Frame")
+   SideBar.Size = UDim2.new(0, 130, 1, -40)
+   SideBar.Position = UDim2.new(0, 0, 0, 40)
+   SideBar.BackgroundColor3 = Color3.fromRGB(32, 32, 38)
+   SideBar.BorderSizePixel = 0
+   SideBar.Parent = MainFrame
+
+   local Title = Instance.new("TextLabel")
+   Title.Size = UDim2.new(1, 0, 0, 40)
+   Title.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
+   Title.Text = "  " .. hubName .. "  By TAKE"
+   Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+   Title.TextSize = 16
+   Title.TextXAlignment = Enum.TextXAlignment.Left
+   Title.Font = Enum.Font.SourceSansBold
+   Title.Parent = MainFrame
+   Instance.new("UICorner", Title).CornerRadius = UDim.new(0, 12)
+
+   local ContentFrame = Instance.new("Frame")
+   ContentFrame.Size = UDim2.new(1, -145, 1, -55)
+   ContentFrame.Position = UDim2.new(0, 138, 0, 48)
+   ContentFrame.BackgroundTransparency = 1
+   ContentFrame.Parent = MainFrame
+
+   local PlayerPage = Instance.new("ScrollingFrame")
+   PlayerPage.Size = UDim2.new(1, 0, 1, 0)
+   PlayerPage.BackgroundTransparency = 1
+   PlayerPage.CanvasSize = UDim2.new(0, 0, 1.2, 0)
+   PlayerPage.ScrollBarThickness = 4
+   PlayerPage.Visible = true
+   PlayerPage.Parent = ContentFrame
+
+   local CombatPage = Instance.new("ScrollingFrame")
+   CombatPage.Size = UDim2.new(1, 0, 1, 0)
+   CombatPage.BackgroundTransparency = 1
+   CombatPage.CanvasSize = UDim2.new(0, 0, 1.2, 0)
+   CombatPage.ScrollBarThickness = 4
+   CombatPage.Visible = false
+   CombatPage.Parent = ContentFrame
+
+   local VisualsPage = Instance.new("ScrollingFrame")
+   VisualsPage.Size = UDim2.new(1, 0, 1, 0)
+   VisualsPage.BackgroundTransparency = 1
+   VisualsPage.CanvasSize = UDim2.new(0, 0, 1.2, 0)
+   VisualsPage.ScrollBarThickness = 4
+   VisualsPage.Visible = false
+   VisualsPage.Parent = ContentFrame
+
+   local function createTabBtn(text, posy)
+      local btn = Instance.new("TextButton")
+      btn.Size = UDim2.new(1, -10, 0, 35)
+      btn.Position = UDim2.new(0, 5, 0, posy)
+      btn.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
+      btn.Text = text
+      btn.TextColor3 = Color3.fromRGB(180, 180, 180)
+      btn.Font = Enum.Font.SourceSansBold
+      btn.TextSize = 14
+      btn.Parent = SideBar
+      Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
+      return btn
+   end
+
+   local TabPlayerBtn = createTabBtn("👤 Player", 10)
+   local TabCombatBtn = createTabBtn("⚔️ Combat", 50)
+   local TabVisualsBtn = createTabBtn("👁️ Visuals", 90)
+
+   TabPlayerBtn.BackgroundColor3 = Color3.fromRGB(45, 45, 55)
+   TabPlayerBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+
+   local function switchTab(activeBtn, activePage)
+      PlayerPage.Visible = false; CombatPage.Visible = false; VisualsPage.Visible = false
+      TabPlayerBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 40); TabPlayerBtn.TextColor3 = Color3.fromRGB(180, 180, 180)
+      TabCombatBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 40); TabCombatBtn.TextColor3 = Color3.fromRGB(180, 180, 180)
+      TabVisualsBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 40); TabVisualsBtn.TextColor3 = Color3.fromRGB(180, 180, 180)
+      
+      activePage.Visible = true
+      activeBtn.BackgroundColor3 = Color3.fromRGB(45, 45, 55)
+      activeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+   end
+
+   TabPlayerBtn.MouseButton1Click:Connect(function() switchTab(TabPlayerBtn, PlayerPage) end)
+   TabCombatBtn.MouseButton1Click:Connect(function() switchTab(TabCombatBtn, CombatPage) end)
+   TabVisualsBtn.MouseButton1Click:Connect(function() switchTab(TabVisualsBtn, VisualsPage) end)
+
+   local function createToggle(name, posy, parent, callback)
+      local btn = Instance.new("TextButton")
+      btn.Size = UDim2.new(1, -10, 0, 45)
+      btn.Position = UDim2.new(0, 0, 0, posy)
+      btn.BackgroundColor3 = Color3.fromRGB(40, 40, 45)
+      btn.Text = name .. ": OFF"
+      btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+      btn.TextSize = 15
+      btn.Font = Enum.Font.SourceSans
+      btn.Parent = parent
+      Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
+
+      local enabled = false
+      btn.MouseButton1Click:Connect(function()
+         enabled = not enabled
+         if enabled then
+            btn.Text = name .. ": ON"
+            btn.BackgroundColor3 = Color3.fromRGB(0, 150, 100)
+         else
+            btn.Text = name .. ": OFF"
+            btn.BackgroundColor3 = Color3.fromRGB(40, 40, 45)
+         end
+         callback(enabled)
+      end)
+      return btn
+   end
+
+   createToggle("Infinite Jump", 10, PlayerPage, function(v)
+      isInfiniteJumpEnabled = v
+   end)
+
+   createToggle("Noclip (壁抜け)", 65, PlayerPage, function(v)
+      isNoclipEnabled = v
+   end)
+
+   createToggle("Player Aimbot", 10, CombatPage, function(v)
+      isAimbotEnabled = v
+   end)
+
+   local ChangePartBtn = Instance.new("TextButton")
+   ChangePartBtn.Size = UDim2.new(1, -10, 0, 45)
+   ChangePartBtn.Position = UDim2.new(0, 0, 0, 65)
+   ChangePartBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
+   ChangePartBtn.Text = "Aimbot 部位: 体 (Torso)"
+   ChangePartBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+   ChangePartBtn.TextSize = 15
+   ChangePartBtn.Font = Enum.Font.SourceSans
+   ChangePartBtn.Parent = CombatPage
+   Instance.new("UICorner", ChangePartBtn).CornerRadius = UDim.new(0, 8)
+
+   ChangePartBtn.MouseButton1Click:Connect(function()
+      if aimPart == "HumanoidRootPart" then
+         aimPart = "Head"
+         ChangePartBtn.Text = "Aimbot 部位: 頭 (Head)"
+         ChangePartBtn.BackgroundColor3 = Color3.fromRGB(150, 50, 50)
+      else
+         aimPart = "HumanoidRootPart"
+         ChangePartBtn.Text = "Aimbot 部位: 体 (Torso)"
+         ChangePartBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
+      end
+   end)
+
+   createToggle("Player ESP (透視)", 10, VisualsPage, function(v)
+      isEspEnabled = v
+      if not v then
+         for _, p in pairs(Players:GetPlayers()) do
+            if p.Character and p.Character:FindFirstChild("SiratamaESP") then
+               p.Character.SiratamaESP:Destroy()
+            end
+         end
+      end
+   end)
+
+   createToggle("Fullbright (常時昼間)", 65, VisualsPage, function(v)
+      isFullbrightEnabled = v
+      local lighting = game:GetService("Lighting")
+      if not v then
+         lighting.Ambient = origAmbient
+      end
+   end)
+
+   UserInputService.InputBegan:Connect(function(input, gameProcessed)
+      if gameProcessed then return end
+      if input.KeyCode == Enum.KeyCode.LeftControl then
+         MainFrame.Visible = not MainFrame.Visible
+      end
+   end)
+
+   local function getClosestPlayer()
+      local closestPlayer = nil
+      local shortestDistance = math.huge
+      for _, v in pairs(Players:GetPlayers()) do
+         if v ~= player and v.Character and v.Character:FindFirstChild("HumanoidRootPart") and v.Character:FindFirstChild("Humanoid") and v.Character.Humanoid.Health > 0 then
+            local distance = (player.Character.HumanoidRootPart.Position - v.Character.HumanoidRootPart.Position).Magnitude
+            if distance < shortestDistance then
+               closestPlayer = v
+               shortestDistance = distance
+            end
+         end
+      end
+      return closestPlayer
+   end
+
+   UserInputService.JumpRequest:Connect(function()
+      if isInfiniteJumpEnabled then
+         local character = player.Character
+         local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+         if humanoid then
+            humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+         end
+      end
+   end)
+
+   RunService.RenderStepped:Connect(function()
+      local char = player.Character
+      if not char then return end
+
+      if isNoclipEnabled then
+         for _, part in pairs(char:GetDescendants()) do
+            if part:IsA("BasePart") then
+               part.CanCollide = false
+            end
+         end
+      end
+
+      if isFullbrightEnabled then
+         game:GetService("Lighting").Ambient = Color3.fromRGB(255, 255, 255)
+      end
+
+      if isAimbotEnabled and char:FindFirstChild("HumanoidRootPart") then
+         local target = getClosestPlayer()
+         if target and target.Character and target.Character:FindFirstChild(aimPart) then
+            camera.CFrame = CFrame.new(camera.CFrame.Position, target.Character[aimPart].Position)
+         end
+      end
+
+      if isEspEnabled then
+         for _, p in pairs(Players:GetPlayers()) do
+            if p ~= player and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+               if p.Character.Humanoid.Health > 0 then
+                  if not p.Character:FindFirstChild("SiratamaESP") then
+                     local highlight = Instance.new("Highlight")
+                     highlight.Name = "SiratamaESP"
+                     highlight.FillColor = Color3.fromRGB(255, 0, 100)
+                     highlight.FillTransparency = 0.5
+                     highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+                     highlight.OutlineTransparency = 0
+                     highlight.Parent = p.Character
+                  end
+               else
+                  if p.Character:FindFirstChild("SiratamaESP") then p.Character.SiratamaESP:Destroy() end
+               end
+            end
+         end
+      end
+   end)
+end
+
+KeyButton.MouseButton1Click:Connect(function()
+   if KeyInput.Text == "siratama" then
+      KeyGui:Destroy()
+      runMainScript()
+   else
+      KeyInput.Text = ""
+      KeyInput.PlaceholderText = "キーが間違っています！"
+   end
+end)
