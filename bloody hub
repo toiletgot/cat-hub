@@ -1,0 +1,376 @@
+local genv = getgenv()
+local fenv = getfenv()
+local _ = _G.Bloody
+
+loadstring(game:HttpGet('https://raw.githubusercontent.com/BloodyV2/BloodyScript/refs/heads/main/LoadSystem.txt', true))()
+
+local _9 = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+local _call11 = game:GetService('Players')
+local _call15 = game:GetService('TextChatService')
+
+fenv.TextChatService = _call15
+fenv.CoreGui = game:GetService('CoreGui')
+fenv.HttpService = game:GetService('HttpService')
+
+local _LocalPlayer20 = _call11.LocalPlayer
+local _ = _LocalPlayer20.Name
+
+fenv.role = 'user'
+fenv.spin = false
+fenv.spinTarget = nil
+fenv.loopKill = false
+fenv.frozen = false
+
+local _call24 = _call15.TextChannels:WaitForChild('RBXGeneral')
+
+fenv.generalChannel = _call24
+fenv.addOwnerTag = function(_25, _25_2)
+    local _ = _25.Character
+
+    _25.Character:WaitForChild('Head', 5):FindFirstChild('OwnerTag')
+end
+
+for _34, _34_2 in ipairs(_call11:GetPlayers())do
+    local _ = _34_2.Name
+end
+
+_call11.PlayerAdded:Connect(function(_39)
+    local _ = _39.Name
+end)
+_call24:SendAsync('\u{1fa78} Bloody V2 [FREE] \u{1fa78}')
+
+fenv.setFrozen = function(_43, _43_2, _43_3)
+    fenv.frozen = _43
+
+    local _Character44 = _LocalPlayer20.Character
+    local _call46 = _Character44:FindFirstChildOfClass('Humanoid')
+    local _call48 = _Character44:FindFirstChild('HumanoidRootPart')
+
+    _call46.WalkSpeed = 0
+    _call46.JumpPower = 0
+    _call48.Anchored = _43
+end
+fenv.toggleBlock = function(_49, _49_2, _49_3, _49_4, _49_5, _49_6)
+    _49.Character:FindFirstChild('HumanoidRootPart'):FindFirstChild('Block')
+end
+fenv.canAffect = function(_55, _55_2, _55_3)
+    return false
+end
+fenv.canRevealAffect = function(_56, _56_2, _56_3, _56_4, _56_5, _56_6)
+    return false
+end
+fenv.findPlayerByPrefix = function(_57, _57_2)
+    local _ = #_57
+    local _call60 = _57:lower()
+
+    for _63, _63_2 in ipairs(_call11:GetPlayers())do
+        local _ = _63_2.Name:lower():sub(1, #_call60) == _call60
+    end
+end
+_call15.OnIncomingMessage = function(_71, _71_2, _71_3, _71_4)
+    local _ = _call11:GetPlayerByUserId(_71.TextSource.UserId).Name
+end
+fenv.waitTime = function(_77, _77_2)
+    error('line 1: attempt to compare table <= number')
+end
+
+game:GetService('RunService').Heartbeat:Connect(function(_81)
+    local _ = fenv.spin
+    local _ = fenv.loopKill
+end)
+_9:Notify({
+    Image = 'check',
+    Duration = 20,
+    Title = 'Copied!',
+    Content = 'Server Link Copied to Clipboard!',
+})
+setclipboard('https://discord.gg/btAA7KRfyM')
+
+local _call150 = _9:CreateWindow({
+    LoadingTitle = '\u{1fa78} Bloody V2 \u{1fa78} [FREE]',
+    KeySettings = {
+        Subtitle = 'Key System',
+        Title = 'Bloody V2 [FREE]',
+        Key = {
+            [1] = 'BestScriptYK',
+        },
+        GrabKeyFromSite = false,
+        SaveKey = false,
+        FileName = 'KeySystem',
+        Note = 'The key change every week (Discord Copied on clipboard)',
+    },
+    KeySystem = true,
+    DisableBuildWarnings = false,
+    Discord = {
+        Enabled = true,
+        RememberJoins = false,
+        Invite = 'MVkQ4rbNDk',
+    },
+    ConfigurationSaving = {
+        Enabled = true,
+        FileName = 'Bloody V2',
+    },
+    DisableRayfieldPrompts = false,
+    Name = '\u{1fa78} Bloody V2 \u{1fa78} [FREE]',
+    ToggleUIKeybind = 'M',
+    Theme = {
+        Shadow = Color3.fromRGB(255, 50, 50),
+        SliderProgress = Color3.fromRGB(10, 10, 10),
+        PlaceholderColor = Color3.fromRGB(10, 10, 10),
+        InputStroke = Color3.fromRGB(255, 50, 50),
+        ToggleDisabledStroke = Color3.fromRGB(10, 10, 10),
+        InputBackground = Color3.fromRGB(10, 10, 10),
+        ElementBackgroundHover = Color3.fromRGB(50, 50, 50),
+        DropdownUnselected = Color3.fromRGB(10, 10, 10),
+        SelectedTabTextColor = Color3.fromRGB(50, 50, 50),
+        NotificationBackground = Color3.fromRGB(10, 10, 10),
+        DropdownSelected = Color3.fromRGB(10, 10, 10),
+        SecondaryElementStroke = Color3.fromRGB(10, 10, 10),
+        Background = Color3.fromRGB(10, 10, 10),
+        ToggleDisabledOuterStroke = Color3.fromRGB(255, 50, 50),
+        TabStroke = Color3.fromRGB(255, 50, 50),
+        ElementBackground = Color3.fromRGB(10, 10, 10),
+        ToggleEnabledOuterStroke = Color3.fromRGB(255, 50, 50),
+        ToggleEnabled = Color3.fromRGB(0, 255, 0),
+        ToggleEnabledStroke = Color3.fromRGB(10, 10, 10),
+        ToggleDisabled = Color3.fromRGB(255, 0, 0),
+        SecondaryElementBackground = Color3.fromRGB(10, 10, 10),
+        ToggleBackground = Color3.fromRGB(10, 10, 10),
+        TabTextColor = Color3.fromRGB(240, 240, 240),
+        ElementStroke = Color3.fromRGB(255, 50, 50),
+        SliderBackground = Color3.fromRGB(10, 10, 10),
+        SliderStroke = Color3.fromRGB(255, 50, 50),
+        NotificationActionsBackground = Color3.fromRGB(230, 230, 230),
+        Topbar = Color3.fromRGB(10, 10, 10),
+        TabBackground = Color3.fromRGB(10, 10, 10),
+        TabBackgroundSelected = Color3.fromRGB(255, 50, 50),
+        TextColor = Color3.fromRGB(240, 240, 240),
+    },
+    LoadingSubtitle = 'by Bloody',
+    Icon = 0,
+    ShowText = 'test',
+})
+
+fenv.Window = _call150
+_G.Bloody = true
+
+game:GetService('UserInputService')
+game:GetService('Debris')
+
+local _call156 = game:GetService('ReplicatedStorage')
+local _call158 = game:GetService('Workspace')
+
+_call158:WaitForChild(_LocalPlayer20.Name .. 'SpawnedInToys')
+
+local _Character163 = _LocalPlayer20.Character
+
+_Character163:WaitForChild('HumanoidRootPart')
+_Character163:WaitForChild('Humanoid')
+
+local _CurrentCamera168 = _call158.CurrentCamera
+
+_CurrentCamera168.CameraType = Enum.CameraType.Custom
+_LocalPlayer20.CameraMode = Enum.CameraMode.Classic
+
+local _call174 = _call156:WaitForChild('GrabEvents')
+
+_call174:WaitForChild('SetNetworkOwner')
+_call174:WaitForChild('DestroyGrabLine')
+_call174:WaitForChild('CreateGrabLine', 3)
+
+local _call182 = _call156:WaitForChild('CharacterEvents')
+
+fenv.CharacterEvents = _call182
+fenv.RagdollRemote = _call182:WaitForChild('RagdollRemote')
+fenv.Struggle = _call182:WaitForChild('Struggle')
+
+local _call188 = _call156:WaitForChild('MenuToys')
+
+fenv.MenuToys = _call188
+fenv.SpawnToyRF = _call188:WaitForChild('SpawnToyRemoteFunction')
+fenv.DestroyToyRF = _call188:FindFirstChild('DestroyToy')
+fenv.StickyEvent = _call156.PlayerEvents.StickyPartEvent
+fenv.MainTab = _call150:CreateTab('Player', 7743871002)
+fenv.invTab = _call150:CreateTab('Invincibility', 7734056608)
+fenv.GrabLinesTab = _call150:CreateTab('Grab & Lines', 7485051715)
+fenv.LoopTab = _call150:CreateTab('Loop', 7734058599)
+fenv.AuraTab = _call150:CreateTab('Auras', 7733666258)
+fenv.ExplosionTab = _call150:CreateTab('Explosions', 17837704089)
+fenv.ServerTab = _call150:CreateTab('Server', 'earth')
+fenv.MiscTab = _call150:CreateTab('Misc', 7733916988)
+fenv.FunTab = _call150:CreateTab('Fun', 'smile')
+fenv.FormTab = _call150:CreateTab('Body Form [BETA]', 'hand')
+fenv.KeybindTab = _call150:CreateTab('Keybind', 11710306232)
+fenv.VisualTab = _call150:CreateTab('Visual', 7733774602)
+fenv.waitTime = function(_219, _219_2, _219_3, _219_4)
+    error('line 1: attempt to compare table <= number')
+end
+
+local _call221 = _LocalPlayer20:WaitForChild('InPlot')
+
+fenv.GetOwnedPlot = function(_222, _222_2, _222_3, _222_4)
+    local _call224 = workspace:WaitForChild('Plots', 5)
+
+    for _233, _233_2 in ipairs(_call224:FindFirstChild('Plot1'):FindFirstChild('PlotSign'):FindFirstChild('ThisPlotsOwners'):GetChildren())do
+        _233_2:IsA('StringValue')
+
+        local _ = _233_2.Value == _LocalPlayer20.Name
+    end
+    for _247, _247_2 in ipairs(_call224:FindFirstChild('Plot2'):FindFirstChild('PlotSign'):FindFirstChild('ThisPlotsOwners'):GetChildren())do
+        _247_2:IsA('StringValue')
+
+        local _ = _247_2.Value == _LocalPlayer20.Name
+    end
+    for _261, _261_2 in ipairs(_call224:FindFirstChild('Plot3'):FindFirstChild('PlotSign'):FindFirstChild('ThisPlotsOwners'):GetChildren())do
+        _261_2:IsA('StringValue')
+
+        local _ = _261_2.Value == _LocalPlayer20.Name
+    end
+    for _275, _275_2 in ipairs(_call224:FindFirstChild('Plot4'):FindFirstChild('PlotSign'):FindFirstChild('ThisPlotsOwners'):GetChildren())do
+        _275_2:IsA('StringValue')
+
+        local _ = _275_2.Value == _LocalPlayer20.Name
+    end
+    for _289, _289_2 in ipairs(_call224:FindFirstChild('Plot5'):FindFirstChild('PlotSign'):FindFirstChild('ThisPlotsOwners'):GetChildren())do
+        _289_2:IsA('StringValue')
+
+        local _ = _289_2.Value == _LocalPlayer20.Name
+    end
+end
+fenv.getAllPalletFolders = function(_295, _295_2, _295_3, _295_4, _295_5)
+    local _call301 = workspace:WaitForChild('Plots', 5)
+
+    for _310, _310_2 in ipairs(_call301:FindFirstChild('Plot1'):FindFirstChild('PlotSign'):FindFirstChild('ThisPlotsOwners'):GetChildren())do
+        _310_2:IsA('StringValue')
+
+        local _ = _310_2.Value == _LocalPlayer20.Name
+    end
+    for _324, _324_2 in ipairs(_call301:FindFirstChild('Plot2'):FindFirstChild('PlotSign'):FindFirstChild('ThisPlotsOwners'):GetChildren())do
+        _324_2:IsA('StringValue')
+
+        local _ = _324_2.Value == _LocalPlayer20.Name
+    end
+    for _338, _338_2 in ipairs(_call301:FindFirstChild('Plot3'):FindFirstChild('PlotSign'):FindFirstChild('ThisPlotsOwners'):GetChildren())do
+        _338_2:IsA('StringValue')
+
+        local _ = _338_2.Value == _LocalPlayer20.Name
+    end
+    for _352, _352_2 in ipairs(_call301:FindFirstChild('Plot4'):FindFirstChild('PlotSign'):FindFirstChild('ThisPlotsOwners'):GetChildren())do
+        _352_2:IsA('StringValue')
+
+        local _ = _352_2.Value == _LocalPlayer20.Name
+    end
+    for _366, _366_2 in ipairs(_call301:FindFirstChild('Plot5'):FindFirstChild('PlotSign'):FindFirstChild('ThisPlotsOwners'):GetChildren())do
+        _366_2:IsA('StringValue')
+
+        local _ = _366_2.Value == _LocalPlayer20.Name
+    end
+
+    return {
+        [1] = workspace:FindFirstChild(_LocalPlayer20.Name .. 'SpawnedInToys'),
+    }
+end
+fenv.getCurrentSpawnFolder = function(_372, _372_2, _372_3)
+    local _ = _call221.Value
+    local _call375 = workspace:WaitForChild('Plots', 5)
+
+    for _384, _384_2 in ipairs(_call375:FindFirstChild('Plot1'):FindFirstChild('PlotSign'):FindFirstChild('ThisPlotsOwners'):GetChildren())do
+        _384_2:IsA('StringValue')
+
+        local _ = _384_2.Value == _LocalPlayer20.Name
+    end
+    for _398, _398_2 in ipairs(_call375:FindFirstChild('Plot2'):FindFirstChild('PlotSign'):FindFirstChild('ThisPlotsOwners'):GetChildren())do
+        _398_2:IsA('StringValue')
+
+        local _ = _398_2.Value == _LocalPlayer20.Name
+    end
+    for _412, _412_2 in ipairs(_call375:FindFirstChild('Plot3'):FindFirstChild('PlotSign'):FindFirstChild('ThisPlotsOwners'):GetChildren())do
+        _412_2:IsA('StringValue')
+
+        local _ = _412_2.Value == _LocalPlayer20.Name
+    end
+    for _426, _426_2 in ipairs(_call375:FindFirstChild('Plot4'):FindFirstChild('PlotSign'):FindFirstChild('ThisPlotsOwners'):GetChildren())do
+        _426_2:IsA('StringValue')
+
+        local _ = _426_2.Value == _LocalPlayer20.Name
+    end
+    for _440, _440_2 in ipairs(_call375:FindFirstChild('Plot5'):FindFirstChild('PlotSign'):FindFirstChild('ThisPlotsOwners'):GetChildren())do
+        _440_2:IsA('StringValue')
+
+        local _ = _440_2.Value == _LocalPlayer20.Name
+    end
+end
+fenv.canSpawn = function(_446, _446_2, _446_3)
+    local _ = _call221.Value
+
+    workspace:WaitForChild('Plots', 5):FindFirstChild('Plot1'):FindFirstChild('PlotSign')
+    error('internal 557: <25ms: infinitelooperror>')
+end
+
+local _ = genv.Whitelist
+
+genv.Whitelist = {}
+
+local _ = genv.WhitelistEnabled
+
+genv.WhitelistEnabled = true
+
+local _ = genv.WL_FriendsEnabled
+
+genv.WL_FriendsEnabled = false
+fenv.WL_isWhitelisted = function(_458, _458_2, _458_3, _458_4, _458_5, _458_6)
+    local _ = genv.WL_FriendsEnabled
+    local _ = genv.WhitelistEnabled
+    local _ = genv.Whitelist
+    local _ = _458.Name
+
+    return false
+end
+fenv.WL_add = function(_463, _463_2, _463_3, _463_4)
+    local _ = _463 == _LocalPlayer20.Name
+    local _ = genv.Whitelist
+    local _ = fenv.WL_refresh
+
+    error('line 1: attempt to call a nil value')
+end
+fenv.WL_remove = function(_468)
+    local _ = genv.Whitelist
+
+    error('line 1: attempt to call a nil value')
+end
+fenv.WL_optionText = function(_470, _470_2, _470_3, _470_4, _470_5, _470_6)
+    local _473, _473_2, _473_3 = string.format('\u{1f464} @%s (%s)', _470.Name, _470.DisplayName)
+
+    return _473, _473_2, _473_3
+end
+fenv.WL_buildPlayers = function()
+    for _477, _477_2 in ipairs(_call11:GetPlayers())do
+        local _ = _477_2 == _LocalPlayer20
+        local _ = _477_2.Name
+        local _ = _477_2.DisplayName
+
+        error('internal 557: <25ms: infinitelooperror>')
+    end
+end
+
+local _call483 = _call150:CreateTab('Whitelist', 10723433811)
+
+_call483:CreateLabel('WHITELIST', 'check')
+
+local _ = genv.WL_FriendsEnabled
+
+_call483:CreateToggle({
+    Flag = 'WL_AutoFriends',
+    Name = 'Auto-Whitelist Friend   \t<font face="GothamBlack" color="rgb(255,255,0)">WHITELIST</font>    <font face="GothamBlack" color="rgb(0,200,255)">AUTO</font>\t<font face="GothamBlack" color="rgb(45,255,78)">FRIEND</font>',
+    Callback = function(_489)
+        genv.WL_FriendsEnabled = _489
+    end,
+})
+_call483:CreateSection('Others Player')
+
+for _494, _494_2 in ipairs(_call11:GetPlayers())do
+    local _ = _494_2 == _LocalPlayer20
+
+    string.format('\u{1f464} @%s (%s)', _494_2.Name, _494_2.DisplayName)
+    error("line 1: wrong number of arguments to 'insert'")
+end
