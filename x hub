@@ -1,0 +1,241 @@
+local lp = game:GetService("Players").LocalPlayer
+local RS = game:GetService("RunService")
+local CG = game:GetService("CoreGui")
+local Lighting = game:GetService("Lighting")
+
+-- 🔄 重複起動防止：古いUIが残っていれば1回完全に削除してリセット
+for _, v in pairs(CG:GetChildren()) do 
+    if v.Name == "XHUB_GEMINI_CUSTOM" then 
+        v:Destroy() 
+    end 
+end
+
+-- 🎨 メインGUIの生成
+local sg = Instance.new("ScreenGui", CG) 
+sg.Name = "XHUB_GEMINI_CUSTOM"
+sg.IgnoreGuiInset = true
+
+local function SetupUI(obj, isText)
+    local s = Instance.new("UIStroke", obj)
+    s.Thickness = 2.5
+    s.ApplyStrokeMode = isText and "Contextual" or "Border"
+    return s
+end
+
+-- 🎯 クロスヘア設定 (元のシンプルな回転式)
+local chBase = Instance.new("Frame", sg)
+chBase.Position = UDim2.new(0.5, 0, 0.5, 0)
+chBase.BackgroundTransparency = 1
+
+local crossRotator = Instance.new("Frame", chBase)
+crossRotator.Size = UDim2.new(0,0,0,0)
+crossRotator.BackgroundTransparency = 1
+
+local function CreateLine(rot)
+    local l = Instance.new("Frame", crossRotator)
+    l.Size, l.AnchorPoint, l.Rotation, l.BorderSizePixel = UDim2.new(0, 50, 0, 8), Vector2.new(0.5, 0.5), rot, 0
+    return l
+end
+local l1, l2 = CreateLine(45), CreateLine(135)
+
+local customText = Instance.new("TextLabel", chBase)
+customText.Size, customText.Position, customText.BackgroundTransparency = UDim2.new(0, 200, 0, 30), UDim2.new(0, -100, 0, 55), 1
+customText.Text, customText.Font, customText.TextSize = "yokohamawin", "FredokaOne", 18
+local ctS = SetupUI(customText, true)
+
+-- 💻 メインパネル
+local main = Instance.new("Frame", sg)
+main.Size, main.Position, main.BackgroundColor3 = UDim2.new(0,480,0,520), UDim2.new(0.5,-240,0.2,0), Color3.new(0,0,0)
+main.Active, main.Visible = true, true
+local ms = SetupUI(main, false)
+
+-- 🔘 開閉ボタン (0.07の少し下がったベストポジション)
+local tgl = Instance.new("TextButton", sg)
+tgl.Size, tgl.Position, tgl.Text = UDim2.new(0,120,0,40), UDim2.new(0.5,-60,0.07,0), "CLOSE"
+tgl.Font, tgl.TextSize, tgl.BackgroundColor3 = "FredokaOne", 18, Color3.new(0,0,0)
+local ts, ttS = SetupUI(tgl, false), SetupUI(tgl, true)
+tgl.MouseButton1Click:Connect(function() 
+    main.Visible = not main.Visible 
+    tgl.Text = main.Visible and "CLOSE" or "OPEN" 
+end)
+
+-- 📜 機能スクロールエリア
+local funcFrame = Instance.new("ScrollingFrame", main)
+funcFrame.Size, funcFrame.Position, funcFrame.BackgroundTransparency, funcFrame.CanvasSize = UDim2.new(0.7,0,0.92,0), UDim2.new(0,5,0.04,0), 1, UDim2.new(0,0,12,0)
+local grid = Instance.new("UIGridLayout", funcFrame)
+grid.CellSize, grid.CellPadding = UDim2.new(0,150,0,38), UDim2.new(0,10,0,10)
+
+-- ✍️ テキスト編集ボックスエリア
+local setFrame = Instance.new("Frame", main)
+setFrame.Size, setFrame.Position, setFrame.BackgroundColor3 = UDim2.new(0.25,0,0.92,0), UDim2.new(0.73,0,0.04,0), Color3.fromRGB(15,15,15)
+local txtIn = Instance.new("TextBox", setFrame)
+txtIn.Size, txtIn.PlaceholderText, txtIn.Text = UDim2.new(0.9,0,0,45), "Edit Text", "yokohamawin"
+txtIn.Position, txtIn.BackgroundColor3, txtIn.TextColor3 = UDim2.new(0.05,0,0.1,0), Color3.new(0,0,0), Color3.new(1,1,1)
+txtIn:GetPropertyChangedSignal("Text"):Connect(function() customText.Text = txtIn.Text end)
+SetupUI(txtIn, false)
+
+-- 🛠️ ボタン生成システム
+local states = {}
+local function b(name, func, isGemini)
+    states[name] = false
+    local btn = Instance.new("TextButton", funcFrame)
+    btn.Text = isGemini and "♊ " .. name or name
+    btn.BackgroundColor3, btn.Font, btn.TextSize = Color3.new(0,0,0), "FredokaOne", 9
+    btn.TextColor3 = Color3.new(1,0,0)
+    local bs = SetupUI(btn, false)
+    btn.MouseButton1Click:Connect(function()
+        states[name] = not states[name]
+        btn.TextColor3 = states[name] and Color3.new(0,1,0) or Color3.new(1,0,0)
+        func(states[name])
+    end)
+    RS.RenderStepped:Connect(function() bs.Color = Color3.fromHSV(tick()%5/5, 1, 1) end)
+end
+
+-- 🔄 プレイヤー追従オービット(周回)処理
+local circling = false
+local circlingThread
+local function ToggleCircling(v)
+    circling = v
+    if circling then
+        if circlingThread then task.cancel(circlingThread) end
+        circlingThread = task.spawn(function()
+            local angle = 0
+            while circling do
+                if lp.Character and lp.Character:FindFirstChild("HumanoidRootPart") then
+                    local hrp = lp.Character.HumanoidRootPart
+                    local targetPlayer
+                    for _, p in pairs(game.Players:GetPlayers()) do
+                        if p ~= lp and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then targetPlayer = p break end
+                    end
+                    if targetPlayer then
+                        local targetHrp = targetPlayer.Character.HumanoidRootPart
+                        local offset = Vector3.new(math.sin(angle) * 10, 0, math.cos(angle) * 10)
+                        hrp.CFrame = targetHrp.CFrame + offset angle = angle + 0.1
+                    end
+                end
+                task.wait(0.01)
+            end
+        end)
+    else
+        if circlingThread then task.cancel(circlingThread) end
+    end
+end
+
+-- 🚀 ボタン登録 (Gemini Premium 特殊機能)
+b("Gemini Orbit", ToggleCircling, true)
+b("Gemini Kill Aura", function() end, true) 
+b("Gemini Spin", function() end, true) 
+b("Gemini Fly 10", function() end, true) 
+b("Gemini Reload", function() end, true) 
+b("Gemini Snow", function() end, true) 
+b("Gemini Shake", function() end, true) 
+b("Gemini Rainbow", function() end, true) 
+b("Gemini S-Shot", function() end, true)
+b("Gemini Invisible", function(v) pcall(function() local char = lp.Character if char then for _, p in pairs(char:GetDescendants()) do if p:IsA("BasePart") or p:IsA("Decal") then p.Transparency = v and 1 or (p.Name == "HumanoidRootPart" and 1 or 0) end end end end) end, true)
+
+-- 🚀 ボタン登録 (ノーマル・バグ修正機能)
+b("Gemini Void", function(v) if v and lp.Character then lp.Character.HumanoidRootPart.CFrame = CFrame.new(0,-9999,0) end end, false)
+
+b("Headless", function(v)
+    if not v and lp.Character and lp.Character:FindFirstChild("Head") then
+        pcall(function()
+            lp.Character.Head.Transparency = 0
+            for _, child in pairs(lp.Character.Head:GetChildren()) do
+                if child:IsA("Decal") or child:IsA("SpecialMesh") then child.Transparency = 0 end
+            end
+        end)
+    end
+end)
+
+b("Korblox", function(v) pcall(function() (lp.Character:FindFirstChild("LeftUpperLeg") or lp.Character:FindFirstChild("Left Leg")):Destroy() end) end)
+b("No Animation", function(v) pcall(function() lp.Character.Animate.Disabled = v if v then for _,t in pairs(lp.Character.Humanoid:GetPlayingAnimationTracks()) do t:Stop() end end end) end)
+b("Inf Jump", function() game:GetService("UserInputService").JumpRequest:Connect(function() if states["Inf Jump"] and lp.Character then lp.Character:FindFirstChildOfClass("Humanoid"):ChangeState("Jumping") end end) end)
+b("Anti Tripmine", function(v) task.spawn(function() while states["Anti Tripmine"] do for _,i in pairs(workspace:GetDescendants()) do if i.Name:find("Tripmine") then i:Destroy() end end task.wait(1) end end) end)
+b("Sky Box", function(v) Lighting.ClockTime = v and 0 or 12 end)
+b("Speed 150", function(v) pcall(function() lp.Character.Humanoid.WalkSpeed = v and 150 or 16 end) end)
+b("Jump 100", function(v) pcall(function() lp.Character.Humanoid.JumpPower = v and 100 or 50 end) end)
+b("Gravity 0", function(v) workspace.Gravity = v and 0 or 196.2 end)
+b("Portal Effect", function(v) pcall(function() if v then local p=Instance.new("ParticleEmitter",lp.Character.PrimaryPart) p.Name="P" p.Texture="rbxassetid://6096178330" p.Size=NumberSequence.new(10) else lp.Character.PrimaryPart.P:Destroy() end end) end)
+
+b("Gemini TP", function(v) end, true)
+local geminiTPAnchor
+b("TP Anchor", function(v)
+    local char = lp.Character
+    if v and char and char:FindFirstChild("HumanoidRootPart") then
+        local hrp = char.HumanoidRootPart
+        hrp.CFrame = CFrame.new(hrp.Position.X, 1000, hrp.Position.Z)
+        if geminiTPAnchor then geminiTPAnchor:Destroy() end
+        geminiTPAnchor = Instance.new("Part", workspace)
+        geminiTPAnchor.Size = Vector3.new(10, 1, 10)
+        geminiTPAnchor.Position = hrp.Position - Vector3.new(0, 5, 0)
+        geminiTPAnchor.Anchored = true
+        geminiTPAnchor.Transparency = 0.5
+    else
+        if geminiTPAnchor then geminiTPAnchor:Destroy() end
+    end
+end, true)
+
+b("Gemini Aura", function(v) end, true)
+b("Gemini S-Shot Bypass", function(v) end, true)
+
+-- 🔄 毎フレームのレンダリング同期ループ
+RS.RenderStepped:Connect(function()
+    local h = Color3.fromHSV(tick()%5/5, 1, 1)
+    ms.Color, ts.Color, ttS.Color, tgl.TextColor3 = h, h, h, h
+    ctS.Color, customText.TextColor3, l1.BackgroundColor3, l2.BackgroundColor3 = h, h, h, h
+    crossRotator.Rotation = (tick() * 1800) % 360
+    
+    if states["Gemini Void"] then
+        Lighting.ClockTime = (math.floor(tick() * 30) % 2 == 0) and 0 or 12
+    end
+
+    local char = lp.Character
+    if char and char:FindFirstChild("HumanoidRootPart") then
+        local hrp, hum = char.HumanoidRootPart, char.Humanoid
+        
+        -- 🛠️ ヘッドレス強制修正維持
+        if states["Headless"] and char:FindFirstChild("Head") then
+            pcall(function()
+                char.Head.Transparency = 1
+                for _, child in pairs(char.Head:GetChildren()) do
+                    if child:IsA("Decal") or child:IsA("SpecialMesh") then child.Transparency = 1 end
+                end
+            end)
+        end
+
+        if states["Gemini Spin"] then hrp.CFrame *= CFrame.Angles(math.rad(10), math.rad(50), math.rad(10)) end
+        if states["Gemini Fly 10"] then hrp.CFrame += hum.MoveDirection * 10 end
+        if states["Gemini Shake"] then hrp.CFrame *= CFrame.new(math.sin(tick()*30)*1.5, 0, 0) end
+        if states["Gemini Kill Aura"] then
+            for _, p in pairs(game.Players:GetPlayers()) do
+                if p ~= lp and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                    p.Character.HumanoidRootPart.Size, p.Character.HumanoidRootPart.Transparency = Vector3.new(20,20,20), 0.7
+                end
+            end
+        end
+        if states["Gemini Rainbow"] and not states["Gemini Invisible"] then
+            for _, p in pairs(char:GetDescendants()) do if p:IsA("BasePart") then p.Color, p.Material = h, "Neon" end end
+        end
+    end
+end)
+
+-- ❄️ エフェクト処理用スレッド
+task.spawn(function()
+    while true do
+        if states["Gemini Snow"] then
+            for i=1, 5 do
+                task.spawn(function()
+                    local s = Instance.new("Frame", sg) s.Size = UDim2.new(0, math.random(1,3), 0, math.random(1,3))
+                    s.Position, s.BackgroundColor3, s.BackgroundTransparency, s.BorderSizePixel = UDim2.new(math.random(), 0, -0.05, 0), Color3.new(1,1,1), math.random(2,5)/10, 0
+                    Instance.new("UICorner", s).CornerRadius = UDim.new(1,0)
+                    local spd, d = math.random(20,45)/1000, math.random(-20,20)/1000
+                    while states["Gemini Snow"] and s.Parent and s.Position.Y.Scale < 1.05 do
+                        s.Position += UDim2.new(d * math.sin(tick()+i), 0, spd, 0) RS.RenderStepped:Wait()
+                    end
+                    s:Destroy()
+                end)
+            end
+        end
+        task.wait(0.02)
+    end
+end)
