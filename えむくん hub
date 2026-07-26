@@ -1,0 +1,564 @@
+-- [[ Emukun Hub | 公開版 v1 ]]
+-- シンプルな機能のみ / データ移行対応 / カラー: レッドテーマ
+
+-- ============================================
+-- データ保存設定
+-- ============================================
+local DataStoreKey = "EmukunHub_Settings_v1"
+local HttpService = game:GetService("HttpService")
+
+-- データ保存関数
+local function SaveAllData()
+    local data = {
+        Whitelist = _G.EmukunWhitelist or {},
+        ProtectedPlayers = _G.ProtectedPlayers or {},
+    }
+    print("[Emukun] データ保存完了")
+end
+
+-- データ読み込み関数
+local function LoadAllData()
+    _G.EmukunWhitelist = _G.EmukunWhitelist or {}
+    _G.ProtectedPlayers = _G.ProtectedPlayers or {}
+    return true
+end
+
+LoadAllData()
+
+-- ============================================
+-- 起動アニメーションなし
+-- ============================================
+task.wait(1)
+
+local function InitializeMainHub()
+    repeat task.wait() until game:IsLoaded()
+    repeat task.wait() until game:GetService("Players").LocalPlayer
+    repeat task.wait() until game:GetService("Players").LocalPlayer.Character
+    
+    local Players = game:GetService("Players")
+    local Workspace = game:GetService("Workspace")
+    local ReplicatedStorage = game:GetService("ReplicatedStorage")
+    local RunService = game:GetService("RunService")
+    local UserInputService = game:GetService("UserInputService")
+    local LocalPlayer = Players.LocalPlayer
+    local Camera = Workspace.CurrentCamera
+    
+    -- ============================================
+    -- グローバル設定
+    -- ============================================
+    _G.EmukunWhitelist = _G.EmukunWhitelist or {}
+    _G.ProtectedPlayers = _G.ProtectedPlayers or {}
+    
+    -- ============================================
+    -- 保護プレイヤー管理
+    -- ============================================
+    local function UpdateProtectedUI(label)
+        if label then
+            local list = {}
+            for name, _ in pairs(_G.ProtectedPlayers) do
+                table.insert(list, name)
+            end
+            if #list == 0 then
+                label:Set("保護中: なし (0/5)")
+            else
+                label:Set("保護中: " .. table.concat(list, ", ") .. " (" .. #list .. "/5)")
+            end
+        end
+    end
+    
+    local function AddProtectedPlayer(name)
+        local count = 0
+        for _ in pairs(_G.ProtectedPlayers) do count = count + 1 end
+        if count >= 5 then
+            OrionLib:MakeNotification({Name = "保護者", Content = "これ以上追加できません (最大5人)", Time = 2})
+            return false
+        end
+        _G.ProtectedPlayers[name] = true
+        SaveAllData()
+        UpdateProtectedUI(ProtectedLabel)
+        return true
+    end
+    
+    local function RemoveProtectedPlayer(name)
+        _G.ProtectedPlayers[name] = nil
+        SaveAllData()
+        UpdateProtectedUI(ProtectedLabel)
+        return true
+    end
+    
+    -- ============================================
+    -- ホワイトリスト管理
+    -- ============================================
+    local function UpdateWhitelistUI(label)
+        if label then
+            local list = {}
+            for name, _ in pairs(_G.EmukunWhitelist) do
+                table.insert(list, name)
+            end
+            if #list == 0 then
+                label:Set("ホワイトリスト: 空")
+            else
+                label:Set("ホワイトリスト: " .. table.concat(list, ", "))
+            end
+        end
+    end
+    
+    -- プレイヤーリスト取得
+    local function GetPlayerList()
+        local list = {}
+        for _, p in pairs(Players:GetPlayers()) do
+            if p ~= LocalPlayer then
+                table.insert(list, p.DisplayName .. " (@@" .. p.Name .. ")")
+            end
+        end
+        return list
+    end
+    
+    local function CanAttack(player)
+        if not player then return false end
+        if _G.EmukunWhitelist[player.Name] then return false end
+        if _G.ProtectedPlayers[player.Name] then return false end
+        return true
+    end
+    
+    -- テレポート機能
+    local function TeleportToPlayer(targetName)
+        local target = Players:FindFirstChild(targetName)
+        if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then
+            if not CanAttack(target) then return false end
+            local targetRoot = target.Character.HumanoidRootPart
+            local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+            if myRoot then
+                myRoot.CFrame = targetRoot.CFrame * CFrame.new(0, 0, 2.5)
+            end
+            return true
+        end
+        return false
+    end
+    
+    -- ============================================
+    -- キャラクター変更
+    -- ============================================
+    local CharacterType = "R6"
+    local CharacterChangerEnabled = false
+    
+    local function ChangeCharacterType(typ)
+        local char = LocalPlayer.Character
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        if not hum then return end
+        
+        local humanoidDescription = Instance.new("HumanoidDescription")
+        
+        if typ == "R15" then
+            humanoidDescription.RigType = Enum.HumanoidRigType.R15
+            OrionLib:MakeNotification({Name = "キャラ変更", Content = "R15に変更します", Time = 1})
+        elseif typ == "R6" then
+            humanoidDescription.RigType = Enum.HumanoidRigType.R6
+            OrionLib:MakeNotification({Name = "キャラ変更", Content = "R6に変更します", Time = 1})
+        end
+        
+        hum:ApplyDescription(humanoidDescription)
+    end
+    
+    local function RespawnAndChange()
+        CharacterChangerEnabled = true
+        LocalPlayer.Character:BreakJoints()
+        
+        LocalPlayer.CharacterAdded:Wait()
+        task.wait(0.5)
+        
+        if CharacterChangerEnabled then
+            ChangeCharacterType(CharacterType)
+        end
+    end
+    
+    -- ============================================
+    -- OrionLibの読み込み
+    -- ============================================
+    local OrionLib = nil
+    local function LoadOrionLib()
+        local success, result = pcall(function()
+            return loadstring(game:HttpGet("https://raw.githubusercontent.com/jadpy/suki/refs/heads/main/orion"))()
+        end)
+        if success and result then
+            OrionLib = result
+            return true
+        end
+        return false
+    end
+    
+    print("Loading OrionLib...")
+    local loadSuccess = false
+    for i = 1, 20 do
+        if LoadOrionLib() then
+            loadSuccess = true
+            print("OrionLib loaded!")
+            break
+        end
+        task.wait(0.5)
+    end
+    
+    if not loadSuccess then
+        warn("OrionLib failed to load")
+        return
+    end
+    
+    task.wait(0.5)
+    
+    -- ============================================
+    -- UI構築
+    -- ============================================
+    local Window = OrionLib:MakeWindow({
+        Name = "👿 Emukun Hub 👿",
+        HidePremium = false,
+        SaveConfig = true,
+        ConfigFolder = "EmukunHub"
+    })
+    
+    -- 起動メッセージ
+    local function SendStartupMessage()
+        local message = "Emukun Hub 起動"
+        local sent = false
+        local tcs = game:GetService("TextChatService")
+        if tcs and tcs.ChatVersion == Enum.ChatVersion.TextChatService then
+            local channel = tcs.TextChannels:FindFirstChild("RBXGeneral")
+            if channel then
+                pcall(function() channel:SendAsync(message); sent = true end)
+            end
+        end
+        if not sent then
+            local legacy = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
+            if legacy and legacy:FindFirstChild("SayMessageRequest") then
+                pcall(function() legacy.SayMessageRequest:FireServer(message, "All"); sent = true end)
+            end
+        end
+        if not sent then print("[Emukun Hub] " .. message) end
+    end
+    SendStartupMessage()
+    
+    -- ============================================
+    -- プレイヤータブ
+    -- ============================================
+    local PlayerTab = Window:MakeTab({ Name = "プレイヤー", Icon = "rbxassetid://4483327233" })
+    PlayerTab:AddSection({ Name = "移動設定" })
+    
+    local flyEnabled = false
+    local flySpeed = 50
+    local bodyVelocity = nil
+    local bodyGyro = nil
+    local flyConnection = nil
+    local infiniteJumpEnabled = false
+    local speedEnabled = false
+    local walkSpeedValue = 16
+    
+    local function startFly()
+        local char = LocalPlayer.Character
+        if not char then return end
+        local root = char:FindFirstChild("HumanoidRootPart")
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if not root or not hum then return end
+        hum.PlatformStand = true
+        bodyVelocity = Instance.new("BodyVelocity")
+        bodyVelocity.MaxForce = Vector3.new(1, 1, 1) * 1e6
+        bodyVelocity.Parent = root
+        bodyGyro = Instance.new("BodyGyro")
+        bodyGyro.MaxTorque = Vector3.new(1, 1, 1) * 1e8
+        bodyGyro.P = 20000
+        bodyGyro.D = 1000
+        bodyGyro.Parent = root
+        flyConnection = RunService.RenderStepped:Connect(function()
+            if not flyEnabled or not root.Parent then return end
+            local cameraCF = Camera.CFrame
+            local moveDir = Vector3.new(0, 0, 0)
+            if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDir = moveDir + cameraCF.LookVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDir = moveDir - cameraCF.LookVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDir = moveDir - cameraCF.RightVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveDir = moveDir + cameraCF.RightVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.Space) then moveDir = moveDir + Vector3.new(0, 1, 0) end
+            if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then moveDir = moveDir - Vector3.new(0, 1, 0) end
+            bodyVelocity.Velocity = moveDir * flySpeed
+            bodyGyro.CFrame = cameraCF
+        end)
+    end
+    
+    local function stopFly()
+        flyEnabled = false
+        if flyConnection then flyConnection:Disconnect(); flyConnection = nil end
+        if bodyVelocity then bodyVelocity:Destroy(); bodyVelocity = nil end
+        if bodyGyro then bodyGyro:Destroy(); bodyGyro = nil end
+        local char = LocalPlayer.Character
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        if hum then hum.PlatformStand = false end
+    end
+    
+    PlayerTab:AddToggle({ Name = "フライ", Default = false, Callback = function(v) flyEnabled = v; if v then startFly() else stopFly() end end })
+    PlayerTab:AddSlider({ Name = "フライ速度", Min = 10, Max = 200, Default = 50, Callback = function(v) flySpeed = v end })
+    
+    PlayerTab:AddSection({ Name = "足スピード設定" })
+    PlayerTab:AddToggle({ Name = "足スピード有効化", Default = false, Callback = function(v) 
+        speedEnabled = v
+        local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+        if hum then
+            if v then hum.WalkSpeed = walkSpeedValue else hum.WalkSpeed = 16 end
+        end
+    end })
+    PlayerTab:AddSlider({ Name = "足スピード", Min = 16, Max = 500, Default = 16, Callback = function(v) 
+        walkSpeedValue = v
+        if speedEnabled then
+            local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+            if hum then hum.WalkSpeed = v end
+        end
+    end })
+    
+    PlayerTab:AddToggle({ Name = "無限ジャンプ", Default = false, Callback = function(v) infiniteJumpEnabled = v end })
+    
+    UserInputService.JumpRequest:Connect(function()
+        if infiniteJumpEnabled then
+            local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+            if hum then hum:ChangeState("Jumping") end
+        end
+    end)
+    
+    -- ============================================
+    -- テレポートタブ
+    -- ============================================
+    local TeleportTab = Window:MakeTab({ Name = "テレポート", Icon = "rbxassetid://4483345998" })
+    
+    TeleportTab:AddSection({ Name = "プレイヤーテレポート" })
+    
+    local TeleportDropdown = TeleportTab:AddDropdown({ 
+        Name = "ターゲット選択", 
+        Default = "", 
+        Options = GetPlayerList(), 
+        Callback = function(Value) 
+            if Value and Value ~= "" then 
+                SelectedTarget = Value:match("@%@(.*)%)")
+            end 
+        end 
+    })
+    
+    TeleportTab:AddButton({ Name = "リスト更新", Callback = function() 
+        TeleportDropdown:Refresh(GetPlayerList(), true) 
+    end })
+    
+    TeleportTab:AddButton({ Name = "テレポート", Callback = function() 
+        if SelectedTarget then 
+            TeleportToPlayer(SelectedTarget)
+            OrionLib:MakeNotification({Name = "テレポート", Content = SelectedTarget .. " に移動", Time = 2})
+        else
+            OrionLib:MakeNotification({Name = "テレポート", Content = "ターゲットを選択してください", Time = 2})
+        end
+    end })
+    
+    -- ============================================
+    -- 保護タブ
+    -- ============================================
+    local ProtectTab = Window:MakeTab({ Name = "保護", Icon = "rbxassetid://4483345998" })
+    ProtectTab:AddSection({ Name = "保護プレイヤー (最大5人)" })
+    
+    local ProtectedLabel = ProtectTab:AddParagraph("保護リスト", "")
+    
+    local ProtectDropdown = ProtectTab:AddDropdown({ 
+        Name = "プレイヤー選択", 
+        Default = "", 
+        Options = GetPlayerList(), 
+        Callback = function(Value) 
+            if Value and Value ~= "" then 
+                local name = Value:match("@%@(.*)%)")
+                if name then
+                    if _G.ProtectedPlayers[name] then
+                        RemoveProtectedPlayer(name)
+                        OrionLib:MakeNotification({Name = "保護", Content = name .. " を解除", Time = 2})
+                    else
+                        if AddProtectedPlayer(name) then
+                            OrionLib:MakeNotification({Name = "保護", Content = name .. " を追加", Time = 2})
+                        end
+                    end
+                    ProtectDropdown:Refresh(GetPlayerList(), true)
+                end
+            end 
+        end 
+    })
+    
+    ProtectTab:AddButton({ Name = "リスト更新", Callback = function() 
+        ProtectDropdown:Refresh(GetPlayerList(), true)
+        UpdateProtectedUI(ProtectedLabel)
+    end })
+    
+    ProtectTab:AddButton({ Name = "全解除", Callback = function() 
+        _G.ProtectedPlayers = {} 
+        UpdateProtectedUI(ProtectedLabel)
+        ProtectDropdown:Refresh(GetPlayerList(), true)
+        OrionLib:MakeNotification({Name = "保護", Content = "全解除しました", Time = 2})
+    end })
+    
+    -- ============================================
+    -- ホワイトリストタブ
+    -- ============================================
+    local WhitelistTab = Window:MakeTab({ Name = "ホワイトリスト", Icon = "rbxassetid://4483345998" })
+    WhitelistTab:AddSection({ Name = "ホワイトリスト設定" })
+    
+    local WhitelistLabel = WhitelistTab:AddParagraph("ホワイトリスト", "")
+    
+    local WhitelistDropdown = WhitelistTab:AddDropdown({ 
+        Name = "プレイヤー選択", 
+        Default = "", 
+        Options = GetPlayerList(), 
+        Callback = function(Value) 
+            if Value and Value ~= "" then 
+                local name = Value:match("@%@(.*)%)")
+                if name then
+                    if _G.EmukunWhitelist[name] then
+                        _G.EmukunWhitelist[name] = nil
+                        OrionLib:MakeNotification({Name = "ホワイトリスト", Content = name .. " を削除", Time = 2})
+                    else
+                        _G.EmukunWhitelist[name] = true
+                        OrionLib:MakeNotification({Name = "ホワイトリスト", Content = name .. " を追加", Time = 2})
+                    end
+                    UpdateWhitelistUI(WhitelistLabel)
+                    WhitelistDropdown:Refresh(GetPlayerList(), true)
+                    SaveAllData()
+                end
+            end 
+        end 
+    })
+    
+    WhitelistTab:AddButton({ Name = "全解除", Callback = function() 
+        _G.EmukunWhitelist = {} 
+        UpdateWhitelistUI(WhitelistLabel)
+        WhitelistDropdown:Refresh(GetPlayerList(), true)
+        SaveAllData()
+        OrionLib:MakeNotification({Name = "ホワイトリスト", Content = "全解除しました", Time = 2})
+    end })
+    
+    WhitelistTab:AddButton({ Name = "リスト更新", Callback = function() 
+        WhitelistDropdown:Refresh(GetPlayerList(), true)
+        UpdateWhitelistUI(WhitelistLabel)
+    end })
+    
+    -- ============================================
+    -- キャラクタータブ
+    -- ============================================
+    local CharTab = Window:MakeTab({ Name = "キャラクター", Icon = "rbxassetid://4483345998" })
+    CharTab:AddSection({ Name = "キャラクター変更 (変更後リスポーン)" })
+    
+    CharTab:AddToggle({ Name = "R6に変更", Default = false, Callback = function(v)
+        if v then
+            CharacterType = "R6"
+            CharacterChangerEnabled = true
+            RespawnAndChange()
+            task.wait(0.5)
+            CharTab:UpdateToggle("R6に変更", false)
+        end
+    end })
+    
+    CharTab:AddToggle({ Name = "R15に変更", Default = false, Callback = function(v)
+        if v then
+            CharacterType = "R15"
+            CharacterChangerEnabled = true
+            RespawnAndChange()
+            task.wait(0.5)
+            CharTab:UpdateToggle("R15に変更", false)
+        end
+    end })
+    
+    CharTab:AddButton({ Name = "設定をリセット", Callback = function()
+        CharacterChangerEnabled = false
+        OrionLib:MakeNotification({Name = "キャラ", Content = "自動変更を停止しました", Time = 2})
+    end })
+    
+    -- ============================================
+    -- ESPタブ
+    -- ============================================
+    local ESPTab = Window:MakeTab({ Name = "ESP", Icon = "rbxassetid://4483345998" })
+    local espEnabled = false
+    
+    ESPTab:AddToggle({ Name = "プレイヤーESP", Default = false, Callback = function(v) espEnabled = v end })
+    
+    -- ============================================
+    -- その他タブ
+    -- ============================================
+    local MiscTab = Window:MakeTab({ Name = "その他", Icon = "rbxassetid://4483345998" })
+    MiscTab:AddButton({ Name = "カメラ制限解除", Callback = function() 
+        LocalPlayer.CameraMaxZoomDistance = 10000 
+        OrionLib:MakeNotification({Name = "カメラ", Content = "制限を解除しました", Time = 2})
+    end })
+    MiscTab:AddButton({ Name = "データ保存", Callback = function() 
+        SaveAllData() 
+        OrionLib:MakeNotification({Name = "データ", Content = "保存しました", Time = 2}) 
+    end })
+    MiscTab:AddButton({ Name = "UIを閉じる", Callback = function() 
+        OrionLib:Destroy() 
+    end })
+    
+    -- ============================================
+    -- メインループ
+    -- ============================================
+    RunService.RenderStepped:Connect(function()
+        -- ESP処理
+        if espEnabled then
+            for _, p in pairs(Players:GetPlayers()) do
+                if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                    local pchar = p.Character
+                    if not pchar:FindFirstChild("ESPHighlight") then
+                        local highlight = Instance.new("Highlight", pchar)
+                        highlight.Name = "ESPHighlight"
+                        highlight.FillColor = IsProtected(p) and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
+                        highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+                    end
+                    if not pchar.Head:FindFirstChild("ESPName") then
+                        local bgui = Instance.new("BillboardGui", pchar.Head)
+                        bgui.Name = "ESPName"
+                        bgui.Size = UDim2.new(0, 200, 0, 50)
+                        bgui.AlwaysOnTop = true
+                        local tl = Instance.new("TextLabel", bgui)
+                        tl.BackgroundTransparency = 1
+                        tl.Size = UDim2.new(1, 0, 1, 0)
+                        local icon = IsProtected(p) and "🛡️ " or "👤 "
+                        tl.Text = icon .. p.DisplayName .. " (@@" .. p.Name .. ")"
+                        tl.TextColor3 = IsProtected(p) and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
+                        tl.TextScaled = true
+                    end
+                end
+            end
+        else
+            for _, p in pairs(Players:GetPlayers()) do
+                if p.Character then
+                    if p.Character:FindFirstChild("ESPHighlight") then p.Character.ESPHighlight:Destroy() end
+                    if p.Character.Head:FindFirstChild("ESPName") then p.Character.Head.ESPName:Destroy() end
+                end
+            end
+        end
+        
+        -- 足スピード維持
+        if speedEnabled then
+            local char = LocalPlayer.Character
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+            if hum and hum.WalkSpeed ~= walkSpeedValue then
+                hum.WalkSpeed = walkSpeedValue
+            end
+        end
+    end)
+    
+    -- リスポーン対応
+    LocalPlayer.CharacterAdded:Connect(function(char)
+        task.wait(0.5)
+        if CharacterChangerEnabled then
+            ChangeCharacterType(CharacterType)
+        end
+        if speedEnabled then
+            local hum = char:FindFirstChildOfClass("Humanoid")
+            if hum then hum.WalkSpeed = walkSpeedValue end
+        end
+    end)
+    
+    UpdateProtectedUI(ProtectedLabel)
+    UpdateWhitelistUI(WhitelistLabel)
+    OrionLib:Init()
+    
+    print("[Emukun Hub] 公開版 v1 起動完了！")
+    print("[Emukun Hub] 機能: フライ/足スピード/無限ジャンプ/テレポート/ESP/保護/ホワイトリスト")
+end
+
+-- 起動開始
+InitializeMainHub()
