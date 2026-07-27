@@ -1,0 +1,426 @@
+local OrionLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/jadpy/suki/refs/heads/main/orion"))()
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+
+local LocalPlayer = Players.LocalPlayer
+
+-- ============================================
+-- Shuriken 探す＆スポーン機能
+-- ============================================
+
+local ShurikenUtil = {}
+
+function ShurikenUtil.getLocalChar()
+    return LocalPlayer.Character
+end
+
+function ShurikenUtil.getLocalRoot()
+    local char = ShurikenUtil.getLocalChar()
+    return char and (char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso"))
+end
+
+-- ============================================
+-- 1. 探す機能
+-- ============================================
+
+-- 装備中のShurikenを探す
+function ShurikenUtil.findEquipped()
+    local char = ShurikenUtil.getLocalChar()
+    if not char then return nil end
+    
+    for _, child in char:GetChildren() do
+        if child:IsA("Tool") and child.Name:lower():find("shuriken") then
+            return child
+        end
+    end
+    return nil
+end
+
+-- バックパック内のShurikenを探す
+function ShurikenUtil.findInBackpack()
+    local backpack = LocalPlayer:FindFirstChild("Backpack")
+    if not backpack then return nil end
+    
+    for _, item in backpack:GetChildren() do
+        if item:IsA("Tool") and item.Name:lower():find("shuriken") then
+            return item
+        end
+    end
+    return nil
+end
+
+-- ワールド内のShurikenを探す
+function ShurikenUtil.findInWorld()
+    for _, obj in Workspace:GetDescendants() do
+        if obj:IsA("Tool") and obj.Name:lower():find("shuriken") then
+            return obj
+        end
+    end
+    return nil
+end
+
+-- 全ての場所から探す（総合）
+function ShurikenUtil.findAll()
+    local equipped = ShurikenUtil.findEquipped()
+    if equipped then return equipped end
+    
+    local backpack = ShurikenUtil.findInBackpack()
+    if backpack then return backpack end
+    
+    local world = ShurikenUtil.findInWorld()
+    if world then return world end
+    
+    return nil
+end
+
+-- 詳細ステータスを取得
+function ShurikenUtil.getStatus()
+    return {
+        equipped = ShurikenUtil.findEquipped(),
+        backpack = ShurikenUtil.findInBackpack(),
+        world = ShurikenUtil.findInWorld()
+    }
+end
+
+-- ============================================
+-- 2. スポーン機能
+-- ============================================
+
+-- Shurikenをスポーン
+function ShurikenUtil.spawn()
+    local root = ShurikenUtil.getLocalRoot()
+    if not root then
+        return false, "キャラクターが見つかりません"
+    end
+    
+    -- よくあるスポーンリモート名
+    local remoteNames = {
+        "MenuToys.SpawnToyRemoteFunction",
+        "SpawnToyRemoteFunction",
+        "SpawnTool",
+        "SpawnItem",
+        "SpawnRemote",
+        "ToolSpawn",
+        "SpawnShuriken",
+        "Spawn"
+    }
+    
+    for _, name in ipairs(remoteNames) do
+        local remote = ReplicatedStorage:FindFirstChild(name)
+        if not remote then
+            -- ドット区切りの場合
+            local parts = {}
+            for part in name:gmatch("[^.]+") do
+                table.insert(parts, part)
+            end
+            if #parts > 1 then
+                local current = ReplicatedStorage
+                for i = 1, #parts do
+                    if current then
+                        current = current:FindFirstChild(parts[i])
+                    end
+                end
+                remote = current
+            end
+        end
+        
+        if remote and remote:IsA("RemoteFunction") then
+            pcall(function()
+                remote:InvokeServer("Shuriken", root.CFrame)
+            end)
+            task.wait(0.5)
+            return true, "スポーン成功 (RemoteFunction: " .. name .. ")"
+        elseif remote and remote:IsA("RemoteEvent") then
+            pcall(function()
+                remote:FireServer("Shuriken", root.CFrame)
+            end)
+            task.wait(0.5)
+            return true, "スポーン成功 (RemoteEvent: " .. name .. ")"
+        end
+    end
+    
+    -- リモートがない場合：カスタムToolを作成
+    local shurikenTemplate = Instance.new("Tool")
+    shurikenTemplate.Name = "Shuriken"
+    shurikenTemplate.RequiresHandle = true
+    
+    local handle = Instance.new("Part")
+    handle.Name = "Handle"
+    handle.Size = Vector3.new(1, 0.2, 1)
+    handle.Shape = Enum.PartType.Cylinder
+    handle.BrickColor = BrickColor.new("Bright red")
+    handle.Parent = shurikenTemplate
+    
+    local tool = shurikenTemplate:Clone()
+    tool.Parent = LocalPlayer.Backpack or LocalPlayer
+    
+    return true, "カスタムShurikenを作成しました"
+end
+
+-- 指定位置にスポーン
+function ShurikenUtil.spawnAt(position)
+    local root = ShurikenUtil.getLocalRoot()
+    if not root then
+        return false, "キャラクターが見つかりません"
+    end
+    
+    local cf = position and CFrame.new(position) or root.CFrame
+    
+    local remote = ReplicatedStorage:FindFirstChild("MenuToys") and 
+                   ReplicatedStorage.MenuToys:FindFirstChild("SpawnToyRemoteFunction")
+    
+    if remote and remote:IsA("RemoteFunction") then
+        pcall(function()
+            remote:InvokeServer("Shuriken", cf)
+        end)
+        task.wait(0.5)
+        return true, "指定位置にスポーンしました"
+    end
+    
+    -- 別のリモートを試す
+    local remoteNames = {"SpawnTool", "SpawnItem", "Spawn"}
+    for _, name in ipairs(remoteNames) do
+        local r = ReplicatedStorage:FindFirstChild(name)
+        if r then
+            if r:IsA("RemoteFunction") then
+                pcall(function()
+                    r:InvokeServer("Shuriken", cf)
+                end)
+                task.wait(0.5)
+                return true, "指定位置にスポーンしました (" .. name .. ")"
+            elseif r:IsA("RemoteEvent") then
+                pcall(function()
+                    r:FireServer("Shuriken", cf)
+                end)
+                task.wait(0.5)
+                return true, "指定位置にスポーンしました (" .. name .. ")"
+            end
+        end
+    end
+    
+    return false, "スポーンリモートが見つかりません"
+end
+
+-- 自分の位置の上にスポーン
+function ShurikenUtil.spawnAboveMe()
+    local root = ShurikenUtil.getLocalRoot()
+    if not root then
+        return false, "キャラクターが見つかりません"
+    end
+    return ShurikenUtil.spawnAt(root.Position + Vector3.new(0, 3, 0))
+end
+
+-- ============================================
+-- 3. 装備機能
+-- ============================================
+
+function ShurikenUtil.equip()
+    local shuriken = ShurikenUtil.findInBackpack()
+    if not shuriken then
+        return false, "バックパックにShurikenがありません"
+    end
+    
+    local char = ShurikenUtil.getLocalChar()
+    if not char then
+        return false, "キャラクターが見つかりません"
+    end
+    
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not hum then
+        return false, "Humanoidが見つかりません"
+    end
+    
+    hum:EquipTool(shuriken)
+    task.wait(0.3)
+    return true, "装備しました: " .. shuriken.Name
+end
+
+-- ============================================
+-- OrionLib UI
+-- ============================================
+
+-- ウィンドウ作成
+local Window = OrionLib:MakeWindow({
+    Name = "Shuriken Finder & Spawner",
+    HidePremium = true,
+    SaveConfig = false,
+    IntroEnabled = false
+})
+
+-- メインタブ
+local MainTab = Window:MakeTab({
+    Name = "Shuriken",
+    Icon = "rbxassetid://7733916988",
+    PremiumOnly = false
+})
+
+-- ========== 探すセクション ==========
+MainTab:AddLabel("🔍 探す機能")
+
+-- 装備中を探す
+MainTab:AddButton({
+    Name = "装備中のShurikenを探す",
+    Callback = function()
+        local shuriken = ShurikenUtil.findEquipped()
+        if shuriken then
+            OrionLib:MakeNotification({
+                Name = "✅ 見つかりました",
+                Content = "装備中: " .. shuriken.Name,
+                Time = 3
+            })
+        else
+            OrionLib:MakeNotification({
+                Name = "❌ 見つかりません",
+                Content = "装備中のShurikenはありません",
+                Time = 3
+            })
+        end
+    end
+})
+
+-- バックパックを探す
+MainTab:AddButton({
+    Name = "バックパック内を探す",
+    Callback = function()
+        local shuriken = ShurikenUtil.findInBackpack()
+        if shuriken then
+            OrionLib:MakeNotification({
+                Name = "✅ 見つかりました",
+                Content = "バックパック内: " .. shuriken.Name,
+                Time = 3
+            })
+        else
+            OrionLib:MakeNotification({
+                Name = "❌ 見つかりません",
+                Content = "バックパックにShurikenはありません",
+                Time = 3
+            })
+        end
+    end
+})
+
+-- ワールド内を探す
+MainTab:AddButton({
+    Name = "ワールド内を探す（落ちてるもの）",
+    Callback = function()
+        local shuriken = ShurikenUtil.findInWorld()
+        if shuriken then
+            OrionLib:MakeNotification({
+                Name = "✅ 見つかりました",
+                Content = "ワールド内: " .. shuriken.Name,
+                Time = 3
+            })
+        else
+            OrionLib:MakeNotification({
+                Name = "❌ 見つかりません",
+                Content = "ワールド内にShurikenはありません",
+                Time = 3
+            })
+        end
+    end
+})
+
+-- 全てを探す
+MainTab:AddButton({
+    Name = "🔎 全ての場所から探す（詳細）",
+    Callback = function()
+        local status = ShurikenUtil.getStatus()
+        local msg = string.format(
+            "装備中: %s\nバックパック: %s\nワールド内: %s",
+            status.equipped and "✅ " .. status.equipped.Name or "❌ なし",
+            status.backpack and "✅ " .. status.backpack.Name or "❌ なし",
+            status.world and "✅ " .. status.world.Name or "❌ なし"
+        )
+        OrionLib:MakeNotification({
+            Name = "📊 検索結果",
+            Content = msg,
+            Time = 5
+        })
+    end
+})
+
+MainTab:AddSeperator()
+
+-- ========== スポーンセクション ==========
+MainTab:AddLabel("✨ スポーン機能")
+
+-- Shurikenをスポーン
+MainTab:AddButton({
+    Name = "Shurikenをスポーン",
+    Callback = function()
+        local success, msg = ShurikenUtil.spawn()
+        if success then
+            OrionLib:MakeNotification({
+                Name = "✅ スポーン成功",
+                Content = msg,
+                Time = 3
+            })
+        else
+            OrionLib:MakeNotification({
+                Name = "❌ スポーン失敗",
+                Content = msg,
+                Time = 3
+            })
+        end
+    end
+})
+
+-- 自分の位置の上にスポーン
+MainTab:AddButton({
+    Name = "自分の位置の上にスポーン",
+    Callback = function()
+        local success, msg = ShurikenUtil.spawnAboveMe()
+        if success then
+            OrionLib:MakeNotification({
+                Name = "✅ スポーン成功",
+                Content = msg,
+                Time = 3
+            })
+        else
+            OrionLib:MakeNotification({
+                Name = "❌ スポーン失敗",
+                Content = msg,
+                Time = 3
+            })
+        end
+    end
+})
+
+MainTab:AddSeperator()
+
+-- ========== 装備セクション ==========
+MainTab:AddLabel("🎒 装備機能")
+
+-- Shurikenを装備
+MainTab:AddButton({
+    Name = "Shurikenを装備（バックパックから）",
+    Callback = function()
+        local success, msg = ShurikenUtil.equip()
+        if success then
+            OrionLib:MakeNotification({
+                Name = "✅ 装備成功",
+                Content = msg,
+                Time = 3
+            })
+        else
+            OrionLib:MakeNotification({
+                Name = "❌ 装備失敗",
+                Content = msg,
+                Time = 3
+            })
+        end
+    end
+})
+
+-- ============================================
+-- OrionLib 初期化
+-- ============================================
+
+OrionLib:Init()
+
+print("========================================")
+print("🔥 Shuriken Finder & Spawner (OrionLib UI)")
+print("========================================")
+print("✅ UIが表示されました")
+print("========================================")
