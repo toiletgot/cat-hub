@@ -1,0 +1,354 @@
+-- Fling Things and People 専用スパムキック＋BlobMan自動取得（エラー完全対策）
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
+local Player = Players.LocalPlayer
+local Workspace = game:GetService("Workspace")
+
+-- ウィンドウ作成
+local Window = Rayfield:CreateWindow({
+    Name = "🌸 Fling Hub Ultimate 🌸",
+    LoadingTitle = "Loading...",
+    LoadingSubtitle = "by Cat Hacker"
+})
+
+local AtkTab = Window:CreateTab("Attack", nil)
+local Config = { 
+    AttackActive = false,
+    AutoRestart = false
+}
+local targetPlayer = nil
+local blobMan = nil
+local isKicking = false
+local kickCount = 0
+local errorCount = 0
+local kickLoop = nil
+
+-- BlobManを自動で見つけて乗る関数
+local function FindAndRideBlobMan()
+    pcall(function()
+        -- BlobManを探す（大文字小文字両方対応）
+        for _, v in pairs(Workspace:GetChildren()) do
+            if v:IsA("Model") and (v.Name == "BlobMan" or v.Name == "blobman" or v.Name == "Blobman") then
+                blobMan = v
+                local character = Player.Character
+                if character and character:FindFirstChild("HumanoidRootPart") then
+                    local hrp = character.HumanoidRootPart
+                    -- BlobManに乗る
+                    if v.PrimaryPart then
+                        hrp.CFrame = v.PrimaryPart.CFrame * CFrame.new(0, 2, 0)
+                        hrp.Parent = v
+                        print("✅ BlobManに乗った！")
+                        return true
+                    end
+                end
+            end
+        end
+        return false
+    end)
+    return false
+end
+
+-- BlobManを強制スポーンする関数
+local function SpawnBlobMan()
+    pcall(function()
+        -- BlobManがすでに存在するかチェック
+        for _, v in pairs(Workspace:GetChildren()) do
+            if v:IsA("Model") and (v.Name == "BlobMan" or v.Name == "blobman" or v.Name == "Blobman") then
+                blobMan = v
+                print("✅ 既存のBlobManを見つけた！")
+                return true
+            end
+        end
+        
+        -- 存在しない場合はリモートイベントを実行してスポーン
+        local spawnEvent = ReplicatedStorage:FindFirstChild("BlobEvents")
+        if spawnEvent then
+            local createBlob = spawnEvent:FindFirstChild("CreateBlob")
+            if createBlob then
+                createBlob:FireServer()
+                print("🔄 BlobManをスポーン中...")
+                task.wait(2)
+                -- スポーンされたか確認
+                for _, v in pairs(Workspace:GetChildren()) do
+                    if v:IsA("Model") and (v.Name == "BlobMan" or v.Name == "blobman" or v.Name == "Blobman") then
+                        blobMan = v
+                        print("✅ BlobManをスポーン成功！")
+                        return true
+                    end
+                end
+            end
+        end
+        return false
+    end)
+    return false
+end
+
+-- プレイヤーリスト更新（表示名対応）
+local function UpdatePlayerList()
+    local options = {}
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= Player then
+            local displayName = p.DisplayName
+            if displayName and displayName ~= "" then
+                table.insert(options, displayName .. " (" .. p.Name .. ")")
+            else
+                table.insert(options, p.Name)
+            end
+        end
+    end
+    return options
+end
+
+-- 選択された表示名からプレイヤーを取得
+local function GetPlayerFromDisplay(displayText)
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= Player then
+            local displayName = p.DisplayName
+            if displayName and displayName ~= "" then
+                if displayText == displayName .. " (" .. p.Name .. ")" then
+                    return p
+                end
+            else
+                if displayText == p.Name then
+                    return p
+                end
+            end
+        end
+    end
+    return nil
+end
+
+-- キック実行関数（エラー完全対策）
+local function PerformKick()
+    if not targetPlayer or not targetPlayer.Parent then
+        return false
+    end
+    
+    if not targetPlayer.Character or not targetPlayer.Character:FindFirstChild("HumanoidRootPart") then
+        return false
+    end
+    
+    -- BlobManがなければスポーン
+    if not blobMan or not blobMan.Parent then
+        print("🔍 BlobManが見つからない、スポーン中...")
+        SpawnBlobMan()
+        task.wait(0.5)
+        FindAndRideBlobMan()
+    end
+    
+    -- もしBlobManから降りてたら再乗車
+    if blobMan and blobMan.Parent then
+        local character = Player.Character
+        if character and character:FindFirstChild("HumanoidRootPart") then
+            local hrp = character.HumanoidRootPart
+            if hrp.Parent ~= blobMan then
+                hrp.Parent = blobMan
+            end
+        end
+    end
+    
+    -- キック実行（エラーを完全に無視）
+    local success = pcall(function()
+        if ReplicatedStorage and ReplicatedStorage:FindFirstChild("BlobEvents") then
+            local blobEvents = ReplicatedStorage.BlobEvents
+            local createGrab = blobEvents:FindFirstChild("CreateGrab")
+            local destroyGrab = blobEvents:FindFirstChild("DestroyGrab")
+            
+            if createGrab and destroyGrab then
+                createGrab:FireServer(targetPlayer.Character)
+                task.wait(0.05)
+                destroyGrab:FireServer()
+                return true
+            end
+        end
+        return false
+    end)
+    
+    return success
+end
+
+-- メインキックループ
+local function StartKickLoop()
+    if kickLoop then
+        kickLoop:Disconnect()
+        kickLoop = nil
+    end
+    
+    isKicking = true
+    kickCount = 0
+    errorCount = 0
+    
+    print("🚀 スパムキック開始: " .. targetPlayer.Name)
+    
+    -- 最初にBlobManをスポーン
+    SpawnBlobMan()
+    task.wait(0.5)
+    FindAndRideBlobMan()
+    
+    kickLoop = game:GetService("RunService").Heartbeat:Connect(function()
+        if not Config.AttackActive or not isKicking then
+            print("⏹️ スパムキック停止（合計: " .. kickCount .. "回）")
+            kickLoop:Disconnect()
+            kickLoop = nil
+            return
+        end
+        
+        if not targetPlayer or not targetPlayer.Parent then
+            if Config.AutoRestart then
+                print("🔄 ターゲット消失、再実行待機...")
+                isKicking = false
+                task.wait(2)
+                isKicking = true
+            else
+                Config.AttackActive = false
+                isKicking = false
+                return
+            end
+            return
+        end
+        
+        local success = PerformKick()
+        if success then
+            kickCount = kickCount + 1
+            errorCount = 0
+            
+            if kickCount % 50 == 0 then
+                print("💥 キック回数: " .. kickCount)
+            end
+        else
+            errorCount = errorCount + 1
+            if errorCount > 10 then
+                print("⚠️ エラー多発、再初期化中...")
+                errorCount = 0
+                -- BlobManを再スポーン
+                SpawnBlobMan()
+                task.wait(0.5)
+                FindAndRideBlobMan()
+            end
+        end
+    end)
+end
+
+-- ターゲット選択（表示名対応）
+local Dropdown = AtkTab:CreateDropdown({
+    Name = "🎯 ターゲット選択（表示名）",
+    Options = UpdatePlayerList(),
+    CurrentOption = "",
+    Callback = function(v)
+        targetPlayer = GetPlayerFromDisplay(v)
+        if targetPlayer then
+            local displayName = targetPlayer.DisplayName
+            if displayName and displayName ~= "" then
+                print("🎯 ターゲット: " .. displayName .. " (" .. targetPlayer.Name .. ")")
+            else
+                print("🎯 ターゲット: " .. targetPlayer.Name)
+            end
+        end
+    end
+})
+
+-- 自動再実行トグル
+AtkTab:CreateToggle({
+    Name = "🔄 自動再実行（応答機能）",
+    Callback = function(v)
+        Config.AutoRestart = v
+        if v then
+            print("🔄 自動再実行: ON")
+        else
+            print("🔄 自動再実行: OFF")
+        end
+    end
+})
+
+-- プレイヤーリスト更新
+Players.PlayerAdded:Connect(function()
+    Dropdown:SetOptions(UpdatePlayerList())
+end)
+Players.PlayerRemoving:Connect(function()
+    Dropdown:SetOptions(UpdatePlayerList())
+end)
+
+-- スパムキック連打＋BlobMan自動取得
+AtkTab:CreateToggle({
+    Name = "🚀 スパムキック連打（自動BlobMan）",
+    Callback = function(v)
+        Config.AttackActive = v
+        if v then
+            if not targetPlayer then
+                print("⚠️ ターゲットが選択されていません！")
+                Config.AttackActive = false
+                return
+            end
+            
+            StartKickLoop()
+        else
+            print("⏹️ スパムキック停止")
+            isKicking = false
+            if kickLoop then
+                kickLoop:Disconnect()
+                kickLoop = nil
+            end
+        end
+    end
+})
+
+-- BlobManを常に監視（自動再実行対応）
+spawn(function()
+    while wait(3) do
+        pcall(function()
+            if Config.AttackActive and isKicking then
+                if not blobMan or not blobMan.Parent then
+                    print("🔍 BlobManが消えた、再スポーン中...")
+                    SpawnBlobMan()
+                    task.wait(0.5)
+                    FindAndRideBlobMan()
+                elseif Player.Character and Player.Character:FindFirstChild("HumanoidRootPart") then
+                    local hrp = Player.Character.HumanoidRootPart
+                    if blobMan and blobMan.Parent and hrp.Parent ~= blobMan then
+                        hrp.Parent = blobMan
+                        print("🔄 BlobManに再乗車")
+                    end
+                end
+            end
+        end)
+    end
+end)
+
+-- プレイヤー切断時の自動応答
+Players.PlayerRemoving:Connect(function(player)
+    if Config.AutoRestart and Config.AttackActive and targetPlayer == player then
+        print("⚠️ ターゲット切断、再実行待機...")
+        isKicking = false
+        if kickLoop then
+            kickLoop:Disconnect()
+            kickLoop = nil
+        end
+        task.wait(3)
+        if Config.AttackActive then
+            print("🔄 自動再実行")
+            StartKickLoop()
+        end
+    end
+end)
+
+-- キャラクター再生成時の自動復旧
+Player.CharacterAdded:Connect(function()
+    if Config.AttackActive and isKicking then
+        print("🔄 キャラクター再生成、再実行")
+        task.wait(2)
+        SpawnBlobMan()
+        task.wait(0.5)
+        FindAndRideBlobMan()
+        if kickLoop then
+            kickLoop:Disconnect()
+            kickLoop = nil
+        end
+        StartKickLoop()
+    end
+end)
+
+print("🌸 Fling Hub 起動完了！")
+print("💡 使い方: ターゲットを選んでスパムキック連打をON")
+print("💡 表示名（例: ユウキ (yuuki29080)）で表示")
+print("💡 BlobManを自動スポーンして乗ります")
