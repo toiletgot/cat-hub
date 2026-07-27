@@ -1,0 +1,107 @@
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+
+local Window = Rayfield:CreateWindow({
+    LoadingTitle = 'テストUi 起動中...',
+    Name = 'テストハブ',
+    Discord = {Enabled = false},
+    KeySystem = false,
+    LoadingSubtitle = 'by Test',
+    Theme = {
+        Shadow = Color3.fromRGB(0, 210, 255),
+        SliderProgress = Color3.fromRGB(0, 210, 255),
+        PlaceholderColor = Color3.fromRGB(0, 120, 200),
+        InputStroke = Color3.fromRGB(0, 210, 255),
+        ToggleDisabledStroke = Color3.fromRGB(0, 210, 255),
+        InputBackground = Color3.fromRGB(0, 15, 30),
+        ElementBackgroundHover = Color3.fromRGB(0, 25, 45),
+        DropdownUnselected = Color3.fromRGB(10, 10, 10),
+        SelectedTabTextColor = Color3.fromRGB(5, 5, 5),
+        NotificationBackground = Color3.fromRGB(10, 10, 10),
+        DropdownSelected = Color3.fromRGB(0, 25, 45),
+        SecondaryElementStroke = Color3.fromRGB(0, 25, 45),
+        Background = Color3.fromRGB(5, 5, 5),
+        ToggleDisabledOuterStroke = Color3.fromRGB(0, 210, 255),
+        TabStroke = Color3.fromRGB(0, 210, 255),
+        ElementBackground = Color3.fromRGB(10, 10, 10),
+        ToggleEnabledOuterStroke = Color3.fromRGB(0, 210, 255),
+        ToggleEnabled = Color3.fromRGB(0, 210, 255),
+        ToggleEnabledStroke = Color3.fromRGB(0, 210, 255),
+        ToggleDisabled = Color3.fromRGB(0, 210, 255),
+        SecondaryElementBackground = Color3.fromRGB(5, 5, 5),
+        ToggleBackground = Color3.fromRGB(0, 70, 140),
+        TabTextColor = Color3.fromRGB(0, 210, 255),
+        ElementStroke = Color3.fromRGB(0, 210, 255),
+        SliderBackground = Color3.fromRGB(10, 10, 10),
+        SliderStroke = Color3.fromRGB(0, 210, 255),
+        NotificationActionsBackground = Color3.fromRGB(0, 25, 45),
+        Topbar = Color3.fromRGB(10, 10, 10),
+        TabBackground = Color3.fromRGB(10, 10, 10),
+        TabBackgroundSelected = Color3.fromRGB(0, 210, 255),
+        TextColor = Color3.fromRGB(240, 240, 240),
+    },
+    ConfigurationSaving = {
+        Enabled = true,
+        FolderName = 'TestHub',
+        FileName = 'TestConfig',
+    },
+})
+
+local TestTab = Window:CreateTab('テストタブ', 4483362458)
+
+TestTab:CreateSection('テストセクション')
+
+TestTab:CreateButton({
+    Name = 'テストボタン',
+    Callback = function() end,
+})
+
+TestTab:CreateToggle({
+    Name = 'テストトグル',
+    CurrentValue = false,
+    Flag = 'test_toggle',
+    Callback = function() end,
+})
+
+TestTab:CreateSlider({
+    Name = 'テストスライダー',
+    CurrentValue = 50,
+    Increment = 1,
+    Range = {0, 100},
+    Flag = 'test_slider',
+    Callback = function() end,
+})
+
+TestTab:CreateDropdown({
+    Name = 'テストドロップダウン',
+    CurrentOption = {'選択肢1'},
+    MultipleOptions = false,
+    Flag = 'test_dropdown',
+    Options = {'選択肢1', '選択肢2', '選択肢3'},
+    Callback = function() end,
+})
+
+TestTab:CreateColorPicker({
+    Name = 'テストカラーピッカー',
+    Color = Color3.fromRGB(255, 0, 0),
+    Flag = 'test_colorpicker',
+    Callback = function() end,
+})
+
+TestTab:CreateButton({
+    Name = 'テスト通知',
+    Callback = function()
+        Rayfield:Notify({
+            Title = 'テスト通知',
+            Content = '正常に通知が表示されました',
+            Duration = 2,
+        })
+    end,
+})
+
+Rayfield:LoadConfiguration()
+
+Rayfield:Notify({
+    Duration = 3,
+    Title = '起動完了！',
+    Content = 'テストUIが正常にロードされました',
+})
