@@ -1,0 +1,186 @@
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+
+-- === サービスと変数の定義 ===
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local LocalPlayer = Players.LocalPlayer
+
+local ownershipRagdollActive = false
+local ownershipRagdollTask = nil
+local selectedTarget = nil
+
+-- === UIウィンドウの作成 ===
+local Window = Rayfield:CreateWindow({
+    Name = "Pallet Ragdoll Hub",
+    LoadingTitle = "Pallet Ragdoll Loading...",
+    LoadingSubtitle = "by Sirius (Rayfield)",
+    ConfigurationSaving = { Enabled = false },
+    Discord = { Enabled = false },
+    KeySystem = false,
+})
+
+local MainTab = Window:CreateTab("Main", 4483362458)
+
+-- === プレイヤーリスト取得関数 ===
+local function getPlayerNames()
+    local list = {}
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer then
+            table.insert(list, plr.Name)
+        end
+    end
+    return list
+end
+
+-- === UI要素 ===
+local TargetDropdown = MainTab:CreateDropdown({
+    Name = "Select Target",
+    Options = getPlayerNames(),
+    CurrentOption = {""},
+    MultipleOptions = false,
+    Flag = "TargetDropdown",
+    Callback = function(Options)
+        selectedTarget = Options[1]
+    end,
+})
+
+MainTab:CreateButton({
+    Name = "Refresh Player List",
+    Callback = function()
+        TargetDropdown:Refresh(getPlayerNames())
+    end,
+})
+
+MainTab:CreateDivider()
+
+-- === 新しいPallet Ragdoll 関数 ===
+local function PalletRagdollFunction(targetName)
+    local target = Players:FindFirstChild(targetName)
+    if not target or not target.Character then return end
+
+    local RS = ReplicatedStorage
+    local GE = RS:WaitForChild("GrabEvents")
+    local skyPos = CFrame.new(0, 800000, 0)
+
+    -- パレットをスポーン
+    RS.MenuToys.SpawnToyRemoteFunction:InvokeServer("PalletLightBrown", skyPos, Vector3.zero)
+
+    local pallet
+    repeat
+        pallet = workspace:FindFirstChild(LocalPlayer.Name.."SpawnedInToys")
+            and workspace[LocalPlayer.Name.."SpawnedInToys"]:FindFirstChild("PalletLightBrown")
+        RunService.Heartbeat:Wait()
+    until pallet or not ownershipRagdollActive
+
+    if not pallet then return end
+
+    local mainPart = pallet:FindFirstChild("SoundPart") or pallet:FindFirstChildWhichIsA("BasePart")
+    if not mainPart then return end
+
+    mainPart.CanCollide = false
+    mainPart.Anchored = false
+
+    local function claim(part)
+        GE.SetNetworkOwner:FireServer(part, part.CFrame)
+        GE.CreateGrabLine:FireServer(part, Vector3.zero, part.Position, false)
+        GE.DestroyGrabLine:FireServer(part)
+    end
+
+    claim(mainPart)
+
+    -- === メインループ（真っ直ぐ確実に当てる動き）===
+    while ownershipRagdollActive do
+        if not target or not target.Parent or not target.Character then break end
+
+        local root = target.Character:FindFirstChild("HumanoidRootPart") or target.Character:FindFirstChild("Torso") or target.Character:FindFirstChild("UpperTorso")
+
+        if not root then 
+            RunService.Heartbeat:Wait()
+            continue 
+        end
+
+        local targetPos = root.Position
+
+        -- 1. 相手の少し真上に配置して狙いを定める（水平を維持）
+        mainPart.CFrame = CFrame.new(targetPos + Vector3.new(0, 150, 0))
+        mainPart.AssemblyLinearVelocity = Vector3.zero
+        mainPart.AssemblyAngularVelocity = Vector3.zero -- 回転を完全に無くす
+        claim(mainPart)
+        mainPart.CanCollide = false
+        task.wait(0.05)
+
+        -- 2. 胴体に真っ直ぐ激しく叩きつける（相手が動いてもズレないように再取得）
+        if root and target.Character then
+            -- CFrame.new(Position) にすることで相手の傾きに影響されず、パレットが真っ直ぐのまま当たる
+            mainPart.CFrame = CFrame.new(root.Position)
+            mainPart.AssemblyLinearVelocity = Vector3.new(0, -400, 0) -- 真下に超強力に叩きつける
+            mainPart.AssemblyAngularVelocity = Vector3.zero -- ブレさせない
+            claim(mainPart)
+            mainPart.CanCollide = true
+        end
+        task.wait(0.12)
+
+        -- 3. 引っかかりを防止するため、当たり判定を消して少し上に引き抜く
+        if root and target.Character then
+            mainPart.CFrame = CFrame.new(root.Position + Vector3.new(0, 30, 0))
+            mainPart.AssemblyLinearVelocity = Vector3.new(0, 100, 0)
+            mainPart.AssemblyAngularVelocity = Vector3.zero
+            claim(mainPart)
+            mainPart.CanCollide = false
+        end
+        task.wait(0.08)
+    end
+
+    -- クリーンアップ
+    if pallet and pallet.Parent then
+        pcall(function()
+            RS.MenuToys.DestroyToy:FireServer(pallet)
+        end)
+        pallet:Destroy()
+    end
+end
+
+-- === トグル ===
+local RagdollToggle = MainTab:CreateToggle({
+    Name = "Enable Pallet Ragdoll",
+    CurrentValue = false,
+    Flag = "PalletRagdollToggle",
+    Callback = function(Value)
+        ownershipRagdollActive = Value
+
+        if Value then
+            if selectedTarget and selectedTarget ~= "" then
+                if ownershipRagdollTask then task.cancel(ownershipRagdollTask) end
+                
+                ownershipRagdollTask = task.spawn(function()
+                    PalletRagdollFunction(selectedTarget)
+                end)
+
+                Rayfield:Notify({ Title = "Activated", Content = "Targeting: " .. selectedTarget, Duration = 3 })
+            else
+                ownershipRagdollActive = false
+                Rayfield:Notify({ Title = "Error", Content = "Please select a target first!", Duration = 3 })
+            end
+        else
+            if ownershipRagdollTask then
+                task.cancel(ownershipRagdollTask)
+                ownershipRagdollTask = nil
+            end
+
+            -- 強制クリーンアップ
+            task.spawn(function()
+                local toysFolder = workspace:FindFirstChild(LocalPlayer.Name.."SpawnedInToys")
+                if toysFolder then
+                    local pallet = toysFolder:FindFirstChild("PalletLightBrown")
+                    if pallet then
+                        pcall(function() ReplicatedStorage.MenuToys.DestroyToy:FireServer(pallet) end)
+                        pallet:Destroy()
+                    end
+                end
+            end)
+
+            Rayfield:Notify({ Title = "Deactivated", Content = "Pallet Ragdoll stopped.", Duration = 2 })
+        end
+    end,
+})
