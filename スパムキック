@@ -1,0 +1,342 @@
+-- Rayfield Lib をロード
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+
+-- ウィンドウ作成
+local Window = Rayfield:CreateWindow({
+    Name = "Grab Detector",
+    LoadingTitle = "Grab Detector",
+    LoadingSubtitle = "by Script",
+    ConfigurationSaving = {
+        Enabled = false,
+        FolderName = "GrabDetector",
+        FileName = "Config"
+    },
+    Discord = {
+        Enabled = false,
+        Invite = "noinvite",
+        RememberJoins = true
+    },
+    KeySystem = false
+})
+
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+
+local currentTarget = nil
+local currentSpamTask = nil
+local currentMainTask = nil
+local currentBodyPosition = nil
+local currentBodyGyro = nil
+local savedPosition = nil
+local dragging = false
+local grabStartTime = 0
+local checkStartTime = 0
+local isSpamActive = false
+local noclipConnection = nil
+
+-- Grab Events
+local GrabEvents = ReplicatedStorage:WaitForChild("GrabEvents", 10)
+local setNetworkOwnerEvent = GrabEvents and GrabEvents:WaitForChild("SetNetworkOwner", 5)
+local destroyGrabLineEvent = GrabEvents and GrabEvents:WaitForChild("DestroyGrabLine", 5)
+
+-- Noclip関数
+local function SetNoclip(enabled)
+    if noclipConnection then
+        noclipConnection:Disconnect()
+        noclipConnection = nil
+    end
+    
+    if enabled then
+        noclipConnection = RunService.Stepped:Connect(function()
+            if LocalPlayer.Character then
+                for _, part in ipairs(LocalPlayer.Character:GetDescendants()) do
+                    if part:IsA("BasePart") then
+                        part.CanCollide = false
+                    end
+                end
+            end
+        end)
+    end
+end
+
+-- ネットワークオーナー取得関数
+local function SetNetworkOwnerForTarget(targetRoot)
+    if not targetRoot then return end
+    pcall(function()
+        setNetworkOwnerEvent:FireServer(targetRoot, targetRoot.CFrame)
+    end)
+end
+
+-- DestroyGrabLine関数
+local function DoDestroyGrabLine(targetRoot)
+    if not targetRoot then return end
+    pcall(function()
+        destroyGrabLineEvent:FireServer(targetRoot)
+    end)
+end
+
+-- BodyPositionとBodyGyroを作成/更新
+local function CreateBodies(targetRoot, pos)
+    if currentBodyPosition then
+        currentBodyPosition:Destroy()
+        currentBodyPosition = nil
+    end
+    if currentBodyGyro then
+        currentBodyGyro:Destroy()
+        currentBodyGyro = nil
+    end
+    
+    currentBodyPosition = Instance.new("BodyPosition")
+    currentBodyPosition.MaxForce = Vector3.new(1e8, 1e8, 1e8)
+    currentBodyPosition.P = 100000
+    currentBodyPosition.D = 1000
+    currentBodyPosition.Position = pos
+    currentBodyPosition.Parent = targetRoot
+    
+    currentBodyGyro = Instance.new("BodyGyro")
+    currentBodyGyro.MaxTorque = Vector3.new(1e8, 1e8, 1e8)
+    currentBodyGyro.P = 100000
+    currentBodyGyro.D = 1000
+    currentBodyGyro.CFrame = CFrame.new(pos)
+    currentBodyGyro.Parent = targetRoot
+end
+
+local function CleanupBodies()
+    if currentBodyPosition then
+        currentBodyPosition:Destroy()
+        currentBodyPosition = nil
+    end
+    if currentBodyGyro then
+        currentBodyGyro:Destroy()
+        currentBodyGyro = nil
+    end
+end
+
+-- 全停止関数
+local function StopAll()
+    isSpamActive = false
+    if currentSpamTask then
+        task.cancel(currentSpamTask)
+        currentSpamTask = nil
+    end
+    if currentMainTask then
+        task.cancel(currentMainTask)
+        currentMainTask = nil
+    end
+    CleanupBodies()
+    SetNoclip(false)
+    dragging = false
+    grabStartTime = 0
+    checkStartTime = 0
+end
+
+-- プレイヤー選択ドロップダウン用の関数
+local function GetPlayerDisplayList()
+    local opts = {}
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then
+            table.insert(opts, p.DisplayName .. " (" .. p.Name .. ")")
+        end
+    end
+    return opts
+end
+
+local function GetUserNameFromDisplay(displayString)
+    if not displayString or displayString == "" then return nil end
+    local startPos, endPos = string.find(displayString, "%(")
+    if startPos then
+        local userName = string.sub(displayString, startPos + 1, -2)
+        return userName
+    end
+    return nil
+end
+
+-- タブ作成
+local MainTab = Window:CreateTab("Spam Kick", nil)
+
+-- プレイヤー選択ドロップダウン
+local playerDropdown = MainTab:CreateDropdown({
+    Name = "Select Player",
+    Options = GetPlayerDisplayList(),
+    CurrentOption = "",
+    MultipleOptions = false,
+    Flag = "SelectedPlayerDropdown",
+    Callback = function(selected)
+        local selectedVal = type(selected) == "table" and selected[1] or selected
+        local userName = GetUserNameFromDisplay(selectedVal)
+        if userName then
+            currentTarget = Players:FindFirstChild(userName)
+        end
+    end
+})
+
+local function UpdatePlayerList()
+    playerDropdown:Set(GetPlayerDisplayList())
+end
+
+Players.PlayerAdded:Connect(function()
+    task.wait(0.5)
+    UpdatePlayerList()
+end)
+
+Players.PlayerRemoving:Connect(function()
+    task.wait(0.2)
+    UpdatePlayerList()
+end)
+
+task.spawn(function()
+    task.wait(1)
+    UpdatePlayerList()
+end)
+
+-- task.wait() トグル
+MainTab:CreateToggle({
+    Name = "task.wait()",
+    CurrentValue = false,
+    Flag = "TaskWaitToggle",
+    Callback = function(Value)
+        if Value then
+            StopAll()
+            
+            if not currentTarget then
+                return
+            end
+            
+            isSpamActive = true
+            SetNoclip(true)
+            
+            -- メインループ開始
+            currentMainTask = task.spawn(function()
+                local target = currentTarget
+                if not target then 
+                    StopAll()
+                    return 
+                end
+                
+                local myChar = LocalPlayer.Character
+                local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+                if not myRoot then 
+                    StopAll()
+                    return 
+                end
+                
+                savedPosition = myRoot.CFrame
+                dragging = false
+                grabStartTime = 0
+                checkStartTime = 0
+                
+                local spamKickRunning = false
+                local currentTargetRoot = nil
+                
+                while isSpamActive do
+                    local currentTargetPlayer = Players:FindFirstChild(target.Name)
+                    if not currentTargetPlayer then
+                        CleanupBodies()
+                        spamKickRunning = false
+                        task.wait()
+                        continue
+                    end
+                    
+                    myChar = LocalPlayer.Character
+                    myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+                    local tChar = currentTargetPlayer.Character
+                    local tRoot = tChar and tChar:FindFirstChild("HumanoidRootPart")
+                    local tHum = tChar and tChar:FindFirstChild("Humanoid")
+                    
+                    if tRoot and tHum and tHum.Health > 0 and myRoot then
+                        if not spamKickRunning then
+                            spamKickRunning = true
+                            currentTargetRoot = tRoot
+                            currentSpamTask = task.spawn(function()
+                                while isSpamActive and tRoot and tRoot.Parent do
+                                    -- DestroyGrabLineを1回
+                                    if tRoot and tRoot.Parent then
+                                        DoDestroyGrabLine(tRoot)
+                                    end
+                                    task.wait()
+                                    
+                                    -- ネット取得1回
+                                    if tRoot and tRoot.Parent then
+                                        SetNetworkOwnerForTarget(tRoot)
+                                    end
+                                    task.wait()
+                                end
+                            end)
+                        end
+                        
+                        if not dragging then
+                            myRoot.CFrame = tRoot.CFrame * CFrame.new(0, 0, 3)
+                            CleanupBodies()
+                            checkStartTime = 0
+                            
+                            pcall(function()
+                                SetNetworkOwnerForTarget(tRoot)
+                                SetNetworkOwnerForTarget(tRoot)
+                                DoDestroyGrabLine(tRoot)
+                            end)
+                            
+                            myRoot.AssemblyLinearVelocity = Vector3.zero
+                            myRoot.AssemblyAngularVelocity = Vector3.zero
+                            
+                            if grabStartTime == 0 then grabStartTime = tick() end
+                            if tick() - grabStartTime > 0.35 then
+                                dragging = true
+                                grabStartTime = 0
+                                checkStartTime = tick()
+                                local lockPos = savedPosition * CFrame.new(0, 17, 0)
+                                CreateBodies(tRoot, lockPos.Position)
+                            end
+                        else
+                            myRoot.CFrame = savedPosition
+                            local lockPos = savedPosition * CFrame.new(0, 17, 0)
+                            
+                            myRoot.AssemblyLinearVelocity = Vector3.zero
+                            myRoot.AssemblyAngularVelocity = Vector3.zero
+                            
+                            if currentBodyPosition and currentBodyPosition.Parent then
+                                currentBodyPosition.Position = lockPos.Position
+                                if currentBodyGyro then
+                                    currentBodyGyro.CFrame = lockPos
+                                end
+                            else
+                                CreateBodies(tRoot, lockPos.Position)
+                            end
+                            
+                            if checkStartTime > 0 and tick() - checkStartTime > 0.30 then
+                                local currentDist = (tRoot.Position - lockPos.Position).Magnitude
+                                if currentDist > 10 then
+                                    dragging = false
+                                    grabStartTime = 0
+                                    checkStartTime = 0
+                                    CleanupBodies()
+                                    myRoot.CFrame = tRoot.CFrame * CFrame.new(0, 0, 3)
+                                    currentTargetRoot = tRoot
+                                else
+                                    checkStartTime = tick()
+                                end
+                            end
+                        end
+                    else
+                        dragging = false
+                        grabStartTime = 0
+                        checkStartTime = 0
+                        CleanupBodies()
+                        spamKickRunning = false
+                        currentTargetRoot = nil
+                    end
+                    
+                    task.wait()
+                end
+                
+                CleanupBodies()
+                SetNoclip(false)
+            end)
+        else
+            if isSpamActive then
+                StopAll()
+            end
+        end
+    end
+})
