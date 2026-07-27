@@ -1,0 +1,120 @@
+-- OrionLibの読み込み
+local OrionLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/jadpy/suki/refs/heads/main/orion"))()
+
+local Window = OrionLib:MakeWindow({
+    Name = "Target Lock Plank Loop", 
+    HidePremium = false, 
+    SaveConfig = true, 
+    ConfigFolder = "PlankLoop"
+})
+
+-- 変数定義
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local runPlankLoop = false
+local attackSpeed = 0.05 -- ぶつける間隔（秒）小さいほど高速
+
+-- 周囲の持ち上げた（最も近い）敵を自動取得する関数
+local function getClosestPlayer()
+    local closestPlayer = nil
+    local shortestDistance = 15 -- 持ち上げている距離（15スタッド以内）
+    
+    local myChar = LocalPlayer.Character
+    local myHrp = myChar and myChar:FindFirstChild("HumanoidRootPart")
+    
+    if myHrp then
+        for _, p in pairs(Players:GetPlayers()) do
+            if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                local targetHrp = p.Character.HumanoidRootPart
+                local distance = (myHrp.Position - targetHrp.Position).Magnitude
+                
+                if distance < shortestDistance then
+                    shortestDistance = distance
+                    closestPlayer = p
+                end
+            end
+        end
+    end
+    return closestPlayer
+end
+
+-- ==========================================
+-- メインタブ
+-- ==========================================
+local MainTab = Window:MakeTab({
+    Name = "板ハメ (Plank Loop)",
+    Icon = "rbxassetid://4483345998",
+    PremiumOnly = false
+})
+
+MainTab:AddToggle({
+    Name = "【超ハメ】相手が抜けるまで板をぶつけ続ける",
+    Default = false,
+    Callback = function(Value)
+        runPlankLoop = Value
+        
+        task.spawn(function()
+            while runPlankLoop do
+                -- 1. 持ち上げている（一番近い）ターゲットを探す
+                local target = getClosestPlayer()
+                
+                if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then
+                    local targetHrp = target.Character.HumanoidRootPart
+                    local targetName = target.Name
+                    
+                    -- 2. マップ上の「板」っぽいパーツを探してターゲットに何回もテレポートさせる
+                    local foundPlank = false
+                    for _, obj in pairs(workspace:GetDescendants()) do
+                        -- パーツ名に「Plank(板)」や「Wood(木)」が含まれていて、固定されていないもの
+                        if obj:IsA("BasePart") and not obj.Anchored and (obj.Name:lower():find("plank") or obj.Name:lower():find("wood") or obj.Name:lower():find("part")) then
+                            if not obj:IsDescendantOf(LocalPlayer.Character) and not obj:IsDescendantOf(target.Character) then
+                                
+                                -- ターゲットの体にめり込ませるように板を瞬間移動（物理バグを起こす）
+                                obj.CFrame = targetHrp.CFrame * CFrame.new(0, 0, 0)
+                                -- 吹き飛ばす物理威力を上乗せ
+                                obj.Velocity = Vector3.new(0, 50, 0)
+                                
+                                foundPlank = true
+                            end
+                        end
+                    end
+                    
+                    -- 板がマップにない場合の予備（自分の目の前にあるパーツを無理やりぶつける）
+                    if not foundPlank then
+                        -- 近くのフリーパーツを全般的にターゲットへ集約
+                        for _, obj in pairs(workspace:GetDescendants()) do
+                            if obj:IsA("BasePart") and not obj.Anchored and not obj:IsDescendantOf(LocalPlayer.Character) then
+                                obj.CFrame = targetHrp.CFrame
+                            end
+                        end
+                    end
+                    
+                else
+                    -- ターゲットがいなくなったら（抜けた、または死んだら）一時待機
+                    OrionLib:MakeNotification({
+                        Name = "ターゲット不在",
+                        Content = "持ち中のプレイヤー、または近くのプレイヤーがいません",
+                        Time = 1
+                    })
+                end
+                
+                task.wait(attackSpeed) -- 指定した超高速速度でループ
+            end
+        end)
+    end
+})
+
+MainTab:AddSlider({
+    Name = "ハメ速度（数値が小さいほど高速）",
+    Min = 1,
+    Max = 10,
+    Default = 5,
+    Color = Color3.fromRGB(0, 255, 0),
+    Increment = 1,
+    ValueName = "Speed",
+    Callback = function(Value)
+        attackSpeed = Value / 100 -- 0.01秒〜0.1秒の間で調整
+    end
+})
+
+OrionLib:Init()
