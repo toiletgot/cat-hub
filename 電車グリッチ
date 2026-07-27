@@ -1,0 +1,186 @@
+-- ==========================================
+-- サービスの定義
+-- ==========================================
+local PS = game:GetService("Players")
+local Player = PS.LocalPlayer
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local R = game:GetService("RunService")
+
+-- ==========================================
+-- Rayfield UI の読み込み
+-- ==========================================
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+
+local Window = Rayfield:CreateWindow({
+	Name = "Anti Gucci Script",
+	LoadingTitle = "Loading Features...",
+	LoadingSubtitle = "by You",
+	ConfigurationSaving = {
+		Enabled = false,
+	},
+	Discord = {
+		Enabled = false,
+	},
+	KeySystem = false,
+})
+
+local Tab = Window:CreateTab("Defense", "shield")
+
+-- ==========================================
+-- ユーティリティ関数
+-- ==========================================
+-- 元コードで未定義だったResetPlayerを補完
+local function ResetPlayer(plr)
+	local char = plr.Character
+	local hum = char and char:FindFirstChild("Humanoid")
+	if hum then
+		hum.Health = 0
+	end
+end
+
+-- ==========================================
+-- Anti Gucci (Train) ロジック
+-- ==========================================
+local antiGucciConnectionTrain
+local safePositionTrain
+local restoreFramesTrain = 0
+local autoGucciActiveTrain = false
+
+local function startAntiGucciTrain()
+	local character = Player.Character or Player.CharacterAdded:Wait()
+	local humanoid = character:WaitForChild("Humanoid")
+	local rootPart = character:WaitForChild("HumanoidRootPart")
+	safePositionTrain = rootPart.Position
+	
+	-- エラー回避のためFindFirstChildを使用
+	local mapFolder = workspace:FindFirstChild("Map")
+	local folder = mapFolder and mapFolder:FindFirstChild("AlwaysHereTweenedObjects")
+	local train = folder and folder:FindFirstChild("Train")
+	local seat
+	
+	if train then
+		for _, d in ipairs(train:GetDescendants()) do
+			if d:IsA("Seat") then
+				seat = d
+				break
+			end
+		end
+	end
+
+	if seat then 
+		rootPart.CFrame = seat.CFrame + Vector3.new(0, 2, 0) 
+		seat:Sit(humanoid) 
+	end
+	
+	humanoid:GetPropertyChangedSignal("Jump"):Connect(function() 
+		if humanoid.Jump and humanoid.Sit then 
+			restoreFramesTrain = 15 
+			safePositionTrain = rootPart.Position 
+		end 
+	end)
+	
+	if antiGucciConnectionTrain then antiGucciConnectionTrain:Disconnect() end
+	
+	antiGucciConnectionTrain = R.Heartbeat:Connect(function()
+		if not rootPart or not humanoid then return end
+		
+		-- RagdollRemoteが存在する場合のみ実行
+		local charEvents = ReplicatedStorage:FindFirstChild("CharacterEvents")
+		local ragdollRemote = charEvents and charEvents:FindFirstChild("RagdollRemote")
+		if ragdollRemote then
+			ragdollRemote:FireServer(rootPart, 0)
+		end
+		
+		if restoreFramesTrain > 0 then 
+			rootPart.CFrame = CFrame.new(safePositionTrain) 
+			restoreFramesTrain = restoreFramesTrain - 1 
+		end
+	end)
+	
+	task.spawn(function() 
+		while humanoid.Sit do 
+			task.wait(1) 
+		end 
+		task.wait(0.5) 
+		rootPart.CFrame = CFrame.new(safePositionTrain) 
+	end)
+end
+
+local function stopAntiGucciTrain()
+	if antiGucciConnectionTrain then 
+		antiGucciConnectionTrain:Disconnect() 
+		antiGucciConnectionTrain = nil 
+	end
+	
+	local mapFolder = workspace:FindFirstChild("Map")
+	local trainFolder = mapFolder and mapFolder:FindFirstChild("AlwaysHereTweenedObjects")
+	
+	if trainFolder and trainFolder:FindFirstChild("Train") then 
+		ResetPlayer(Player) 
+	end
+end
+
+-- ==========================================
+-- UIへのトグル追加
+-- ==========================================
+Tab:CreateToggle({
+	Name = "Anti Gucci (Train)",
+	CurrentValue = false,
+	Flag = "AutoGucciTrainToggle", 
+	Callback = function(Value)
+		autoGucciActiveTrain = Value
+
+		if Value then
+			startAntiGucciTrain()
+			Rayfield:Notify({
+				Title = "System",
+				Content = "Gucci Train active (monitoring)",
+				Duration = 3,
+			})
+
+			task.spawn(function()
+				while autoGucciActiveTrain do
+					local mapFolder = workspace:FindFirstChild("Map")
+					local trainFolder = mapFolder and mapFolder:FindFirstChild("AlwaysHereTweenedObjects")
+					local trainExists = trainFolder and trainFolder:FindFirstChild("Train")
+
+					if not trainExists then
+						stopAntiGucciTrain() 
+						
+						Rayfield:Notify({
+							Title = "System",
+							Content = "Train lost. Waiting for restore...",
+							Duration = 3,
+						})
+
+						local retries = 0
+						repeat
+							task.wait(0.2)
+							retries = retries + 1
+							mapFolder = workspace:FindFirstChild("Map")
+							trainFolder = mapFolder and mapFolder:FindFirstChild("AlwaysHereTweenedObjects")
+						until (trainFolder and trainFolder:FindFirstChild("Train")) or retries > 25 or not autoGucciActiveTrain
+
+						if autoGucciActiveTrain and trainFolder and trainFolder:FindFirstChild("Train") then
+							startAntiGucciTrain()
+							Rayfield:Notify({
+								Title = "System",
+								Content = "Train restored.",
+								Duration = 3,
+							})
+						end
+					end
+					task.wait(0.5) 
+				end
+			end)
+		else
+			autoGucciActiveTrain = false
+			stopAntiGucciTrain()
+			Rayfield:Notify({
+				Title = "System",
+				Content = "Gucci Train disabled.",
+				Duration = 3,
+			})
+		end
+	end,
+})
