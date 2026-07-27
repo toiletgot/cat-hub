@@ -1,0 +1,39 @@
+local R=loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+local p,u,s,n,j,i,t=game.Players.LocalPlayer,game:GetService("UserInputService"),game:GetService("RunService"),false,false,16,50
+local W=R:CreateWindow({Name="Hacker Hub v1.1"})
+local P,I,sel=W:CreateTab("設定"),W:CreateTab("アイテム"),""
+
+-- 全ゲーム対応：ツール検索
+local function gt() local o={} for _,v in pairs(game:GetDescendants())do if v:IsA("Tool")and not v:IsDescendantOf(game.Players)then table.insert(o,v.Name)end end return o end
+
+-- スライダーの値を0.1秒ごとに強制適用
+task.spawn(function()
+    while task.wait(0.1) do
+        pcall(function()
+            local h = p.Character.Humanoid
+            h.WalkSpeed = i
+            h.JumpPower = t
+            h.UseJumpPower = true
+            -- アイテムロック解除
+            local b = p.Backpack:GetChildren() 
+            if p.Character then for _,v in pairs(p.Character:GetChildren())do if v:IsA("Tool")then table.insert(b,v)end end end
+            for _,v in pairs(b) do v.CanBeDropped = true for _,x in pairs({"Locked","DisableDelete"}) do if v:FindFirstChild(x) then v[x]:Destroy() end end end
+        end)
+    end
+end)
+
+s.Stepped:Connect(function() if n and p.Character then for _,v in pairs(p.Character:GetDescendants())do if v:IsA("BasePart")then v.CanCollide=false end end end end)
+u.JumpRequest:Connect(function() if j then p.Character.Humanoid:ChangeState(3)end end)
+
+P:CreateToggle({Name="ノークリップ",Callback=function(v)n=v end})
+P:CreateToggle({Name="無限ジャンプ",Callback=function(v)j=v end})
+-- 【修正】スライダーの値を正しく反映
+P:CreateSlider({Name="スピード",Range={16,500},CurrentValue=16,Increment=1,Callback=function(v) i = v end})
+P:CreateSlider({Name="ジャンプ力",Range={50,1000},CurrentValue=50,Increment=1,Callback=function(v) t = v end})
+
+local D=I:CreateDropdown({Name="選択",Options=gt(),Callback=function(v)sel=v[1]end})
+I:CreateButton({Name="更新",Callback=function()D:Refresh(gt())end})
+I:CreateButton({Name="ゲット",Callback=function()for _,v in pairs(game:GetDescendants())do if v:IsA("Tool")and v.Name==sel then v:Clone().Parent=p.Backpack break end end end})
+I:CreateButton({Name="削除",Callback=function() local x=p.Backpack:FindFirstChild(sel)or(p.Character and p.Character:FindFirstChild(sel))if x then x:Destroy()end end})
+
+R:Notify({Title="Hacker Hub",Content="スライダー修正完了！",Duration=3})
