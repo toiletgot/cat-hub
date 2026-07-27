@@ -1,0 +1,149 @@
+local R = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+local p, u, s = game.Players.LocalPlayer, game:GetService("UserInputService"), game:GetService("RunService")
+local n, j, i, t = false, false, 16, 50
+local spTxt, spNum, spWait = "Hacker Hub!", 5, 0.5
+local sel = ""
+
+-- 爆速連打用
+local autoGrab = false
+local cas = game:GetService("ContextActionService")
+
+-- バックアップ用テーブル
+local OriginalSettings = {}
+
+local W = R:CreateWindow({
+    Name = "Hacker Hub v1.3",
+    LoadingTitle = "Hacker Hub Loading...",
+    LoadingSubtitle = "All-in-One Edition",
+    ConfigurationSaving = { Enabled = false },
+    KeySystem = false
+})
+
+local P = W:CreateTab("設定")
+local L = W:CreateTab("ラグ軽減") 
+local I = W:CreateTab("アイテム")
+local C1 = W:CreateTab("連投チャット")
+
+-- --- [アンチラグ・エンジン] ---
+local function SetAntiLag(enabled)
+    if enabled then
+        for _, v in pairs(game:GetDescendants()) do
+            if v:IsA("Part") or v:IsA("UnionOperation") or v:IsA("MeshPart") then
+                OriginalSettings[v] = {Material = v.Material, Reflectance = v.Reflectance}
+                v.Material = Enum.Material.Plastic
+                v.Reflectance = 0
+            elseif v:IsA("Decal") or v:IsA("Texture") then
+                OriginalSettings[v] = {Transparency = v.Transparency}
+                v.Transparency = 1
+            elseif v:IsA("ParticleEmitter") or v:IsA("Trail") then
+                OriginalSettings[v] = {Enabled = v.Enabled}
+                v.Enabled = false
+            end
+        end
+        settings().Rendering.QualityLevel = Enum.QualityLevel.Level01
+        game.Lighting.GlobalShadows = false
+    else
+        for obj, settings in pairs(OriginalSettings) do
+            if obj and obj.Parent then
+                if settings.Material then obj.Material = settings.Material end
+                if settings.Reflectance then obj.Reflectance = settings.Reflectance end
+                if settings.Transparency then obj.Transparency = settings.Transparency end
+                if settings.Enabled ~= nil then obj.Enabled = settings.Enabled end
+            end
+        end
+        OriginalSettings = {}
+        settings().Rendering.QualityLevel = Enum.QualityLevel.Automatic
+        game.Lighting.GlobalShadows = true
+    end
+end
+
+-- --- [チャット送信] ---
+local function UniversalSend(msg)
+    pcall(function()
+        local tcs = game:GetService("TextChatService")
+        if tcs.ChatVersion == Enum.ChatVersion.TextChatService then
+            tcs.TextChannels.RBXGeneral:SendAsync(msg)
+        else
+            game:GetService("ReplicatedStorage").DefaultChatSystemChatEvents.SayMessageRequest:FireServer(msg, "All")
+        end
+    end)
+end
+
+-- --- 核心ループ ---
+task.spawn(function()
+    while task.wait(0.1) do
+        pcall(function()
+            local h = p.Character.Humanoid h.WalkSpeed, h.JumpPower, h.UseJumpPower = i, t, true
+            local b = p.Backpack:GetChildren() 
+            if p.Character then for _, v in pairs(p.Character:GetChildren()) do if v:IsA("Tool") then table.insert(b, v) end end end
+            for _, v in pairs(b) do 
+                v.CanBeDropped = true 
+                for _, x in pairs({"Locked", "DisableDelete"}) do if v:FindFirstChild(x) then v[x]:Destroy() end end 
+            end
+        end)
+    end
+end)
+
+-- --- ★神速：爆速連打(物人) ---
+s.RenderStepped:Connect(function()
+    if autoGrab then
+        for count = 1, 5 do
+            pcall(function()
+                local actions = {"Grab", "GrabAction", "Action", "Interact"}
+                for _, actionName in pairs(actions) do
+                    cas:CallFunction(actionName, Enum.UserInputState.Begin, nil)
+                    cas:CallFunction(actionName, Enum.UserInputState.End, nil)
+                end
+            end)
+        end
+    end
+end)
+
+s.Stepped:Connect(function() if n and p.Character then for _, v in pairs(p.Character:GetDescendants()) do if v:IsA("BasePart") then v.CanCollide = false end end end end)
+u.JumpRequest:Connect(function() if j then p.Character.Humanoid:ChangeState(3) end end)
+
+-- [1] 設定
+P:CreateToggle({Name = "🔥 爆速連打(物人)", CurrentValue = false, Callback = function(v) autoGrab = v end})
+P:CreateToggle({Name = "👻 ノークリップ", CurrentValue = false, Callback = function(v) n = v end})
+P:CreateToggle({Name = "✨ 無限ジャンプ", CurrentValue = false, Callback = function(v) j = v end})
+P:CreateInput({Name = "🏃 スピード", PlaceholderText = "16", RemoveTextAfterFocusLost = false, Callback = function(v) i = tonumber(v) or 16 end})
+P:CreateInput({Name = "🦘 ジャンプ力", PlaceholderText = "50", RemoveTextAfterFocusLost = false, Callback = function(v) t = tonumber(v) or 50 end})
+
+-- [2] ラグ軽減
+L:CreateToggle({Name = "⚡ 超軽量モード (Anti-Lag)", CurrentValue = false, Callback = function(v) SetAntiLag(v) end})
+L:CreateButton({
+    Name = "🗑️ エフェクトを削除(戻せません)",
+    Callback = function()
+        for _, v in pairs(game.Workspace:GetDescendants()) do
+            if v:IsA("ParticleEmitter") or v:IsA("Sparkles") then v:Destroy() end
+        end
+    end
+})
+
+-- [3] アイテム管理
+local function gt() local o = {} for _, v in pairs(game:GetDescendants()) do if v:IsA("Tool") and not v:IsDescendantOf(game.Players) then table.insert(o, v.Name) end end return o end
+local D = I:CreateDropdown({Name = "選択", Options = gt(), CurrentOption = "", Callback = function(v) sel = v[1] end})
+I:CreateButton({Name = "更新", Callback = function() D:Refresh(gt()) end})
+I:CreateButton({Name = "ゲット", Callback = function() for _, v in pairs(game:GetDescendants()) do if v:IsA("Tool") and v.Name == sel then v:Clone().Parent = p.Backpack break end end end})
+I:CreateButton({
+    Name = "削除", 
+    Callback = function() 
+        local x = p.Backpack:FindFirstChild(sel) or (p.Character and p.Character:FindFirstChild(sel))
+        if x then x:Destroy() end
+    end
+})
+
+-- [4] 連投チャット
+C1:CreateInput({Name = "文字", PlaceholderText = "内容...", RemoveTextAfterFocusLost = false, Callback = function(v) spTxt = v end})
+C1:CreateInput({Name = "回数", PlaceholderText = "5", RemoveTextAfterFocusLost = false, Callback = function(v) spNum = tonumber(v) or 5 end})
+C1:CreateInput({Name = "間隔(秒)", PlaceholderText = "0.5", RemoveTextAfterFocusLost = false, Callback = function(v) spWait = tonumber(v) or 0.5 end})
+C1:CreateButton({
+    Name = "🚀 連投開始",
+    Callback = function()
+        task.spawn(function()
+            for _ = 1, spNum do UniversalSend(spTxt) task.wait(spWait) end
+        end)
+    end
+})
+
+R:Notify({Title = "Hacker Hub v1.3", Content = "全機能復旧完了だぜ！", Duration = 3})
