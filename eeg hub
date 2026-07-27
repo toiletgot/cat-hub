@@ -1,0 +1,1471 @@
+local PlayerList, CharacterModel, LowercaseString, LowercaseString2, LowercaseString3, LowercaseString4, LowercaseString5, LowercaseString6, ObjectName, FindChildMethod, FindChildMethod2, CharacterModel3, FindChildMethod4, FindChildMethod5, CharacterModel5, CharacterModel6, BlobmanScript, GrabEventList, ValueArray, ValueArray2, CharacterIterator, CharacterModel7, CharacterModel8, ObjectPosition, PlayerFlag, VersionNumber, FindChildMethod8, FindChildMethod9, VersionCode, ChildNameFlag, ValueArray3, ValueArray4;
+local FunctionEnvironment = getfenv();
+local ExecutionResult = pcall(function(ParameterA, ParameterB, ParameterC)
+    local FunctionReference = FunctionEnvironment["1CcBYilRVxmUkb"]; 
+end);
+local ReturnValue = success;
+if ReturnValue then
+    local ServiceReference = game.GetService;
+    local FunctionPointer = FunctionEnvironment["70dZEQB6wJ85U"];
+    local FunctionHandle = FunctionEnvironment["2HomkuhvIdvX7M"];
+    PlayerList = game:GetService("Players");
+    local ServiceHandle = game.GetService;
+    local RunService = game:GetService("RunService"); 
+end;
+local ServiceHandle2 = game.GetService;
+local WorkspaceService = game:GetService("Workspace");
+local ServiceReference2 = game.GetService;
+local ReplicatedStorageService = game:GetService("ReplicatedStorage");
+local ServiceHandle3 = game.GetService;
+local DebrisService = game:GetService("Debris");
+local CurrentPlayer = PlayerList.LocalPlayer;
+local HttpGetFunction = game.HttpGet;
+local OrionScript = game:HttpGet("https://raw.githubusercontent.com/jadpy/suki/refs/heads/main/orion");
+local OrionLoader = loadstring(OrionScript);
+local OrionLibrary = OrionLoader();
+local CreateWindow = OrionLibrary.MakeWindow;
+local WindowConfig = {
+    ["HidePremium"] = true,
+    ["Name"] = "Egg Hub 1.0",
+    ["SaveConfig"] = false
+};
+local MainWindow = OrionLibrary:MakeWindow(WindowConfig);
+local CreateTab = MainWindow.MakeTab;
+local TabConfig = {
+    ["Name"] = "Grab",
+    ["Icon"] = "rbxassetid://4483362458"
+};
+local GrabTab = MainWindow:MakeTab(TabConfig);
+local CreateTab = MainWindow.MakeTab;
+local DefenseConfig = {
+    ["Name"] = "Defense",
+    ["Icon"] = "rbxassetid://4483362458"
+};
+local DefenseTab = MainWindow:MakeTab(DefenseConfig);
+local CreateTab = MainWindow.MakeTab;
+local AuraConfig = {
+    ["Name"] = "Aura",
+    ["Icon"] = "rbxassetid://4483362458"
+};
+local AuraTab = MainWindow:MakeTab(AuraConfig);
+local CreateTab = MainWindow.MakeTab;
+local BlobmanConfig = {
+    ["Name"] = "Blobman",
+    ["Icon"] = "rbxassetid://4483362458"
+};
+local BlobmanTab = MainWindow:MakeTab(BlobmanConfig);
+local CreateTab = MainWindow.MakeTab;
+local TargetKillConfig = {
+    ["Name"] = "Target Kill",
+    ["Icon"] = "rbxassetid://4483362458"
+};
+local TargetKillTab = MainWindow:MakeTab(TargetKillConfig);
+local CreateTab = MainWindow.MakeTab;
+local CameraConfig = {
+    ["Name"] = "Camera",
+    ["Icon"] = "rbxassetid://4483362458"
+};
+local CameraTab = MainWindow:MakeTab(CameraConfig);
+local CreateTab = MainWindow.MakeTab;
+local PlayerConfig = {
+    ["Name"] = "Player",
+    ["Icon"] = "rbxassetid://4483362458"
+};
+local PlayerTab = MainWindow:MakeTab(PlayerConfig);
+local CreateTab = MainWindow.MakeTab;
+local GrabLineConfig = {
+    ["Name"] = "Grab Line",
+    ["Icon"] = "rbxassetid://4483362458"
+};
+local GrabLineTab = MainWindow:MakeTab(GrabLineConfig);
+local AddSection = GrabTab.AddSection;
+local SectionConfig = {
+    ["Name"] = "Grab Controls"
+};
+local GrabSection = GrabTab:AddSection(SectionConfig);
+local AddToggle = GrabTab.AddToggle;
+local CallbackConfig = {
+    ["Callback"] = function(Parameter1, Parameter2, Parameter3, Parameter4, Argument1, Argument2, Argument3)
+    local EnvironmentValue = FunctionEnvironment.wExH8kr8gIeZ; 
+end,
+    ["Name"] = "Kick Grab",
+    ["Default"] = false
+};
+local ToggleControl = GrabTab:AddToggle(CallbackConfig);
+local AddToggle = GrabTab.AddToggle;
+local InitialValue = {
+    ["Callback"] = function(Parameter5, Parameter6, Argument4, BaseParameter, CallbackParameter)
+    local EnvironmentValue = FunctionEnvironment.cxDUOnDb2E31O; 
+end,
+    ["Name"] = "Kill Grab",
+    ["Default"] = false
+};
+local ToggleConfig = GrabTab:AddToggle(InitialValue);
+local ToggleSetting = GrabTab.AddToggle;
+local CallbackData = {
+    ["Callback"] = function(ParameterOne, ParameterTwo, ParameterThree, ParameterFour, ArgumentOne, ArgumentTwo, ArgumentThree)
+    local FunctionResult = FunctionEnvironment.v26eNdyCWDNsh; 
+end,
+    ["Name"] = "Void Grab",
+    ["Default"] = false
+};
+local ToggleData = GrabTab:AddToggle(CallbackData);
+local ToggleInfo = GrabTab.AddToggle;
+local CallbackInfo = {
+    ["Callback"] = function(FirstParameter, SecondParameter, ThirdParameter, FourthParameter, FifthParameter, SixthParameter, MainArgument, SecondaryArgument, TertiaryArgument)
+    local EnvironmentVariable = FunctionEnvironment["7xoTZX2SdZWXt"]; 
+end,
+    ["Name"] = "Anchor Grab",
+    ["Default"] = false
+};
+local SectionConfig = GrabTab:AddToggle(CallbackInfo);
+local SectionSetting = GrabTab.AddSection;
+local SectionName = {
+    ["Name"] = "Super Strength"
+};
+local SectionData = GrabTab:AddSection(SectionName);
+local SliderConfig = GrabTab.AddSlider;
+local SliderData = {
+    ["Min"] = 0,
+    ["Name"] = "Throw Power",
+    ["Max"] = 1e4,
+    ["Increment"] = 10,
+    ["Callback"] = function(PrimaryParameter, SecondaryParameter, TertiaryParameter, QuaternaryParameter, QuinaryParameter, MainParameter, SecondaryArgument, TertiaryArgument)
+    local FunctionValue = FunctionEnvironment.KjEYRIk5ayyQK; 
+end,
+    ["Default"] = 250
+};
+local SliderInfo = GrabTab:AddSlider(SliderData);
+local ToggleInfo = GrabTab.AddToggle;
+local OriginalCallback = {
+    ["Callback"] = function(FirstArgument, SecondArgument, PrimaryArgument, SecondaryArgument, TertiaryArgument)
+    local OriginalEnvironment = FunctionEnvironment.oai259RuL52VX; 
+end,
+    ["Name"] = "Super Strength",
+    ["Default"] = false
+};
+local GrabToggle = GrabTab:AddToggle(OriginalCallback);
+local SectionContainer = DefenseTab.AddSection;
+local DefenseSection = {
+    ["Name"] = "Defense Systems"
+};
+local DefenseConfig = DefenseTab:AddSection(DefenseSection);
+local DefenseToggle = DefenseTab.AddToggle;
+local RemoteCallback = {
+    ["Callback"] = function(ParameterOne, ParameterTwo, ParameterThree, ParameterFour, ParameterFive, ParameterSix, ArgumentOne, ArgumentTwo, ArgumentThree)
+    local RemoteHandler = FunctionEnvironment.RH87fg2nx8NwX; 
+end,
+    ["Name"] = "Anti-Grab",
+    ["Default"] = false
+};
+local RemoteToggle = DefenseTab:AddToggle(RemoteCallback);
+local ToggleContainer = DefenseTab.AddToggle;
+local QueryCallback = {
+    ["Callback"] = function(CallbackParameter, CallbackArgument, CallbackValue, FunctionArgument, FunctionValue, FunctionResult)
+    local QueryResult = FunctionEnvironment.qVC6CgwRo4j4yR; 
+end,
+    ["Name"] = "Anti-Void",
+    ["Default"] = false
+};
+local QueryToggle = DefenseTab:AddToggle(QueryCallback);
+local ToggleResult = DefenseTab.AddToggle;
+local LibraryCallback = {
+    ["Callback"] = function(ParameterValue, ParameterValueTwo, ParameterValueThree, ParameterValueFour, ArgumentValue, ArgumentValueTwo, ArgumentValueThree)
+    local LibraryResult = FunctionEnvironment.lYvIvX3zP5tQ; 
+end,
+    ["Name"] = "Anti-Explode",
+    ["Default"] = false
+};
+local LibraryToggle = DefenseTab:AddToggle(LibraryCallback);
+local ResultValue = DefenseTab.AddToggle;
+local ClientCallback = {
+    ["Callback"] = function(CallbackParameterTwo, CallbackArgumentTwo, FunctionArgumentTwo, FunctionValueTwo, FunctionResultTwo)
+    local ClientResult = FunctionEnvironment.cLvi7nAyk29vx; 
+end,
+    ["Name"] = "Anti-Ragdoll",
+    ["Default"] = false
+};
+local ClientToggle = DefenseTab:AddToggle(ClientCallback);
+local ToggleValue = DefenseTab.AddToggle;
+local CallbackConfig = {
+    ["Callback"] = function(ParameterOne, ArgumentOne, ArgumentTwo, ArgumentThree)
+    local FunctionValue = FunctionEnvironment.DQ1aBSeus7aSY; 
+end,
+    ["Name"] = "Anti-Gucci",
+    ["Default"] = false
+};
+local ToggleOption = DefenseTab:AddToggle(CallbackConfig);
+local SectionConfig = AuraTab.AddSection;
+local SectionName = {
+    ["Name"] = "Aura Attacks"
+};
+local SectionData = AuraTab:AddSection(SectionName);
+local ToggleData = AuraTab.AddToggle;
+local CallbackSettings = {
+    ["Callback"] = function(ParameterTwo, ParameterThree, ArgumentFour, ArgumentFive, ArgumentSix)
+    local FunctionResult = FunctionEnvironment["1n9BVP4rQ2QCsc"]; 
+end,
+    ["Name"] = "Kill Aura",
+    ["Default"] = false
+};
+local ToggleSettings = AuraTab:AddToggle(CallbackSettings);
+local ToggleInfo = AuraTab.AddToggle;
+local CallbackOptions = {
+    ["Callback"] = function(ParameterFour, ParameterFive, ParameterSix, ParameterSeven, ParameterEight, ArgumentSeven, ArgumentEight, ArgumentNine)
+    local FunctionOutput = FunctionEnvironment.y9PKwH381RR9Ux; 
+end,
+    ["Name"] = "Void Aura",
+    ["Default"] = false
+};
+local ToggleOptionTwo = AuraTab:AddToggle(CallbackOptions);
+local ToggleInfoTwo = AuraTab.AddToggle;
+local CallbackData = {
+    ["Callback"] = function(ParameterNine, ParameterTen, ParameterEleven, ArgumentTen, ArgumentEleven, ArgumentTwelve)
+    local FunctionResponse = FunctionEnvironment.FK3UXznstAIz; 
+end,
+    ["Name"] = "Ragdoll Aura",
+    ["Default"] = false
+};
+local ToggleDataTwo = AuraTab:AddToggle(CallbackData);
+local ToggleInfoThree = AuraTab.AddToggle;
+local CallbackConfigTwo = {
+    ["Callback"] = function(ParameterTwelve, ParameterThirteen, ArgumentThirteen, ArgumentFourteen, ArgumentFifteen)
+    local FunctionResultTwo = FunctionEnvironment.b4unP9vmEMn9a; 
+end,
+    ["Name"] = "Fire Aura",
+    ["Default"] = false
+};
+local ToggleOptionThree = AuraTab:AddToggle(CallbackConfigTwo);
+local ToggleValue = AuraTab.AddToggle;
+local CallbackConfig = {
+    ["Callback"] = function(ParameterOne, ParameterTwo, ParameterThree, ArgumentA, ArgumentB, ArgumentC)
+    local EnvironmentValue = FunctionEnvironment["2AbbcJCUCvrtX"]; 
+end,
+    ["Name"] = "Anchor Aura",
+    ["Default"] = false
+};
+local ToggleConfig = AuraTab:AddToggle(CallbackConfig);
+local ToggleSetting = AuraTab.AddToggle;
+local NewCallbackConfig = {
+    ["Callback"] = function(NewParameterOne, NewParameterTwo, NewParameterThree, NewParameterFour, NewParameterFive, NewParameterSix, NewArgumentA, NewArgumentB, NewArgumentC)
+    local NewEnvironmentValue = FunctionEnvironment.jAIMP4hwZFq5; 
+end,
+    ["Name"] = "Noclip Aura",
+    ["Default"] = false
+};
+local NewToggleConfig = AuraTab:AddToggle(NewCallbackConfig);
+local SliderConfig = AuraTab.AddSlider;
+local SliderSetting = {
+    ["Min"] = 10,
+    ["Name"] = "Aura Radius",
+    ["Max"] = 100,
+    ["Increment"] = 1,
+    ["Callback"] = function(SliderParameterOne, SliderParameterTwo, SliderParameterThree, SliderParameterFour, SliderParameterFive, SliderArgumentA, SliderArgumentB, SliderArgumentC)
+    local SliderEnvironmentValue = FunctionEnvironment.ZRCiNE4cfhnlq; 
+end,
+    ["Default"] = 32
+};
+local SliderCreated = AuraTab:AddSlider(SliderSetting);
+local SectionCreated = BlobmanTab.AddSection;
+local SectionConfig = {
+    ["Name"] = "Blobman Controls"
+};
+local SectionAdded = BlobmanTab:AddSection(SectionConfig);
+local ButtonCreated = BlobmanTab.AddButton;
+local ButtonConfig = {
+    ["Name"] = "Spawn Blobman",
+    ["Callback"] = function(ButtonParameterOne, ButtonParameterTwo, ButtonParameterThree, ButtonArgumentA, ButtonArgumentB, ButtonArgumentC)
+    CharacterModel = CurrentPlayer.Character;
+    local CharacterModel = Character;
+    if CharacterModel then
+        local CharacterFound = CharacterModel.FindFirstChild;
+        local HumanoidRootPart = CharacterModel:FindFirstChild("HumanoidRootPart");
+        local FunctionEnvironment = FunctionEnvironment.Ki8ICrAWBVyUF;
+        local CharacterCFrame = HumanoidRootPart.CFrame;
+        local ExecutionSuccess, ExecutionResult = pcall(function(PlayerParameter, ArgumentValue, BooleanFlag, ConfigSetting)
+            local MenuToysFolder = ReplicatedStorageService.MenuToys;
+            local DefaultVector = Vector3.zero;
+            local SpawnResult = MenuToysFolder.SpawnToyRemoteFunction.InvokeServer;
+            local SpawnResponse = MenuToysFolder.SpawnToyRemoteFunction:InvokeServer("CreatureBlobman", CharacterCFrame, DefaultVector);
+            local EnvironmentValue = FunctionEnvironment.DSMJeLl1amnfbW;
+            return SpawnResponse; 
+        end); 
+    end;
+    local SuccessStatus = success_1;
+    if SuccessStatus then
+        local FunctionReference = FunctionEnvironment["8Y9cq6iV2PZx"];
+        local EnvironmentSetting = FunctionEnvironment.qmjM1ZmYYiMNDg;
+        local SecurityToken = FunctionEnvironment.wvH16Pu8zZ8g; 
+    end; 
+end
+};
+local ButtonInstance = BlobmanTab:AddButton(ButtonConfig);
+local TextboxElement = BlobmanTab.AddTextbox;
+local CallbackConfig = {
+    ["Callback"] = function(PlayerId, PlayerName, PlayerRank, PlayerPermission, ArgumentType, BooleanOption, ConfigOption)
+    local EnvironmentVariable = FunctionEnvironment.cxmEp2vTyS4bS; 
+end,
+    ["TextDisappear"] = false,
+    ["Name"] = "Target Player",
+    ["Default"] = ""
+};
+local TextboxInstance = BlobmanTab:AddTextbox(CallbackConfig);
+local DropdownOption = BlobmanTab.AddDropdown;
+local DirectionEnum = {
+    "Left",
+    "Right"
+};
+local DropdownConfig = {
+    ["Callback"] = function(UserId, Username, UserRank, UserPermission)
+    local EnvironmentSetting = FunctionEnvironment.JUmIW0FmlbvI0f; 
+end,
+    ["Options"] = DirectionEnum,
+    ["Name"] = "Arm Side",
+    ["Default"] = "Left"
+};
+local DropdownInstance = BlobmanTab:AddDropdown(DropdownConfig);
+local SectionElement = BlobmanTab.AddSection;
+local SectionConfig = {
+    ["Name"] = "Single Actions"
+};
+local SectionInstance = BlobmanTab:AddSection(SectionConfig);
+local ButtonElement = BlobmanTab.AddButton;
+local ButtonConfig = {
+    ["Name"] = "Grab",
+    ["Callback"] = function(ActionType, ActionResult, ActionStatus)
+    local PlayerStatus = not p1_22;
+    local PlayerAvailability = not PlayerStatus;
+    local PlayerReadiness = not PlayerAvailability;
+    if PlayerReadiness then
+        
+    else
+        local PlayerValidation = (p1_22 == ""); 
+    end;
+    local PlayerVerification = not v304;
+    local PlayerAuthentication = v305;
+    if PlayerAuthentication then
+        local PlayerName = p1_22.lower;
+        LowercaseString = p1_22:lower();
+        local PlayerList = PlayerList.GetPlayers;
+        local PlayerArray = PlayerList:GetPlayers(); 
+    end;
+    for LoopKey, LoopValue in pairs(v310) do
+        local IsValidKey = not LoopKey;
+        if IsValidKey then
+            
+        else
+            local DisplayNameLower = LoopValue.DisplayName.lower;
+            local DisplayNameSub = LoopValue.DisplayName:lower().sub;
+            local LowerLength = #LowercaseString;
+            local DisplayNameStart = LoopValue.DisplayName:lower():sub(1, LowerLength);
+            local IsLowerMatch = (DisplayNameStart == LowercaseString);
+            local IsNotLowerMatch = not IsLowerMatch; 
+        end;
+        local IsValidLower = v319;
+        if IsValidLower then
+            local NameLower = LoopValue.Name.lower;
+            local LowerLength = #LowercaseString;
+            local NameSub = LoopValue.Name:lower().sub;
+            local NameStart = LoopValue.Name:lower():sub(1, LowerLength);
+            local IsNameMatch = (NameStart == LowercaseString);
+            local IsNotNameMatch = not IsNameMatch; 
+        end;
+        local IsValidName = not v328;
+        if IsValidName then
+            
+        else
+             
+        end; 
+    end;
+    local FunctionEnv = FunctionEnvironment["3V7V2xeaDcFOCG"];
+    local FunctionUCy4vXruQPY8 = FunctionEnvironment.UCy4vXruQPY8; 
+end
+};
+local ButtonAdded = BlobmanTab:AddButton(ButtonConfig);
+local ButtonAdder = BlobmanTab.AddButton;
+local BringButton = {
+    ["Name"] = "Bring",
+    ["Callback"] = function(ParamA, ParamB, ParamC, ParamD, ParamE)
+    local IsNotPlayerName = not p1_22;
+    local IsValidPlayerName = not IsNotPlayerName;
+    local IsPlayerNameValid = not IsValidPlayerName;
+    if IsPlayerNameValid then
+        
+    else
+        local IsEmptyPlayerName = (p1_22 == ""); 
+    end;
+    local IsNotEmptyPlayerName = not v335;
+    local IsValidPlayer = v336;
+    if IsValidPlayer then
+        local PlayerNameLower = p1_22.lower;
+        LowercaseString2 = p1_22:lower();
+        local PlayerList = PlayerList.GetPlayers;
+        local PlayerArray = PlayerList:GetPlayers(); 
+    end;
+    for LoopKey, LoopValue in pairs(v341) do
+        local IsValidKey = not LoopKey;
+        if IsValidKey then
+            
+        else
+            local DisplayNameLower = LoopValue.DisplayName.lower;
+            local DisplayNameSub = LoopValue.DisplayName:lower().sub;
+            local LowerLength = #LowercaseString2;
+            local DisplayNameStart = LoopValue.DisplayName:lower():sub(1, LowerLength);
+            local IsLowerMatch = (DisplayNameStart == LowercaseString2);
+            local IsNotLowerMatch = not IsLowerMatch; 
+        end;
+        local IsValidLower = v350;
+        if IsValidLower then
+            local NameLower = LoopValue.Name.lower;
+            local LowerBound = #LowercaseString2;
+            local DisplayName = LoopValue.Name:lower().sub;
+            local SubString = LoopValue.Name:lower():sub(1, LowerBound);
+            local IsMatch = (SubString == LowercaseString2);
+            local NotMatch = not IsMatch; 
+        end;
+        local InverseMatch = not v359;
+        if InverseMatch then
+            
+        else
+             
+        end; 
+    end;
+    local EnvironmentValue = FunctionEnvironment.qTlPtukYjRwwP5; 
+end
+};
+local AddedButton = BlobmanTab:AddButton(BringButton);
+local AddButtonFunction = BlobmanTab.AddButton;
+local KickButton = {
+    ["Name"] = "Kick",
+    ["Callback"] = function(ParameterOne, ParameterTwo, ParameterThree, ArgumentOne, ArgumentTwo, ArgumentThree)
+    local NotParameter = not p1_22;
+    local InverseParameter = not NotParameter;
+    local DoubleInverseParameter = not InverseParameter;
+    if DoubleInverseParameter then
+        
+    else
+        local IsEmptyString = (p1_22 == ""); 
+    end;
+    local NotIsEmptyString = not v365;
+    local StringCheck = v366;
+    if StringCheck then
+        local LowercaseString = p1_22.lower;
+        LowercaseString3 = p1_22:lower();
+        local PlayerList = PlayerList.GetPlayers;
+        local GetPlayerList = PlayerList:GetPlayers(); 
+    end;
+    for LoopKey, LoopValue in pairs(v371) do
+        local NotLoopKey = not LoopKey;
+        if NotLoopKey then
+            
+        else
+            local LowercaseDisplayName = LoopValue.DisplayName.lower;
+            local DisplayNameSubstring = LoopValue.DisplayName:lower().sub;
+            local LowerBoundTwo = #LowercaseString3;
+            local SubstringMatch = LoopValue.DisplayName:lower():sub(1, LowerBoundTwo);
+            local IsSubstringMatch = (SubstringMatch == LowercaseString3);
+            local NotSubstringMatch = not IsSubstringMatch; 
+        end;
+        local InverseSubstringMatch = v380;
+        if InverseSubstringMatch then
+            local LowercaseName = LoopValue.Name.lower;
+            local LowerBoundThree = #LowercaseString3;
+            local NameSubstring = LoopValue.Name:lower().sub;
+            local NameSubstringMatch = LoopValue.Name:lower():sub(1, LowerBoundThree);
+            local IsNameSubstringMatch = (NameSubstringMatch == LowercaseString3);
+            local NotNameSubstringMatch = not IsNameSubstringMatch; 
+        end;
+        local InverseNameSubstringMatch = not v389;
+        if InverseNameSubstringMatch then
+            
+        else
+             
+        end; 
+    end;
+    local EnvironmentValueTwo = FunctionEnvironment.Tz0llVDjBiOvs; 
+end
+};
+local AddedKickButton = BlobmanTab:AddButton(KickButton);
+local AddKickButtonFunction = BlobmanTab.AddButton;
+local VoidTable = {
+    ["Name"] = "Void",
+    ["Callback"] = function(ArgumentFour, ArgumentFive, ArgumentSix)
+    local NotParameterTwo = not p1_22;
+    local IsPlayerName = not NotParameterTwo;
+    local IsPlayerNameValid = not IsPlayerName;
+    if IsPlayerNameValid then
+        
+    else
+        local IsEmptyString = (p1_22 == ""); 
+    end;
+    local IsNotEmptyString = not v395;
+    local IsValidString = v396;
+    if IsValidString then
+        local LowercaseString = p1_22.lower;
+        LowercaseString4 = p1_22:lower();
+        local PlayerList = PlayerList.GetPlayers;
+        local GetPlayerList = PlayerList:GetPlayers(); 
+    end;
+    for LoopKey, LoopValue in pairs(v401) do
+        local IsValidLoopKey = not LoopKey;
+        if IsValidLoopKey then
+            
+        else
+            local DisplayName = LoopValue.DisplayName.lower;
+            local Substring = LoopValue.DisplayName:lower().sub;
+            local StringLength = #LowercaseString4;
+            local SubStringMatch = LoopValue.DisplayName:lower():sub(1, StringLength);
+            local IsMatchFound = (SubStringMatch == LowercaseString4);
+            local IsNoMatchFound = not IsMatchFound; 
+        end;
+        local IsValidMatch = v410;
+        if IsValidMatch then
+            local NameString = LoopValue.Name.lower;
+            local NameLength = #LowercaseString4;
+            local NameSubstring = LoopValue.Name:lower().sub;
+            local NameSubStringMatch = LoopValue.Name:lower():sub(1, NameLength);
+            local IsNameMatchFound = (NameSubStringMatch == LowercaseString4);
+            local IsNameNoMatchFound = not IsNameMatchFound; 
+        end;
+        local IsValidNameMatch = not v419;
+        if IsValidNameMatch then
+            
+        else
+             
+        end; 
+    end;
+    local EnvironmentValue = FunctionEnvironment.xqANCoNRKlBJA; 
+end
+};
+local ButtonTable = BlobmanTab:AddButton(VoidTable);
+local AddButtonFunction = BlobmanTab.AddButton;
+local ButtonConfig = {
+    ["Name"] = "Slide",
+    ["Callback"] = function(ParameterOne, ParameterTwo, ParameterThree, ParameterFour, ParameterFive, ArgumentOne, ArgumentTwo, ArgumentThree)
+    local IsPlayerNameEmpty = not p1_22;
+    local IsPlayerNameNotEmpty = not IsPlayerNameEmpty;
+    local IsValidPlayerName = not IsPlayerNameNotEmpty;
+    if IsValidPlayerName then
+        
+    else
+        local IsEmptyPlayerName = (p1_22 == ""); 
+    end;
+    local IsNotEmptyPlayerName = not v425;
+    local ValidPlayerName = v426;
+    if ValidPlayerName then
+        local LowercasePlayerName = p1_22.lower;
+        LowercaseString5 = p1_22:lower();
+        local GetPlayerListFunction = PlayerList.GetPlayers;
+        local GetPlayersFunction = PlayerList:GetPlayers(); 
+    end;
+    for LoopKeyTwo, LoopValueTwo in pairs(v431) do
+        local IsValidLoopKeyTwo = not LoopKeyTwo;
+        if IsValidLoopKeyTwo then
+            
+        else
+            local LowercaseDisplayName = LoopValueTwo.DisplayName.lower;
+            local DisplayNameLength = LoopValueTwo.DisplayName:lower().sub;
+            local LowercaseLength = #LowercaseString5;
+            local SubString = LoopValueTwo.DisplayName:lower():sub(1, LowercaseLength);
+            local IsMatch = (SubString == LowercaseString5);
+            local NotMatch = not IsMatch; 
+        end;
+        local InverseMatch = v440;
+        if InverseMatch then
+            local NameLowercase = LoopValueTwo.Name.lower;
+            local LowercaseLength = #LowercaseString5;
+            local NameSubstring = LoopValueTwo.Name:lower().sub;
+            local NameSubString = LoopValueTwo.Name:lower():sub(1, LowercaseLength);
+            local NameIsMatch = (NameSubString == LowercaseString5);
+            local NameNotMatch = not NameIsMatch; 
+        end;
+        local NameInverseMatch = not v449;
+        if NameInverseMatch then
+            
+        else
+             
+        end; 
+    end;
+    local Algorithm = FunctionEnvironment.AlgYm7EuPBiaD; 
+end
+};
+local AddedButton = BlobmanTab:AddButton(ButtonConfig);
+local AddButtonFunction = BlobmanTab.AddButton;
+local LockName = {
+    ["Name"] = "Lock",
+    ["Callback"] = function(Parameter1, Parameter2, Parameter3, Argument1, Argument2, Argument3)
+    local NotParameter1 = not p1_22;
+    local InverseParameter1 = not NotParameter1;
+    local DoubleInverseParameter1 = not InverseParameter1;
+    if DoubleInverseParameter1 then
+        
+    else
+        local IsEmptyString = (p1_22 == ""); 
+    end;
+    local NotIsEmptyString = not v455;
+    local InverseIsEmptyString = v456;
+    if InverseIsEmptyString then
+        local LowercaseString = p1_22.lower;
+        LowercaseString6 = p1_22:lower();
+        local PlayerList = PlayerList.GetPlayers;
+        local GetPlayerList = PlayerList:GetPlayers(); 
+    end;
+    for LoopKey, LoopValue in pairs(v461) do
+        local NotLoopKey = not LoopKey;
+        if NotLoopKey then
+            
+        else
+            local DisplayNameLowercase = LoopValue.DisplayName.lower;
+            local DisplayNameSubString = LoopValue.DisplayName:lower().sub;
+            local LowercaseLength = #LowercaseString6;
+            local DisplayNameSubString = LoopValue.DisplayName:lower():sub(1, LowercaseLength);
+            local IsDisplayNameMatch = (DisplayNameSubString == LowercaseString6);
+            local NotDisplayNameMatch = not IsDisplayNameMatch; 
+        end;
+        local InverseDisplayNameMatch = v470;
+        if InverseDisplayNameMatch then
+            local NameLowercase = LoopValue.Name.lower;
+            local LowercaseLength = #LowercaseString6;
+            local NameSubstring = LoopValue.Name:lower().sub;
+            local NameSubString = LoopValue.Name:lower():sub(1, LowercaseLength);
+            local NameIsMatch = (NameSubString == LowercaseString6);
+            local NameNotMatch = not NameIsMatch; 
+        end;
+        local NameInverseMatch = not v479;
+        if NameInverseMatch then
+            
+        else
+             
+        end; 
+    end;
+    local Algorithm = FunctionEnvironment.jaIFW3OyQonG; 
+end
+};
+local LockButton = BlobmanTab:AddButton(LockName);
+local SectionContainer = BlobmanTab.AddSection;
+local AllPlayersSection = {
+    ["Name"] = "All Players"
+};
+local AllPlayersButton = BlobmanTab:AddSection(AllPlayersSection);
+local ActionButton = BlobmanTab.AddButton;
+local MenuItem = {
+    ["Name"] = "Grab All",
+    ["Callback"] = function(ParameterA, ParameterB, ParameterC)
+    ObjectName = CurrentPlayer.Name;
+    local WorkspaceObject = workspace.FindFirstChild;
+    local SpawnedName = ObjectName .. "SpawnedInToys";
+    FindChildMethod = workspace:FindFirstChild(SpawnedName);
+    local NotFound = not FindChildMethod;
+    if NotFound then
+        
+    else
+        local ChildObject = FindChildMethod.FindFirstChild;
+        FindChildMethod2 = FindChildMethod:FindFirstChild("CreatureBlobman"); 
+    end;
+    local NotFoundAgain = not FindChildMethod2;
+    if NotFoundAgain then
+        
+    else
+        local EnvironmentVariable = FunctionEnvironment.cMWEPGVKxzYn6;
+        local StillNotFound = not FindChildMethod2;
+        local FoundSomething = not StillNotFound; 
+    end;
+    local AnotherFind = not v492;
+    if AnotherFind then
+        
+    else
+        local PlayerList = PlayerList.GetPlayers;
+        local PlayerArray = PlayerList:GetPlayers(); 
+    end;
+    for LoopKey, LoopValue in ipairs(v495) do
+        local NotLoopKey = not LoopKey;
+        if NotLoopKey then
+            
+        else
+            local NotLocalPlayer = (LoopValue ~= CurrentPlayer); 
+        end;
+        local IsLocalPlayer = not v497;
+        if IsLocalPlayer then
+            
+        else
+            local CharacterModel = LoopValue.Character;
+            local NoCharacter = not CharacterModel;
+            if NoCharacter then
+                
+            else
+                local CharacterChild = LoopValue.Character.FindFirstChild;
+                CharacterModel3 = LoopValue.Character:FindFirstChild("HumanoidRootPart"); 
+            end; 
+        end;
+        local NoCharacterChild = not CharacterModel3;
+        if NoCharacterChild then
+            
+        else
+            local WaitTime = task.wait(0.2); 
+        end;
+        local StillNoFind = not FindChildMethod2;
+        local AnotherNoFind = not StillNoFind;
+        local YetAnotherNoFind = not AnotherNoFind;
+        if YetAnotherNoFind then
+            
+        else
+            local NoCharacterAgain = not CharacterModel3; 
+        end;
+        local AnotherNoCharacter = not v509;
+        local RelatedObject = v510;
+        if RelatedObject then
+            local ExecutionResult = pcall(function(FunctionParameter, AnotherParameter, ThirdParameter, FourthParameter, ParameterA, ParameterB, ParameterC)
+                local ChildOfChild = FindChildMethod2.FindFirstChild;
+                local DetectorName = p1_23 .. "Detector";
+                local DetectorObject = FindChildMethod2:FindFirstChild(DetectorName);
+                local AnotherChild = FindChildMethod2.FindFirstChild;
+                local AnotherDetector = p1_23 .. "Detector";
+                local DetectorChild = FindChildMethod2:FindFirstChild(AnotherDetector).FindFirstChild;
+                local WeldName = p1_23 .. "Weld";
+                local ParentFolder = FindChildMethod2:FindFirstChild(AnotherDetector):FindFirstChild(WeldName);
+                local BlobmanScript = FindChildMethod2.BlobmanSeatAndOwnerScript;
+                local GrabEvent = BlobmanScript.CreatureGrab.FireServer;
+                local GrabArguments = BlobmanScript.CreatureGrab:FireServer(DetectorObject, CharacterModel3, ParentFolder);
+                local EnvironmentFunction = FunctionEnvironment["9OITrHz2kOSa"]; 
+            end); 
+        end;
+        local EnvironmentVariable = FunctionEnvironment.nIsaj6le16xOTF; 
+    end;
+    local EnvironmentSetting = FunctionEnvironment.nYKduNijZpSk; 
+end
+};
+local MenuButton = BlobmanTab:AddButton(MenuItem);
+local MenuAction = BlobmanTab.AddButton;
+local ButtonConfig = {
+    ["Name"] = "Kick All",
+    ["Callback"] = function(ParameterOne, ParameterTwo, ParameterThree, ParameterFour, ParameterFive, ArgumentOne, ArgumentTwo, ArgumentThree)
+    local WorkspaceObject = workspace.FindFirstChild;
+    local SpawnLocation = ObjectName .. "SpawnedInToys";
+    FindChildMethod4 = workspace:FindFirstChild(SpawnLocation);
+    local ObjectExists = not FindChildMethod4;
+    if ObjectExists then
+        
+    else
+        local ChildObject = FindChildMethod4.FindFirstChild;
+        FindChildMethod5 = FindChildMethod4:FindFirstChild("CreatureBlobman"); 
+    end;
+    local ObjectFound = not FindChildMethod5;
+    if ObjectFound then
+        
+    else
+        local ObjectNotFound = not FindChildMethod5;
+        local ConditionMet = not ObjectNotFound; 
+    end;
+    local ConditionNotMet = not v536;
+    if ConditionNotMet then
+        
+    else
+        local PlayerList = PlayerList.GetPlayers;
+        local PlayerArray = PlayerList:GetPlayers(); 
+    end;
+    for LoopKey, LoopValue in ipairs(v539) do
+        local KeyObject = for_key_8;
+        if KeyObject then
+            local PlayerCharacter = (LoopValue ~= CurrentPlayer); 
+        end;
+        local CharacterExists = not v541;
+        if CharacterExists then
+            
+        else
+            local CharacterModel = LoopValue.Character;
+            local CharacterObject = v543;
+            if CharacterObject then
+                local CharacterChild = LoopValue.Character.FindFirstChild;
+                CharacterModel5 = LoopValue.Character:FindFirstChild("HumanoidRootPart"); 
+            end; 
+        end;
+        local TargetCharacter = Character_5;
+        if TargetCharacter then
+            local WaitTime = task.wait(0.25); 
+        end;
+        local ObjectVisible = not FindChildMethod5;
+        local ObjectInvisible = not ObjectVisible;
+        local VisibilityCheck = v551;
+        if VisibilityCheck then
+            local CharacterVisible = not CharacterModel5; 
+        end;
+        local CharacterInvisible = not v553;
+        local CharacterCheck = not CharacterInvisible;
+        if CharacterCheck then
+            
+        else
+            local LocalCharacter = CurrentPlayer.Character;
+            local CharacterModel = Character;
+            if CharacterModel then
+                local CharacterComponent = CharacterModel.FindFirstChild;
+                CharacterModel6 = CharacterModel:FindFirstChild("HumanoidRootPart"); 
+            end; 
+        end;
+        local ObjectState = not FindChildMethod5;
+        local ObjectStatus = not ObjectState;
+        local IsPlayer = not ObjectStatus;
+        if IsPlayer then
+            
+        else
+            local IsCharacter = not CharacterModel6; 
+        end;
+        local HasCharacter = not v563;
+        local CharacterParent = v564;
+        if CharacterParent then
+            local FunctionSuccess = pcall(function(Param1, Param2, Param3, Param4, ArgumentA, ArgumentB, ArgumentC)
+                local FirstChild = FindChildMethod5.FindFirstChild;
+                local DetectorName = p1_23 .. "Detector";
+                local Detector = FindChildMethod5:FindFirstChild(DetectorName);
+                local Child = FindChildMethod5.FindFirstChild;
+                local WeldName = p1_23 .. "Detector";
+                local WeldChild = FindChildMethod5:FindFirstChild(WeldName).FindFirstChild;
+                local WeldPart = p1_23 .. "Weld";
+                local Weld = FindChildMethod5:FindFirstChild(WeldName):FindFirstChild(WeldPart);
+                BlobmanScript = FindChildMethod5.BlobmanSeatAndOwnerScript;
+                local GrabEvent = BlobmanScript.CreatureGrab.FireServer;
+                local GrabArguments = BlobmanScript.CreatureGrab:FireServer(Detector, CharacterModel6, Weld); 
+            end); 
+        end;
+        local WaitTime = task.wait(0.1);
+        local HasCharacter2 = not CharacterModel5;
+        local IsCharacter2 = not HasCharacter2;
+        local CharacterParent2 = v581;
+        if CharacterParent2 then
+            local FunctionCallSuccess = pcall(function(Param5, Param6, Param7, Param8, Param9, ArgumentD, ArgumentE, ArgumentF)
+                GrabEventList = ReplicatedStorageService.GrabEvents;
+                local LocalCharacter = CurrentPlayer.Character;
+                local CharacterModel = Character;
+                if CharacterModel then
+                    local CharacterChildren = CharacterModel.FindFirstChild;
+                    local HumanoidRootPart = CharacterModel:FindFirstChild("HumanoidRootPart"); 
+                end;
+                local RootPartCFrame = v588.CFrame;
+                local SetNetworkEvent = GrabEventList.SetNetworkOwner.FireServer;
+                local SetNetworkArguments = GrabEventList.SetNetworkOwner:FireServer(CharacterModel5, RootPartCFrame);
+                local EnvironmentFunction = FunctionEnvironment["0FoQS0nfSw4jQ"]; 
+            end);
+            local EnvironmentVariable = FunctionEnvironment.avo8zP0EvRgd;
+            local Wait = task.wait(); 
+        end;
+        local CharacterCFrame = CharacterModel5.CFrame;
+        local Vector = Vector3.new;
+        local VectorPosition = Vector(0, 16, 0);
+        local NewPosition = CharacterCFrame + VectorPosition;
+        CharacterModel5.CFrame = NewPosition;
+        local ShortWait = task.wait(0.1);
+        local CallSuccess = pcall(function(PlayerOne, ArgumentA, ArgumentB, ArgumentC)
+            local DestroyEvent = GrabEventList.DestroyGrabLine.FireServer;
+            local CharacterTarget = GrabEventList.DestroyGrabLine:FireServer(CharacterModel5);
+            local EnvironmentValue = FunctionEnvironment.ecZcRm6Hhiyhy; 
+        end);
+        local FunctionReference = FunctionEnvironment["4j3ILYFSnl4OcO"];
+        local ParentFound = not FindChildMethod5;
+        local ChildFound = not ParentFound;
+        local DescendantFound = not ChildFound;
+        if DescendantFound then
+            
+        else
+            local CharacterExists = not CharacterModel5; 
+        end;
+        local AncestorFound = not v608;
+        local ObjectReference = v609;
+        if ObjectReference then
+            local FunctionSuccess = pcall(function(PlayerTwo, PlayerThree, PlayerFour, PlayerFive, ArgumentD, ArgumentE, ArgumentF)
+                local ChildObject = FindChildMethod5.FindFirstChild;
+                local DetectorName = p1_23 .. "Detector";
+                local DetectorObject = FindChildMethod5:FindFirstChild(DetectorName);
+                local ChildComponent = FindChildMethod5.FindFirstChild;
+                local ComponentName = p1_23 .. "Detector";
+                local ComponentObject = FindChildMethod5:FindFirstChild(ComponentName).FindFirstChild;
+                local WeldName = p1_23 .. "Weld";
+                local WeldObject = FindChildMethod5:FindFirstChild(ComponentName):FindFirstChild(WeldName);
+                local GrabEvent = BlobmanScript.CreatureGrab.FireServer;
+                local GrabArguments = BlobmanScript.CreatureGrab:FireServer(DetectorObject, CharacterModel5, WeldObject); 
+            end); 
+        end;
+        local EnvironmentKey = FunctionEnvironment.qPmzShh7BZARr; 
+    end;
+    local EnvironmentValue = FunctionEnvironment.fbUED3zIKRWgi; 
+end
+};
+local ButtonReference = BlobmanTab:AddButton(ButtonConfig);
+local SectionReference = BlobmanTab.AddSection;
+local SectionConfig = {
+    ["Name"] = "Auras"
+};
+local SectionAdded = BlobmanTab:AddSection(SectionConfig);
+local ToggleReference = BlobmanTab.AddToggle;
+local ToggleConfig = {
+    ["Callback"] = function(PlayerSix, ArgumentG, ArgumentH, ArgumentI)
+    local EnvironmentFunction = FunctionEnvironment.B7gUVdVxbiKHXN; 
+end,
+    ["Name"] = "Grab Aura",
+    ["Default"] = false
+};
+local ToggleAdded = BlobmanTab:AddToggle(ToggleConfig);
+local ToggleReference = BlobmanTab.AddToggle;
+local CallbackValue = {
+    ["Callback"] = function(PlayerSeven, ParameterTwo, ParameterThree, ParameterFour, ArgumentA, ArgumentB, ArgumentC)
+    local EnvironmentValue = FunctionEnvironment.GQNIZcgfBRxK; 
+end,
+    ["Name"] = "Kick Aura",
+    ["Default"] = false
+};
+local ToggleValue = BlobmanTab:AddToggle(CallbackValue);
+local ToggleResult = BlobmanTab.AddToggle;
+local CallbackValue = {
+    ["Callback"] = function(ParameterOne, ParameterTwo, ParameterThree, ParameterFour, ArgumentA, ArgumentB, ArgumentC)
+    local EnvironmentValue = FunctionEnvironment.OgwxWBHN6vTHs; 
+end,
+    ["Name"] = "Loop Kick",
+    ["Default"] = false
+};
+local ToggleValue = BlobmanTab:AddToggle(CallbackValue);
+local SectionResult = TargetKillTab.AddSection;
+local SectionName = {
+    ["Name"] = "Target Selection"
+};
+local SectionAdded = TargetKillTab:AddSection(SectionName);
+local DropdownResult = TargetKillTab.AddDropdown;
+local PlayerList = PlayerList.GetPlayers;
+local PlayerArray = PlayerList:GetPlayers();
+for LoopKey, LoopValue in ipairs(PlayerArray) do
+    local KeyCheck = not LoopKey;
+    if KeyCheck then
+        
+    else
+        local ValueCheck = (LoopValue ~= CurrentPlayer); 
+    end;
+    local CheckResult = not v175;
+    if CheckResult then
+        
+    else
+        local DisplayName = LoopValue.DisplayName;
+        local TableData = {};
+        ValueArray = TableData;
+        local TableInsert = table.insert(ValueArray, DisplayName); 
+    end; 
+end;
+local FunctionResult = FunctionEnvironment.XaSIAG6aPOYM5;
+local CallbackParameter = {
+    ["Callback"] = function(ParameterOne, ParameterTwo, ParameterThree, ArgumentA, ArgumentB, ArgumentC)
+    local ParameterCheck = not ParameterOne;
+    local CheckResult = not ParameterCheck;
+    local CheckValue = v629;
+    if CheckValue then
+        local EmptyCheck = (ParameterOne == ""); 
+    end;
+    local NotEmptyCheck = not v631;
+    local CheckPass = not NotEmptyCheck;
+    if CheckPass then
+        
+    else
+        local PlayerList = PlayerList.GetPlayers;
+        local PlayerArray = PlayerList:GetPlayers(); 
+    end;
+    for LoopKey, LoopValue in ipairs(v635) do
+        local CurrentValue = not LoopKey;
+        if CurrentValue then
+            
+        else
+            local DisplayNameValue = LoopValue.DisplayName;
+            local ComparisonValue = (DisplayNameValue == ParameterOne); 
+        end;
+        local ResultValue = v638;
+        if ResultValue then
+            local EnvironmentValue = FunctionEnvironment.WOOuphOJdBmebA;
+            local FunctionValue = FunctionEnvironment.jrsBBIeqxYxei; 
+        end; 
+    end; 
+end,
+    ["Options"] = ValueArray,
+    ["Name"] = "Target List",
+    ["Default"] = ""
+};
+local DropdownItem = TargetKillTab:AddDropdown(CallbackParameter);
+local ButtonConfig = TargetKillTab.AddButton;
+local UpdateConfig = {
+    ["Name"] = "\240\159\148\132 Update Player List",
+    ["Callback"] = function(ParameterOne, ParameterTwo, ParameterThree, ArgumentOne, ArgumentTwo, ArgumentThree)
+    local PlayerList = PlayerList.GetPlayers;
+    local PlayerArray = PlayerList:GetPlayers();
+    for LoopKey, LoopPlayer in ipairs(PlayerArray) do
+        local KeyExists = not LoopKey;
+        if KeyExists then
+            
+        else
+            local IsNotLocalPlayer = (LoopPlayer ~= CurrentPlayer); 
+        end;
+        local IsLocalPlayer = not v645;
+        if IsLocalPlayer then
+            
+        else
+            local PlayerDisplayName = LoopPlayer.DisplayName;
+            local EmptyTable = {};
+            ValueArray2 = EmptyTable;
+            local TableInsertion = table.insert(ValueArray2, PlayerDisplayName); 
+        end; 
+    end;
+    local RefreshDropdown = DropdownItem.Refresh;
+    local RefreshParameters = DropdownItem:Refresh(ValueArray2, true);
+    local EnvironmentFunction = FunctionEnvironment.PPqqbHMzez9f7D; 
+end
+};
+local ButtonConfigUpdate = TargetKillTab:AddButton(UpdateConfig);
+local SectionConfig = TargetKillTab.AddSection;
+local LoopAttacksConfig = {
+    ["Name"] = "Loop Attacks"
+};
+local SectionLoopAttacks = TargetKillTab:AddSection(LoopAttacksConfig);
+local ToggleConfig = TargetKillTab.AddToggle;
+local CallbackConfigNew = {
+    ["Callback"] = function(ParameterOneNew, ParameterTwoNew, ParameterThreeNew, ParameterFourNew, ParameterFiveNew, ArgumentOneNew, ArgumentTwoNew, ArgumentThreeNew)
+    local EnvironmentFunctionNew = FunctionEnvironment.BqRxeTHOMLJahc; 
+end,
+    ["Name"] = "Loop Kill",
+    ["Default"] = false
+};
+local ToggleConfigNew = TargetKillTab:AddToggle(CallbackConfigNew);
+local ToggleConfigNewTwo = TargetKillTab.AddToggle;
+local LocalValue = {
+    ["Callback"] = function(ParameterOneFinal, ParameterTwoFinal, ParameterThreeFinal, Parameter4, Parameter5, ArgumentA, ArgumentB, ArgumentC)
+    local EnvironmentValue = FunctionEnvironment.XdePYt4Tl1u4r; 
+end,
+    ["Name"] = "Loop Void",
+    ["Default"] = false
+};
+local ToggleValue = TargetKillTab:AddToggle(LocalValue);
+local ToggleResult = TargetKillTab.AddToggle;
+local CallbackValue = {
+    ["Callback"] = function(Parameter1, Parameter2, Parameter3, Parameter4, ArgumentA, ArgumentB, ArgumentC)
+    local EnvironmentSetting = FunctionEnvironment.jwuCJHAncCGK; 
+end,
+    ["Name"] = "Loop Poison",
+    ["Default"] = false
+};
+local ToggleSetting = TargetKillTab:AddToggle(CallbackValue);
+local ToggleResponse = TargetKillTab.AddToggle;
+local CallbackResult = {
+    ["Callback"] = function(Parameter1, Parameter2, Parameter3, Parameter4, ArgumentA, ArgumentB, ArgumentC)
+    local EnvironmentOption = FunctionEnvironment.hHyMsaZHRPVb; 
+end,
+    ["Name"] = "Loop Ragdoll",
+    ["Default"] = false
+};
+local ToggleOption = TargetKillTab:AddToggle(CallbackResult);
+local ToggleOutcome = TargetKillTab.AddToggle;
+local CallbackConfig = {
+    ["Callback"] = function(Parameter1, Parameter2, Parameter3, ArgumentA, ArgumentB, ArgumentC)
+    local EnvironmentConfig = FunctionEnvironment.H1yVDVWdsV91; 
+end,
+    ["Name"] = "Loop Death",
+    ["Default"] = false
+};
+local ToggleConfig = TargetKillTab:AddToggle(CallbackConfig);
+local ToggleStatus = TargetKillTab.AddToggle;
+local CallbackData = {
+    ["Callback"] = function(Parameter1, Parameter2, Parameter3, Parameter4, ArgumentA, ArgumentB, ArgumentC)
+    local EnvironmentData = FunctionEnvironment.IL0DIsBk2j1F; 
+end,
+    ["Name"] = "Loop Bring",
+    ["Default"] = false
+};
+local ToggleOption = TargetKillTab:AddToggle(CallbackData);
+local ToggleCallback = TargetKillTab.AddToggle;
+local CallbackData = {
+    ["Callback"] = function(ParameterOne, ParameterTwo, ParameterThree, ParameterFour, ArgumentA, ArgumentB, ArgumentC)
+    local EnvironmentValue = FunctionEnvironment.LorN6HSv3Bp2; 
+end,
+    ["Name"] = "Loop Pull",
+    ["Default"] = false
+};
+local ToggleSetting = TargetKillTab:AddToggle(CallbackData);
+local SectionName = CameraTab.AddSection;
+local CameraSettings = {
+    ["Name"] = "Camera Settings"
+};
+local SectionOption = CameraTab:AddSection(CameraSettings);
+local ToggleOption = CameraTab.AddToggle;
+local CallbackData = {
+    ["Callback"] = function(ParameterOne, ParameterTwo, ParameterThree, ParameterFour, ArgumentA, ArgumentB, ArgumentC)
+    CurrentPlayer.CameraMaxZoomDistance = 50000;
+    local EnvironmentValue = FunctionEnvironment["8ar8VSoA302L"]; 
+end,
+    ["Name"] = "50000 Stud Zoom",
+    ["Default"] = false
+};
+local ToggleSetting = CameraTab:AddToggle(CallbackData);
+local SectionName = PlayerTab.AddSection;
+local MovementSettings = {
+    ["Name"] = "Movement"
+};
+local SectionOption = PlayerTab:AddSection(MovementSettings);
+local FunctionValue = FunctionEnvironment.JMCR0PE6Huz6px;
+local SliderOption = PlayerTab.AddSlider;
+local SliderData = {
+    ["Min"] = 16,
+    ["Name"] = "Speed Value",
+    ["Max"] = 1e3,
+    ["Increment"] = 1,
+    ["Callback"] = function(ParameterOne, ParameterTwo, ParameterThree, ArgumentA, ArgumentB, ArgumentC)
+    local EnvironmentValue = FunctionEnvironment["1fx5whAFSRQX"]; 
+end,
+    ["Default"] = 16
+};
+local SliderOption = PlayerTab:AddSlider(SliderData);
+local ToggleOption = PlayerTab.AddToggle;
+local CallbackParameter = {
+    ["Callback"] = function(ParameterOne, ParameterTwo, ParameterThree, ParameterFour, ParameterFive, ArgumentA, ArgumentB, ArgumentC)
+    local EnvironmentValue = FunctionEnvironment.HwIL9xzu5suV5; 
+end,
+    ["Name"] = "Speed Boost",
+    ["Default"] = false
+};
+local ToggleValue = PlayerTab:AddToggle(CallbackParameter);
+local SliderConfig = PlayerTab.AddSlider;
+local SliderOptions = {
+    ["Min"] = 50,
+    ["Name"] = "Jump Value",
+    ["Max"] = 500,
+    ["Increment"] = 1,
+    ["Callback"] = function(ParameterOne, ParameterTwo, ParameterThree, ParameterFour, ParameterFive, ParameterSix, ArgumentA, ArgumentB, ArgumentC)
+    local EnvironmentValue = FunctionEnvironment.STQYUHupkAAw; 
+end,
+    ["Default"] = 50
+};
+local SliderConfigValue = PlayerTab:AddSlider(SliderOptions);
+local ToggleConfig = PlayerTab.AddToggle;
+local CallbackFunction = {
+    ["Callback"] = function(FunctionParameterOne, FunctionParameterTwo, FunctionParameterThree, FunctionParameterFour, FunctionArgumentA, FunctionArgumentB, FunctionArgumentC)
+    local EnvironmentConfig = FunctionEnvironment.AG7lFkDXdN19L; 
+end,
+    ["Name"] = "Jump Boost",
+    ["Default"] = false
+};
+local ToggleValueConfig = PlayerTab:AddToggle(CallbackFunction);
+local ToggleConfigValue = PlayerTab.AddToggle;
+local CallbackConfig = {
+    ["Callback"] = function(ParameterOneValue, ParameterTwoValue, ParameterThreeValue, ParameterFourValue, ArgumentAValue, ArgumentBValue, ArgumentCValue)
+    local EnvironmentSetting = FunctionEnvironment.dXhLk5NWsmwfxH; 
+end,
+    ["Name"] = "Noclip",
+    ["Default"] = false
+};
+local ToggleSetting = PlayerTab:AddToggle(CallbackConfig);
+local SectionName = GrabLineTab.AddSection;
+local SectionConfig = {
+    ["Name"] = "Grab Line Controls"
+};
+local SectionValue = GrabLineTab:AddSection(SectionConfig);
+local ToggleSettingValue = GrabLineTab.AddToggle;
+local CallbackSetting = {
+    ["Callback"] = function(FunctionParameter, FunctionParameterTwo, FunctionArgument, FunctionArgumentTwo, FunctionArgumentThree)
+    local EnvironmentVariable = FunctionEnvironment.Pf82MKrFOevp; 
+end,
+    ["Name"] = "Chaos Line",
+    ["Default"] = false
+};
+local ToggleConfigSetting = GrabLineTab:AddToggle(CallbackSetting);
+local ButtonConfig = GrabLineTab.AddButton;
+local ButtonConfig = {
+    ["Name"] = "\240\159\148\132 Reconnect All",
+    ["Callback"] = function(PlayerOne, PlayerTwo, ArgumentA, ArgumentB, ArgumentC)
+    local PlayerList = PlayerList.GetPlayers;
+    local PlayerListResult = PlayerList:GetPlayers();
+    for LoopKey, LoopValue in ipairs(PlayerListResult) do
+        local NonKeyPlayer = not LoopKey;
+        if NonKeyPlayer then
+            
+        else
+            local NonLocalPlayer = (LoopValue ~= CurrentPlayer); 
+        end;
+        local IsLocalPlayer = not v671;
+        if IsLocalPlayer then
+            
+        else
+            local CharacterModel = LoopValue.Character;
+            local CharacterModelResult = v673;
+            if CharacterModelResult then
+                local CharacterPart = LoopValue.Character.FindFirstChild;
+                CharacterIterator = LoopValue.Character:FindFirstChild("HumanoidRootPart"); 
+            end; 
+        end;
+        local NonCharacterPart = not CharacterIterator;
+        if NonCharacterPart then
+            
+        else
+            local SuccessStatus = pcall(function(PlayerOneParam, PlayerTwoParam, PlayerThreeParam, ArgumentAParam, ArgumentBParam, ArgumentCParam)
+                local IdentityCFrame = CFrame.identity;
+                local GrabLineEvent = GrabEventList.CreateGrabLine.FireServer;
+                local GrabLineResult = GrabEventList.CreateGrabLine:FireServer(CharacterIterator, IdentityCFrame);
+                local EnvironmentTable = FunctionEnvironment.T7x43qpqynynk9; 
+            end);
+            local EnvironmentFunction = FunctionEnvironment.YnHp0tW3DBWi; 
+        end; 
+    end;
+    local EnvironmentCallback = FunctionEnvironment.CZDWvUC7ZLNP; 
+end
+};
+local ButtonInstance = GrabLineTab:AddButton(ButtonConfig);
+local HeartbeatConnection = v8.Heartbeat.Connect;
+local HeartbeatFunction = v8.Heartbeat:Connect(function(DeltaTime, PlayerTwoParamNew, PlayerThreeParamNew, PlayerFourParamNew, PlayerFiveParamNew, ArgumentANew, ArgumentBNew, ArgumentCNew)
+    local TimeElapsed = 0 + DeltaTime;
+    local TimeElapsedNew = 0 + DeltaTime;
+    local TimeElapsedMore = 0 + DeltaTime;
+    local TimeElapsedEvenMore = 0 + DeltaTime;
+    local LocalCharacter = CurrentPlayer.Character;
+    local CharacterModelNew = Character;
+    if CharacterModelNew then
+        local CharacterPartNew = CharacterModel.FindFirstChild;
+        CharacterModel7 = CharacterModel:FindFirstChild("HumanoidRootPart"); 
+    end;
+    local LocalCharacterNew = CurrentPlayer.Character;
+    local NonCharacter = not CharacterModel;
+    local IsCharacter = not NonCharacter;
+    local PreviousPlayer = v696;
+    if PreviousPlayer then
+        local CharacterModel = CharacterModel.FindFirstChildOfClass;
+        CharacterModel8 = CharacterModel:FindFirstChildOfClass("Humanoid");
+        local FunctionEnvironment = FunctionEnvironment.PSxFsCW918DSF;
+        local IsCharacterValid = not CharacterModel7;
+        local IsValidCharacter = not IsCharacterValid; 
+    end;
+    local CharacterValidation = v702;
+    if CharacterValidation then
+        local IsCharacterAlive = not CharacterModel8; 
+    end;
+    local CharacterAliveStatus = not v704;
+    local CharacterLiveness = not CharacterAliveStatus;
+    if CharacterLiveness then
+        
+    else
+        local DistanceThreshold = TimeElapsedNew >= 0.1; 
+    end;
+    local MinimumDistance = v707;
+    if MinimumDistance then
+        local ParameterValue = p1_8;
+        if ParameterValue then
+            local SuccessStatus = pcall(function(PlayerParameter, SecondPlayerParameter, ThirdPlayerParameter, FourthPlayerParameter, FirstArgument, SecondArgument, ThirdArgument)
+                local CharacterEvents = ReplicatedStorageService.CharacterEvents;
+                local StruggleEvent = CharacterEvents.Struggle.FireServer;
+                local LocalStruggleEvent = CharacterEvents.Struggle:FireServer(CurrentPlayer);
+                local GameCorrectionEvents = ReplicatedStorageService.GameCorrectionEvents;
+                local StopVelocityEvent = GameCorrectionEvents.StopAllVelocity.FireServer;
+                local VelocityStopEvent = GameCorrectionEvents.StopAllVelocity:FireServer();
+                local FunctionHandler = FunctionEnvironment.htD83sbXncG8E1; 
+            end); 
+        end; 
+    end;
+    local PlayerValidation = not p1_9;
+    if PlayerValidation then
+        
+    else
+        ObjectPosition = CharacterModel7.Position;
+        local VerticalPosition = ObjectPosition.Y;
+        local IsUnderwater = VerticalPosition < -87.5; 
+    end;
+    local IsAboveWater = not v722;
+    local WaterStatus = v723;
+    if WaterStatus then
+        local ParameterValueTwo = p1_11;
+        if ParameterValueTwo then
+            local CharacterState = CharacterModel8.GetState;
+            local CurrentCharacterState = CharacterModel8:GetState(); 
+        end; 
+    end;
+    local HumanoidStateType = Enum.HumanoidStateType;
+    local RagdollState = HumanoidStateType.Ragdoll;
+    local IsRagdoll = (v727 == RagdollState);
+    local NotRagdoll = not IsRagdoll;
+    local RagdollValidation = v731;
+    if RagdollValidation then
+        local HealthThreshold = TimeElapsed >= 0.5; 
+    end;
+    local IsLowHealth = not v733;
+    if IsLowHealth then
+        
+    else
+        local ParameterThree = p1_13;
+        if ParameterThree then
+            PlayerFlag = not p1_13;
+            if PlayerFlag then
+                
+            else
+                if PlayerFlag then
+                    
+                else
+                    local PartBounds = workspace.GetPartBoundsInRadius;
+                    local PartBoundsInRadius = workspace:GetPartBoundsInRadius(ObjectPosition, p1_19);
+                    local FunctionReference = FunctionEnvironment.r0k83ku3bY8VV7; 
+                end;
+                for LoopKey, LoopValue in ipairs(v738) do
+                    local KeyValue = for_key_12;
+                    if KeyValue then
+                        local LoopObjectName = LoopValue.Name;
+                        VersionNumber = (LoopObjectName == "HumanoidRootPart");
+                        local IsNotPlayer = not VersionNumber; 
+                    end;
+                    local IsNotCurrentPlayer = not v743;
+                    if IsNotCurrentPlayer then
+                        
+                    else
+                        local IsNotPlayerTwo = not VersionNumber; 
+                    end;
+                    local CurrentPart = v745;
+                    if CurrentPart then
+                         
+                    end; 
+                end; 
+            end; 
+        end; 
+    end;
+    local IsNotParent = not p1_37;
+    if IsNotParent then
+        
+    else
+        local IsNotParentTwo = not p1_37;
+        if IsNotParentTwo then
+            
+        else
+            local FoundModel = workspace.FindFirstChild;
+            local SpawnedName = ObjectName .. "SpawnedInToys";
+            FindChildMethod8 = workspace:FindFirstChild(SpawnedName); 
+        end; 
+    end;
+    local IsNotFirstChild = not FindChildMethod8;
+    if IsNotFirstChild then
+        
+    else
+        local FirstChildFound = FindChildMethod8.FindFirstChild;
+        FindChildMethod9 = FindChildMethod8:FindFirstChild("CreatureBlobman"); 
+    end;
+    local IsNotSecondChild = not FindChildMethod9;
+    if IsNotSecondChild then
+        
+    else
+        local SecondChildFound = FindFirstChild_9;
+        if SecondChildFound then
+            local PartBounds = workspace.GetPartBoundsInRadius;
+            local PartBoundsResult = workspace:GetPartBoundsInRadius(ObjectPosition, p1_19); 
+        end; 
+    end;
+    for LoopKey, LoopValue in ipairs(v758) do
+        local IsNotLoopKey = not LoopKey;
+        if IsNotLoopKey then
+            
+        else
+            local LoopValueName = LoopValue.Name;
+            VersionCode = (LoopValueName == "HumanoidRootPart");
+            local IsNotValue = not VersionCode; 
+        end;
+        local CurrentValue = v762;
+        if CurrentValue then
+            local IsNotSecondValue = not VersionCode; 
+        end;
+        local IsNotThirdValue = not v764;
+        if IsNotThirdValue then
+            
+        else
+             
+        end; 
+    end;
+    local ParameterValue = p1_51;
+    if ParameterValue then
+        CharacterModel8.WalkSpeed = p1_50; 
+    end; 
+end);
+local ChildAddedEvent = workspace.ChildAdded.Connect;
+local ChildAddedFunction = workspace.ChildAdded:Connect(function(ChildParameter, ParameterTwo, ParameterThree, ParameterFour, ParameterA, ParameterB, ParameterC)
+    local ChildName = ChildParameter.Name;
+    ChildNameFlag = (ChildName == "GrabParts");
+    local IsNotGrabParts = not ChildNameFlag;
+    local GrabPartsValue = v769;
+    if GrabPartsValue then
+        local IsNotSecondGrabParts = not ChildNameFlag; 
+    end;
+    local IsNotThirdGrabParts = not v771;
+    if IsNotThirdGrabParts then
+        
+    else
+        local FunctionResult = FunctionEnvironment.RRUNPbMoWAhVj; 
+    end; 
+end);
+local PlayerAddedEvent = PlayerList.PlayerAdded.Connect;
+local WaitTime = PlayerList.PlayerAdded:Connect(function(PlayerParameter, ParameterA, ParameterB, ParameterC)
+    local WaitTime = task.wait(0.5);
+    local PlayerList = PlayerList.GetPlayers;
+    local GetPlayersResult = PlayerList:GetPlayers();
+    for LoopKeyTwo, LoopValueTwo in ipairs(GetPlayersResult) do
+        local IsNotLoopKeyTwo = not LoopKeyTwo;
+        if IsNotLoopKeyTwo then
+            
+        else
+            local PlayerName = (LoopValueTwo ~= CurrentPlayer); 
+        end;
+        local IsNotPlayer = not v778;
+        if IsNotPlayer then
+            
+        else
+            local DisplayName = LoopValueTwo.DisplayName;
+            local EmptyTable = {};
+            ValueArray3 = EmptyTable;
+            local AddedItem = table.insert(ValueArray3, DisplayName); 
+        end; 
+    end;
+    local RefreshMethod = DropdownItem.Refresh;
+    local RefreshCall = DropdownItem:Refresh(ValueArray3, true);
+    local FunctionEnv = FunctionEnvironment["1xW3VpB07yFn"]; 
+end);
+local PlayerRemoved = PlayerList.PlayerRemoving.Connect;
+local PlayerRemoved2 = PlayerList.PlayerRemoving:Connect(function(CurrentPlayer, LeaveReason, Param3, ParamA, ParamB, ParamC)
+    local IsCurrentPlayer = (for_val_9 == CurrentPlayer);
+    local IsNotCurrent = not IsCurrentPlayer;
+    if IsNotCurrent then
+        
+    else
+        local Notification = OrionLibrary.MakeNotification;
+        local NotificationData = {
+            ["Time"] = 3,
+            ["Name"] = "Target Left",
+            ["Content"] = "\227\130\191\227\131\188\227\130\178\227\131\131\227\131\136\227\129\140\227\130\181\227\131\188\227\131\144\227\131\188\227\130\146\233\155\162\227\130\140\227\129\190\227\129\151\227\129\159"
+        };
+        local NotificationCall = OrionLibrary:MakeNotification(NotificationData); 
+    end;
+    local WaitDelay = task.wait(0.5);
+    local GetPlayers = PlayerList.GetPlayers;
+    local PlayerList = PlayerList:GetPlayers();
+    for LoopKey, LoopValue in ipairs(PlayerList) do
+        local IsNotKey = not LoopKey;
+        if IsNotKey then
+            
+        else
+            local IsNotLocal = (LoopValue ~= CurrentPlayer); 
+        end;
+        local IsLocal = not v796;
+        if IsLocal then
+            
+        else
+            local PlayerDisplayName = LoopValue.DisplayName;
+            local NewTable = {};
+            ValueArray4 = NewTable;
+            local AddedDisplay = table.insert(ValueArray4, PlayerDisplayName); 
+        end; 
+    end;
+    local RefreshMethod2 = DropdownItem.Refresh;
+    local RefreshCall2 = DropdownItem:Refresh(ValueArray4, true);
+    local FunctionEnv2 = FunctionEnvironment.IOu6nhv9Ypgev; 
+end);
+local OrionInit = OrionLibrary.Init;
+local OrionCall = OrionLibrary:Init();
+local CameraMode = Enum.CameraMode;
+local ClassicMode = CameraMode.Classic;
+CurrentPlayer.CameraMode = ClassicMode;
+CurrentPlayer.CameraMinZoomDistance = 0.5;
+CurrentPlayer.CameraMaxZoomDistance = 128;
+local Notification2 = OrionLibrary.MakeNotification;
+local NotificationData2 = {
+    ["Time"] = 5,
+    ["Name"] = "Egg Hub 1.0",
+    ["Content"] = "\240\159\165\154 All systems loaded successfully!"
+};
+local NotificationCall2 = OrionLibrary:MakeNotification(NotificationData2);
