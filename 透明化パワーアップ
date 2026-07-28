@@ -1,0 +1,151 @@
+if _G.a then
+    for _, v in pairs(_G.a) do
+        v:Disconnect()
+    end
+    _G.a = nil
+end
+
+repeat task.wait() until game.Players.LocalPlayer
+
+local player = game.Players.LocalPlayer
+local character, humanoid, rootPart
+local invisible = false
+local parts = {}
+
+local function initCharacter()
+    character = player.Character or player.CharacterAdded:Wait()
+    humanoid = character:WaitForChild("Humanoid")
+    rootPart = character:WaitForChild("HumanoidRootPart")
+    parts = {}
+    for _, descendant in pairs(character:GetDescendants()) do
+        if descendant:IsA("BasePart") and descendant.Transparency == 0 then
+            table.insert(parts, descendant)
+        end
+    end
+end
+
+local function createUI()
+    -- 重複防止のため古いUIがあれば削除
+    local oldGui = player:WaitForChild("PlayerGui"):FindFirstChild("InvisibleGui")
+    if oldGui then oldGui:Destroy() end
+
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "InvisibleGui"
+    screenGui.ResetOnSpawn = false
+
+    -- ベースとなる小さなフレーム (サイズ: 80x30)
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0, 80, 0, 30)
+    frame.Position = UDim2.new(0.5, -40, 0.1, 0)
+    frame.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+    frame.BorderSizePixel = 0
+    frame.Active = true
+    frame.Parent = screenGui
+
+    -- Invisible トグルボタン (左側: 60x30)
+    local toggleButton = Instance.new("TextButton")
+    toggleButton.Size = UDim2.new(0, 60, 0, 30)
+    toggleButton.Position = UDim2.new(0, 0, 0, 0)
+    toggleButton.Text = "Invis"
+    toggleButton.TextSize = 12
+    toggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    toggleButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50) -- OFF時: 赤
+    toggleButton.BorderSizePixel = 0
+    toggleButton.Parent = frame
+
+    -- バツ（×）ボタン (右側: 20x30)
+    local closeButton = Instance.new("TextButton")
+    closeButton.Size = UDim2.new(0, 20, 0, 30)
+    closeButton.Position = UDim2.new(0, 60, 0, 0)
+    closeButton.Text = "×"
+    closeButton.TextSize = 14
+    closeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    closeButton.BackgroundColor3 = Color3.fromRGB(100, 30, 30)
+    closeButton.BorderSizePixel = 0
+    closeButton.Parent = frame
+
+    screenGui.Parent = player:WaitForChild("PlayerGui")
+
+    -- 【ドラッグ機能】 (PC・スマホ両対応)
+    local dragging = false
+    local dragStart, startPos
+
+    local function updateInput(input)
+        local delta = input.Position - dragStart
+        frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+
+    frame.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPos = frame.Position
+        end
+    end)
+
+    frame.InputChanged:Connect(function(input)
+        if (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) and dragging then
+            updateInput(input)
+        end
+    end)
+
+    frame.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = false
+        end
+    end)
+
+    -- 【トグル動作】 (クリックでON/OFFとボタン色の切替)
+    local function toggleInvis()
+        invisible = not invisible
+        toggleButton.BackgroundColor3 = invisible and Color3.fromRGB(50, 200, 50) or Color3.fromRGB(200, 50, 50) -- ON: 緑 / OFF: 赤
+        for _, part in pairs(parts) do
+            part.Transparency = part.Transparency == 0 and 0.5 or 0
+        end
+    end
+
+    toggleButton.MouseButton1Click:Connect(toggleInvis)
+
+    -- 【閉じる動作】 (バツボタンを押すとUIを画面から除去)
+    closeButton.MouseButton1Click:Connect(function()
+        screenGui:Destroy()
+    end)
+end
+
+initCharacter()
+createUI()
+
+local connections = {}
+
+-- Gキーでのトグル切替
+connections[1] = player:GetMouse().KeyDown:Connect(function(key)
+    if key == "g" then
+        invisible = not invisible
+        for _, part in pairs(parts) do
+            part.Transparency = part.Transparency == 0 and 0.5 or 0
+        end
+    end
+end)
+
+-- Desync型の透明化ループ
+connections[2] = game:GetService("RunService").Heartbeat:Connect(function()
+    if invisible then
+        local originalCFrame = rootPart.CFrame
+        local originalOffset = humanoid.CameraOffset
+        local hiddenCFrame = originalCFrame * CFrame.new(0, -200000, 0)
+        local offsetPos = hiddenCFrame:ToObjectSpace(CFrame.new(originalCFrame.Position)).Position
+        rootPart.CFrame = hiddenCFrame
+        humanoid.CameraOffset = offsetPos
+        game:GetService("RunService").RenderStepped:Wait()
+        rootPart.CFrame = originalCFrame
+        humanoid.CameraOffset = originalOffset
+    end
+end)
+
+player.CharacterAdded:Connect(function()
+    invisible = false
+    initCharacter()
+    createUI()
+end)
+
+_G.a = connections
