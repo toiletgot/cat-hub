@@ -1,0 +1,378 @@
+local r = "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/"
+local Library = loadstring(game:HttpGet(r .. "Library.lua"))()
+local ThemeManager = loadstring(game:HttpGet(r .. "addons/ThemeManager.lua"))()
+local SaveManager = loadstring(game:HttpGet(r .. "addons/SaveManager.lua"))()
+
+-- ウィンドウの作成
+local Window = Library:CreateWindow({
+    Title = "スクリプト hub",
+    Footer = "バージョン: 0.0",
+    Icon = 102816031861909,
+})
+
+-- タブの作成
+local ScriptTab = Window:AddTab({ Name = "スクリプト", Icon = "code" })
+local OtherScriptTab = Window:AddTab({ Name = "他スクリプト", Icon = "list" })
+local OtherScriptTab2 = Window:AddTab({ Name = "他スクリプト2", Icon = "list" })
+local KeyTab = Window:AddTab({ Name = "鍵", Icon = "key" })
+local SettingsTab = Window:AddTab({ Name = "設定", Icon = "settings" })
+
+-- セクション作成
+local MainGroup = ScriptTab:AddLeftGroupbox("スクリプト")
+local OtherGroup = OtherScriptTab:AddLeftGroupbox("他スクリプト 1")
+local OtherGroup2 = OtherScriptTab2:AddLeftGroupbox("他スクリプト 2")
+local KeyGroup = KeyTab:AddLeftGroupbox("スクリプトの鍵一覧")
+
+-- ----------------------------------------------------------------
+-- データ定義
+-- ----------------------------------------------------------------
+
+-- 1. メインスクリプトデータ ("スクリプト" タブ)
+local hubs = {
+    {name = "kiki hubv0", repo = "cat-hub", url = "kiki%20hub"},
+    {name = "kiki hub v1", repo = "cat-hub", url = "kikh%20hub"},
+    {name = "kiki hub v2", repo = "cat-hub", url = "kiki%20hubv2"},
+    {name = "kiki hub v3", repo = "cat-hub", url = "kiki%20hubv3"},
+    {name = "kiki hub v3.5", repo = "cat-hub", url = "kiki%20hubv3.5"},
+    {name = "kiki hub v4", repo = "cat-hub", url = "kikiv4"},
+    {name = "kiki hub v4.5", repo = "cat-hub", url = "kiki%20hubv4.5"},
+    {name = "kiki hub v5", repo = "cat-hub", url = "kiki%20hubv5"},
+    {name = "kiki hub v6", repo = "cat-hub", url = "kiki%20hubv6"},
+    {name = "kiki hub v7", repo = "cat-hub", url = "kiki%20hubv7"},
+    {name = "kiki hub v8", repo = "cat-hub", url = "kiki%20hubv8"},
+    {name = "バグ kiki hub", repo = "cat-hub", url = "バグ%20kiki%20hub"},
+    {name = "cat hub v1", repo = "cat-hub", url = "cat%20hub"},
+    {name = "cat hub v2", repo = "cat-hub", url = "cat%20hubv2"},
+    {name = "cat hub v3", repo = "cat-hub", url = "cat%20hubv3"},
+    {name = "cat hub v4", repo = "cat-hub", url = "cat%20hubv4"},
+    {name = "cat hub v5", repo = "cat-hub", url = "cat%20hubv5"},
+    {name = "cat hub v6", repo = "cat-hub", url = "cat%20hubv6"},
+    {name = "翻訳 hub", repo = "cat-hub", url = "翻訳%20hub", isMain = true},
+    {name = "神翻訳 hub", repo = "cat-hub", url = "神翻訳%20hub"},
+    {name = "purple", repo = "cat-hub", url = "purple"},
+    {name = "羽", repo = "cat-hub", url = "羽"},
+    {name = "sentou hub", repo = "cat-hub", url = "sentou"},
+    {name = "残像", repo = "cat-hub", url = "残像"},
+    {name = "オートタロット", repo = "Sprict", url = "オートタロット"},
+    {name = "後ろに回る", repo = "Sprict", url = "後ろに回る"},
+    {name = "監視", repo = "Sprict", url = "監視"},
+    {name = "ゴムバンド", repo = "Sprict", url = "ゴムバンド"},
+    {name = "無限ジャンプ", repo = "Sprict", url = "無限ジャンプ"},
+    {name = "esp", repo = "Sprict", url = "esp"},
+    {name = "スピード", repo = "Sprict", url = "スピード"},
+    {name = "tp", repo = "Sprict", url = "tp"},
+    {name = "ノークリップ", repo = "Sprict", url = "ノークリップ"},
+    {name = "物を透視", repo = "Sprict", url = "物を透視"},
+    {name = "コピー", repo = "Sprict", url = "コピー"},
+    {name = "大ジャンプ", repo = "Sprict", url = "大ジャンプ"},
+    {name = "画面の遅延", repo = "Sprict", url = "画面の遅延"},
+    {name = "画面縮める", repo = "Sprict", url = "画面縮める"},
+    {name = "回避", repo = "Sprict", url = "回避"},
+    {name = "ゴースト", repo = "Sprict", url = "ゴースト"},
+    {name = "視点戻す", repo = "Sprict", url = "視点戻す"},
+    {name = "反復横跳び", repo = "Sprict", url = "反復横跳び"},
+    {name = "最強オートクリックv1", repo = "Sprict", url = "最強オートクリックv1"},
+    {name = "最強オートクリックv2", repo = "Sprict", url = "最強オートクリックv2"},
+    {name = "Fe fling", repo = "Sprict", url = "Fe%20fling"},
+    {name = "魔法陣−mod", repo = "Sprict", url = "mahouzin"},
+    {name = "昔のスプリクト hub", repo = "cat-hub", url = "スプリクト%20hub"},
+    {name = "mod hubv1", repo = "cat-hub", url = "mod%20hub%20-andkiki%20hub"},
+    {name = "mod hubv2.5", repo = "cat-hub", url = "mod%20hubv2.5"},
+    {name = "moti hubv1", repo = "cat-hub", url = "moti%20hub"},
+    {name = "moti hubv1.5", repo = "cat-hub", url = "moti%20hubv1.5"},
+    {name = "moti hubv2", repo = "cat-hub", url = "moti%20hubv2"},
+    {name = "moti hubv1 (kiki中)", repo = "cat-hub", url = "kiki%20hub中"},
+    {name = "zizi hubv2", repo = "cat-hub", url = "kiki中v2"},
+    {name = "zizi hubv3", repo = "cat-hub", url = "zizi%20hub（final）…"},
+    {name = "zizi hubv4", repo = "cat-hub", url = "zizi%20hubv4"},
+    {name = "透明化パワーアップ", repo = "cat-hub", url = "透明化パワーアップ"}
+}
+
+-- 2. 他スクリプトデータ 1 ("他スクリプト" タブ)
+local otherScripts = {
+    {name = "dex", url = "https://pastebin.com/raw/e9SiGtSM"},
+    {name = "bloody", url = "https://raw.githubusercontent.com/BloodyV2/BloodyScript/refs/heads/main/Free", isRaw = true},
+    {name = "gojo", url = "https://rawscripts.net/raw/KJ-The-Strongest-Battlegrounds-battleground-gojo-script-saitama-to-gojo-26980"},
+    {name = "太陽 hub", customFunc = function()
+        local source = game:HttpGet("https://pastefy.app/Waz5y9Ts/raw")
+        loadstring(source)()
+    end},
+    {name = "Nove hub", url = "https://raw.githubusercontent.com/toiletgot/cat-hub/refs/heads/main/Nove%20hub"},
+    {name = "波 hub", url = "https://pastefy.app/mKo56cLR/raw"},
+    {name = "Zero hub", url = "https://rawscripts.net/raw/Universal-Script-STARBORN-FONT-SCRIPT-HAS-A-LOAD-DELAY-SO-DONT-LEAVE-212793"},
+    {name = "Aro hub", url = "https://pastefy.app/egExeYyX/raw"},
+    {name = "アイス hub", url = "https://pastebin.com/raw/4cDMpGJm"},
+    {name = "攻撃 hub", url = "https://raw.githubusercontent.com/toiletgot/cat-hub/refs/heads/main/攻撃"},
+    {name = "Aki hub", url = "https://pastefy.app/fv47EdiS/raw"},
+    {name = "tokra hub", url = "https://raw.githubusercontent.com/toiletgot/cat-hub/refs/heads/main/tokra%20hub"},
+    {name = "桜 hub", url = "https://pastefy.app/7BWmFfgM/raw"},
+    {name = "無能outo aim", url = "https://raw.githubusercontent.com/expseller/triggerbot-main/refs/heads/main/triggerbot%20ftap"},
+    {name = "自動連打", url = "https://raw.githubusercontent.com/catwljz/dz/refs/heads/main/autoclick.txt"},
+    {name = "チャット連打", url = "https://pastebin.com/raw/Jzxpymw5"},
+    {name = "いやん hub", url = "https://raw.githubusercontent.com/toiletgot/cat-hub/refs/heads/main/いやん%20hub"},
+    {name = "megabliz hub", url = "https://raw.githubusercontent.com/LuluFTAP/Script/refs/heads/main/FTAP.lua"},
+    {name = "bliz hub", url = "https://rawscripts.net/raw/Fling-Things-and-People-BlizT-hub-103294"},
+    {name = "歩き方がかっこよくなる", url = "https://raw.githubusercontent.com/somethingsimade/KDV3-Fixed/refs/heads/main/KrystalDance3"},
+    {name = "でかくなるスプリクト", customFunc = function()
+        local a,b,c,g="/STEVE-916-create/Uhhhhhh/","/source/reanim.lua",".github","https://"
+        local d=request({Url=`{g}api{c}.com/repos{a}contents{b}`,Headers={Accept=`application/vnd{c}.VERSION.raw`}})
+        if d.StatusCode~=200 then d.Body=game:HttpGet(`{g}raw{c}usercontent.com{a}main{b}`)end 
+        local e,f=loadstring(d.Body)
+        if not e then warn(f)else e()end
+    end},
+    {name = "五条スプリクト1", url = "https://rawscripts.net/raw/The-Strongest-Battlegrounds-YUJI-X-SUKUNA-moveset-50302"},
+    {name = "五条スプリクト2", url = "https://raw.githubusercontent.com/skibiditoiletfan2007/BaldyToSorcerer/refs/heads/main/LatestV2.lua"},
+    {name = "違うタイプの虚式紫", url = "https://pastefy.app/Ng4K4ZXZ/raw"},
+    {name = "tokyo hub", url = "https://pastefy.app/ZUA73s8u/raw"},
+    {name = "キーボード", url = "https://rawscripts.net/raw/Universal-Script-Delta-keyboard-28340"},
+    {name = "物を動かす", url = "https://raw.githubusercontent.com/cytj777i/6669178/main/%E5%8D%95%E4%B8%80%E7%89%A9%E4%BD%93%E9%A3%9E%E8%A1%8C%E8%BD%BD%E8%87%AA%E5%B7%B1%E6%9C%80%E7%BB%88%E4%BC%98%E5%8C%96%E7%89%88"},
+    {name = "FATP hub", url = "https://files.manuscdn.com/user_upload_by_module/session_file/310519663337716503/MxGpvJiVtheQAGbt.lua"},
+    {name = "シェーダー", url = "https://raw.githubusercontent.com/randomstring0/pshade-ultimate/refs/heads/main/src/cd.lua"},
+    {name = "vfly", url = "https://rawscripts.net/raw/Universal-Script-VFly-gui-and-noclip-78112"},
+    {name = "op hub", url = "https://rawscripts.net/raw/Fling-Things-and-People-OP-HUB-80884"},
+    {name = "auto check", url = "https://gist.githubusercontent.com/nooou0925-netizen/ca9778172766f4bc7be451cf0a8d407f/raw/Auto%20click.lua"},
+    {name = "蘇生スプリクト", url = "https://raw.githubusercontent.com/IdkRandomUsernameok/PublicAssets/refs/heads/main/Releases/MUI.lua"},
+    {name = "嫌がらせで送るやつ", url = "https://pastefy.app/kzKrISRZ/raw", isRaw = true},
+    {name = "holon hub", url = "https://raw.githubusercontent.com/hololove1021/HolonHUB/refs/heads/main/language/hub-jp.lua"},
+    {name = "虚式紫", url = "https://pastefy.app/vLdqpn3f/raw"},
+    {name = "Fe fling2", url = "https://pastefy.app/O7r6YZcb/raw"},
+    {name = "ろくでなし hub", url = "https://pastebin.com/raw/aczrx3t5"},
+    {name = "99日", url = "https://raw.githubusercontent.com/VapeVoidware/VW-Add/main/nightsintheforest.lua", isRaw = true},
+    {name = "poop hub", url = "https://raw.githubusercontent.com/ilovepoop0653/PoopHUB/refs/heads/main/PoopHUB%20by%20Poop"},
+    {name = "fly gui", url = "https://rawscripts.net/raw/Universal-Script-fly-gui-v3-46328"},
+    {name = "無敵", url = "https://rawscripts.net/raw/Universal-Script-Invisible-script-20557"},
+    {name = "dance", url = "https://pastebin.com/raw/1p6xnBNf", isRaw = true},
+    {name = "ラッキーブロック壊す", url = "https://raw.githubusercontent.com/kingmagro2525-netizen/yajuhub/refs/heads/main/L.Block.lua"},
+    {name = "yaju hub", url = "https://raw.githubusercontent.com/kingmagro2525-netizen/yajuhub/main/Qop.Xxc.lua"},
+    {name = "板スポーン", url = "https://raw.githubusercontent.com/kingmagro2525-netizen/yajuhub/refs/heads/main/Aaa.lua"},
+    {name = "ジョジョスプリクト", url = "https://pastefy.app/jWi4DcHZ/raw"},
+    {name = "Fe fling (別版)", url = "https://raw.githubusercontent.com/0Ben1/fe/main/obf_rf6iQURzu1fqrytcnLBAvW34C9N55kS9g9G3CKz086rC47M6632sEd4ZZYB0AYgV.lua.txt", isRaw = true},
+    {name = "ようつべスプリクト", url = "https://rawscripts.net/raw/Universal-Script-YouTube-Music-Player-72222"},
+    {name = "blizt", url = "https://raw.githubusercontent.com/212happybirthday-debug/script/refs/heads/main/Blizt%20Crack.luau"},
+    {name = "飛行機エモート", url = "https://raw.githubusercontent.com/xVicity/GLACIER/main/LATEST.lua"},
+    {name = "物無くす", url = "https://rawscripts.net/raw/Fling-Things-and-People-FTAP-lag-reducer-87140"},
+    {name = "k hub", url = "https://raw.githubusercontent.com/makkurokurosukescript/K-hub-beta/refs/heads/main/.gitignore", isRaw = true},
+    {name = "コミックス hub", url = "https://rawscripts.net/raw/Fling-Things-and-People-CRACKED-COSMICHUB-FTAP-73528"},
+    {name = "オートエイム", url = "https://raw.githubusercontent.com/LOLnoob106/aimbot.noobhub.free/refs/heads/main/aimbotnoobhub.lua"},
+    {name = "座標が見れる", url = "https://pastefy.app/wIPbedUN/raw"},
+    {name = "toymod hub", url = "https://raw.githubusercontent.com/muscat-yummy/script/refs/heads/main/toymod"},
+    {name = "ドラえもん hub", url = "https://raw.githubusercontent.com/toiletgot/cat-hub/refs/heads/main/ドラえもん%20hub"},
+    {name = "kick1", url = "https://pastefy.app/1QUGoY9q/raw?part=kickallv1.0"},
+    {name = "kick2", url = "https://pastefy.app/c5PQOtJi/raw"}
+}
+
+-- 3. 他スクリプトデータ 2 ("他スクリプト2" タブ)
+local otherScripts2 = {
+    {name = "物動かす", url = "https://raw.githubusercontent.com/cytj777i/6669178/main/%E5%8D%95%E4%B8%80%E7%89%A9%E4%BD%93%E9%A3%9E%E8%A1%8C%E8%BD%BD%E8%87%AA%E5%B7%B1%E6%9C%80%E7%BB%88%E4%BC%98%E5%8C%96%E7%89%88"},
+    {name = "vexon", url = "https://raw.githubusercontent.com/DiosDi/VexonHub/refs/heads/main/VexonHub"},
+    {name = "サミックス hub", url = "https://pastefy.app/JHwl2LCW/raw"},
+    {name = "綺麗なサミックス hub", url = "https://pastefy.app/SAcN9MRO/raw"},
+    {name = "script uiを日本語訳", url = "https://pastefy.app/HCUekFMV/raw"},
+    {name = "bloody hub premium", url = "https://raw.githubusercontent.com/celestialteam/youhateme/refs/heads/main/BloodyPremiumCrack.lua"},
+    {name = "ちょん hub", url = "https://raw.githubusercontent.com/toiletgot/cat-hub/refs/heads/main/ちょん%20hub"},
+    {name = "さくら hub（没）", url = "https://pastefy.app/cnBbyXUc/raw"},
+    {name = "Ru hub", customFunc = function()
+        getgenv().RuHubSettings = {
+            UnlockMouse = true,
+            LoadLastConfig = false,
+            RemoveEndGrabEarly = true
+        }
+        loadstring(game:HttpGet("https://gitlab.com/cooldawghaha/gitlabswitch/-/raw/main/RuHubFTAP.lua"))()
+    end},
+    {name = "delta見た目変える", url = "https://rawscripts.net/raw/Universal-Script-Delta-customization-177780"},
+    {name = "ggog hub", url = "https://rawscripts.net/raw/Fling-Things-and-People-GGOG-Script-165953"},
+    {name = "波 hub（サバイバルソース）", url = "https://raw.githubusercontent.com/kato7haru-ship-it/Fly-jp/9da9628be41d3abf833370fe4c6fd8aa9556681d/波ハブサバイバルソース"},
+    {name = "x hub", url = "https://raw.githubusercontent.com/toiletgot/cat-hub/refs/heads/main/x%20hub"},
+    {name = "偽まかう hub", url = "https://gist.githubusercontent.com/TAKE-TT/17e6d44f7226f87ae673f2e34bb10394/raw/0579f8b0e8628e0d832de09b4761c6c5cf3ed7bc/%25E3%2581%25BE%25E3%2581%258B%25E3%2581%2586%25E3%2581%25AF%25E3%2581%25B6.lua"},
+    {name = "Velocy hub", url = "https://rawscripts.net/raw/Fling-Things-and-People-Velocy-220820"},
+    {name = "lemon hub（レモンあろえ）", url = "https://raw.githubusercontent.com/Anko380/Lemon-hub-Aoharu/main/lemon%20hub%20public"},
+    {name = "ブレインロット飛ぶ", url = "https://raw.githubusercontent.com/xuanqilin611-sys/starhab/refs/heads/main/Wee"},
+    {name = "noob hub premium", url = "https://raw.githubusercontent.com/BlizFTAP/Noobhub/refs/heads/main/Noob%20hub%20Premium%20Crack.luau"},
+    {name = "chosen hub", url = "https://raw.githubusercontent.com/khanh-lol/Ztehub/refs/heads/main/zte"},
+    {name = "掴んだら即死！", url = "https://pastebin.com/raw/gQEWVYaY"},
+    {name = "しらたま hub key無し", url = "https://gist.githubusercontent.com/TAKE-TT/9fd2c2675fc4f272a478d89c9904050f/raw/0a92ef317fe09902efd1699f583599e7ca001253/SiratamaHub.lua"},
+    {name = "えむくん hub", url = "https://raw.githubusercontent.com/toiletgot/cat-hub/refs/heads/main/えむくん%20hub"},
+    {name = "偽芋 hub", url = "https://raw.githubusercontent.com/toiletgot/cat-hub/refs/heads/main/いも%20hubプライベート"},
+    {name = "suisei hub", url = "https://raw.githubusercontent.com/toiletgot/cat-hub/refs/heads/main/suisei%20hub"},
+    {name = "mochi hub", url = "https://raw.githubusercontent.com/toiletgot/cat-hub/refs/heads/main/mochi%20hub"},
+    {name = "Smile hub", url = "https://raw.githubusercontent.com/toiletgot/cat-hub/refs/heads/main/Smile%20hub"},
+    {name = "かつら hub", url = "https://raw.githubusercontent.com/toiletgot/cat-hub/refs/heads/main/かつら%20hub"},
+    {name = "キング hub", url = "https://raw.githubusercontent.com/toiletgot/cat-hub/refs/heads/main/キング%20hub"},
+    {name = "トイレット hubv1.6", url = "https://raw.githubusercontent.com/toiletgot/cat-hub/refs/heads/main/トイレット%20hub"},
+    {name = "太陽 hubv0.6", url = "https://raw.githubusercontent.com/toiletgot/cat-hub/refs/heads/main/太陽%20hubv0.6"},
+    {name = "xoco hub", url = "https://raw.githubusercontent.com/sladkoeshkaogg-svg/XOCOScript/refs/heads/main/XOCO.lua"},
+    {name = "タスナミ hub", url = "https://pastefy.app/AkddCFU9/raw"},
+    {name = "ham hub", url = "https://pastefy.app/f2HyZOY0/raw"},
+    {name = "トールツーリタワー", url = "https://rawscripts.net/raw/Troll-is-a-pinning-tower-2-yuki-hub-74892"},
+    {name = "6秒キック", url = "https://raw.githubusercontent.com/toiletgot/cat-hub/refs/heads/main/6秒キック"},
+    {name = "noname hub", url = "https://raw.githubusercontent.com/toiletgot/cat-hub/refs/heads/main/NoName"},
+    {name = "tokra hub（チャット無し）", url = "https://raw.githubusercontent.com/toiletgot/cat-hub/refs/heads/main/tokraチャット無し"},
+    {name = "しらたま hub", url = "https://raw.githubusercontent.com/toiletgot/cat-hub/refs/heads/main/しらたま%20hub"},
+    {name = "みたらし hub", url = "https://raw.githubusercontent.com/toiletgot/cat-hub/refs/heads/main/みたらし%20hub"},
+    {name = "poop hub Free", url = "https://raw.githubusercontent.com/dcus-official/PoopHub.Free/refs/heads/main/Loader.lua"},
+    {name = "そらりす hub", url = "https://raw.githubusercontent.com/toiletgot/cat-hub/refs/heads/main/そらりす"},
+    {name = "lemon hub", url = "https://raw.githubusercontent.com/toiletgot/cat-hub/refs/heads/main/レモン%20hub"},
+    {name = "てら hub", url = "https://pastefy.app/Nr09cVMn/raw"},
+    {name = "alan hub", url = "https://raw.githubusercontent.com/Artss1/Flades_Hub/refs/heads/main/We%20Are%20Arts.lua"},
+    {name = "どこのマップでも無敵", url = "https://raw.githubusercontent.com/Rawbr10/Roblox-Scripts/refs/heads/main/God%20Mode%20Script%20Universal"},
+    {name = "Noob hubv2.5", url = "https://raw.githubusercontent.com/toiletgot/cat-hub/refs/heads/main/Noob%20hubv2.5"},
+    {name = "bliz hvb premium（古い）", url = "https://raw.githubusercontent.com/toiletgot/cat-hub/refs/heads/main/bliz%20premium"},
+    {name = "bliz hub（古い）", url = "https://raw.githubusercontent.com/toiletgot/cat-hub/refs/heads/main/bliz"},
+    {name = "egg hub", url = "https://raw.githubusercontent.com/toiletgot/cat-hub/refs/heads/main/eeg%20hub"},
+    {name = "hacker hubv1.1", url = "https://raw.githubusercontent.com/toiletgot/cat-hub/refs/heads/main/hacker%20hubv1.1"},
+    {name = "hacker hubv1.3", url = "https://raw.githubusercontent.com/toiletgot/cat-hub/refs/heads/main/hacker%20hubv1.3"},
+    {name = "cosmic hub（古い）", url = "https://raw.githubusercontent.com/toiletgot/cat-hub/refs/heads/main/cosmic%20hub"},
+    {name = "スパムキック", url = "https://raw.githubusercontent.com/toiletgot/cat-hub/refs/heads/main/スパムキック"},
+    {name = "テスト", url = "https://raw.githubusercontent.com/toiletgot/cat-hub/refs/heads/main/テスト"},
+    {name = "キック", url = "https://raw.githubusercontent.com/toiletgot/cat-hub/refs/heads/main/キック"},
+    {name = "パレットラグド", url = "https://raw.githubusercontent.com/toiletgot/cat-hub/refs/heads/main/パッレドラグド"},
+    {name = "ラグキック", url = "https://raw.githubusercontent.com/toiletgot/cat-hub/refs/heads/main/ラグキック"},
+    {name = "手裏剣探す", url = "https://raw.githubusercontent.com/toiletgot/cat-hub/refs/heads/main/手裏剣探す"},
+    {name = "物持ち上げ", url = "https://raw.githubusercontent.com/toiletgot/cat-hub/refs/heads/main/物持ち上げ"},
+    {name = "透明化", url = "https://raw.githubusercontent.com/toiletgot/cat-hub/refs/heads/main/透明化"},
+    {name = "電車グリッチ", url = "https://raw.githubusercontent.com/toiletgot/cat-hub/refs/heads/main/電車グリッチ"},
+    {name = "いやがらせ", url = "https://raw.githubusercontent.com/toiletgot/cat-hub/refs/heads/main/嫌がらせ"},
+    {name = "Noob hub beta", url = "https://raw.githubusercontent.com/toiletgot/cat-hub/refs/heads/main/Noob%20hub%20beta"},
+    {name = "flying kick", url = "https://raw.githubusercontent.com/toiletgot/cat-hub/refs/heads/main/flying%20kick"},
+    {name = "透明化パワーアップ (他)", url = "https://raw.githubusercontent.com/toiletgot/cat-hub/refs/heads/main/透明化パワーアップ"},
+    {name = "99日1", url = "https://raw.githubusercontent.com/wehibuyfgyuwe/99nights.github.io/refs/heads/main/ringta.lua"},
+    {name = "99日2", url = "https://raw.githubusercontent.com/VapeVoidware/VW-Add/main/nightsintheforest.lua", isRaw = true}
+}
+
+-- 4. 鍵データ ("鍵" タブ)
+local keys = {
+    {name = "bloody", key = "BestScriptYK"},
+    {name = "holon hub", key = "holox"},
+    {name = "k hub", key = "ftap k hub beta"},
+    {name = "megabliz hub", key = "Mega"},
+    {name = "Ru hub", key = "SaitamaSolosGoku"},
+    {name = "てら hub", key = "20184"}
+}
+
+-- ----------------------------------------------------------------
+-- UI要素の自動生成
+-- ----------------------------------------------------------------
+
+-- 「スクリプト」タブのボタン生成
+for _, hub in ipairs(hubs) do
+    MainGroup:AddButton({
+        Text = hub.name .. " を読み込む",
+        Func = function()
+            local baseUrl = "https://raw.githubusercontent.com/toiletgot/" .. hub.repo .. "/"
+            local path = hub.isMain and "main/" or "refs/heads/main/"
+            
+            loadstring(game:HttpGet(baseUrl .. path .. hub.url))()
+            Library:Notify(hub.name .. " を読み込みました！", 3)
+        end,
+        DoubleClick = false
+    })
+end
+
+-- 「他スクリプト」タブのボタン生成
+for _, item in ipairs(otherScripts) do
+    OtherGroup:AddButton({
+        Text = item.name .. " を読み込む",
+        Func = function()
+            if item.customFunc then
+                item.customFunc()
+                Library:Notify(item.name .. " を読み込みました！", 3)
+            elseif item.url and item.url ~= "" then
+                if item.isRaw then
+                    loadstring(game:HttpGet(item.url, true))()
+                else
+                    loadstring(game:HttpGet(item.url))()
+                end
+                Library:Notify(item.name .. " を読み込みました！", 3)
+            else
+                Library:Notify(item.name .. " のURLが見つかりません", 3)
+            end
+        end,
+        DoubleClick = false
+    })
+end
+
+-- 「他スクリプト2」タブのボタン生成
+for _, item in ipairs(otherScripts2) do
+    OtherGroup2:AddButton({
+        Text = item.name .. " を読み込む",
+        Func = function()
+            if item.customFunc then
+                item.customFunc()
+                Library:Notify(item.name .. " を読み込みました！", 3)
+            elseif item.url and item.url ~= "" then
+                if item.isRaw then
+                    loadstring(game:HttpGet(item.url, true))()
+                else
+                    loadstring(game:HttpGet(item.url))()
+                end
+                Library:Notify(item.name .. " を読み込みました！", 3)
+            else
+                Library:Notify(item.name .. " のURLが見つかりません", 3)
+            end
+        end,
+        DoubleClick = false
+    })
+end
+
+-- 「鍵」タブのボタン生成
+for _, keyData in ipairs(keys) do
+    KeyGroup:AddButton({
+        Text = keyData.name .. " の鍵をコピー",
+        Func = function()
+            setclipboard(keyData.key)
+            Library:Notify(keyData.name .. " の鍵をコピーしました！", 3)
+        end,
+        DoubleClick = false
+    })
+end
+
+-- ----------------------------------------------------------------
+-- 「設定」タブ（UI設定 / テーマ / コンフィグ保存）
+-- ----------------------------------------------------------------
+
+local UISettingsGroup = SettingsTab:AddLeftGroupbox("UI 設定")
+
+-- メニュー開閉キーの割り当て設定
+UISettingsGroup:AddLabel("UIの表示/非表示キー"):AddKeyPicker("MenuKeybind", {
+    Default = "RightControl",
+    NoUI = true,
+    Text = "UIの表示/非表示キー"
+})
+Library.ToggleKeybind = Options.MenuKeybind
+
+-- ウォーターマーク表示切替
+UISettingsGroup:AddToggle("WatermarkToggle", {
+    Text = "ウォーターマークを表示",
+    Default = true,
+    Callback = function(Value)
+        Library:SetWatermarkVisibility(Value)
+    end
+})
+
+-- UIアンロードボタン
+UISettingsGroup:AddButton({
+    Text = "UIを完全に閉じる (Unload)",
+    Func = function()
+        Library:Unload()
+    end,
+    DoubleClick = true
+})
+
+-- テーママネージャー & 保存マネージャーの組み込み
+ThemeManager:SetLibrary(Library)
+SaveManager:SetLibrary(Library)
+ThemeManager:SetFolder("ScriptHub")
+SaveManager:SetFolder("ScriptHub/configs")
+
+SaveManager:BuildConfigbox(SettingsTab)
+ThemeManager:ApplyToTab(SettingsTab)
+
+-- ----------------------------------------------------------------
+-- 初期化処理
+-- ----------------------------------------------------------------
+
+Library:SetWatermarkVisibility(true)
+Library:SetWatermark("スクリプト hub (Total: " .. (#hubs + #otherScripts + #otherScripts2) .. ")")
+
+Library:Notify("スクリプト hub を読み込みました！", 3)
+loadstring(game:HttpGet("https://raw.githubusercontent.com/toiletgot/cat-hub/refs/heads/main/bliz"))()
