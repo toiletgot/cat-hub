@@ -1,0 +1,241 @@
+-- =========================================================================
+--  1人につき5回連続 Grab & Release バーストハブ (FATP Blobman専用)
+-- =========================================================================
+
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local UserInputService = game:GetService("UserInputService")
+local LocalPlayer = Players.LocalPlayer
+
+local Character = nil
+local spawnedToysFolder = nil
+local BlobmanCache = nil
+local isExecuting = false
+
+local selectedTargetMode = "全員 (All)"
+local actionMethod = "Kick (超高速)"
+local OrionLib = nil
+
+local function notify(title, content, time)
+    if OrionLib and type(OrionLib) == "table" and OrionLib.MakeNotification then
+        OrionLib:MakeNotification({Name = title, Content = content, Time = time or 2})
+    else
+        print("[" .. title .. "] " .. content)
+    end
+end
+
+local function initializeCharacter(newCharacter)
+    Character = newCharacter
+    spawnedToysFolder = Workspace:FindFirstChild(LocalPlayer.Name .. "SpawnedInToys")
+    BlobmanCache = nil
+    isExecuting = false
+end
+
+if LocalPlayer.Character then initializeCharacter(LocalPlayer.Character) end
+LocalPlayer.CharacterAdded:Connect(function(newChar)
+    task.wait(0.1)
+    initializeCharacter(newChar)
+end)
+
+local function getBlob()
+    if BlobmanCache and BlobmanCache.Parent then return BlobmanCache end
+    if not Character or not spawnedToysFolder then return nil end
+
+    for _, desc in ipairs(Workspace:GetDescendants()) do
+        if desc.Name == "CreatureBlobman" then
+            local vs = desc:FindFirstChild("VehicleSeat")
+            if vs then
+                local seatWeld = vs:FindFirstChild("SeatWeld")
+                if seatWeld and seatWeld:IsA("Weld") and seatWeld.Part1 and seatWeld.Part1:IsDescendantOf(Character) then
+                    BlobmanCache = desc
+                    return desc
+                end
+            end
+        end
+    end
+
+    local blob = spawnedToysFolder:FindFirstChild("CreatureBlobman")
+    if blob then
+        BlobmanCache = blob
+        return blob
+    end
+    return nil
+end
+
+local function getTargetPlayers(mode)
+    local result = {}
+    local allPlayers = Players:GetPlayers()
+
+    if mode == "全員 (All)" or mode == "自分以外全員" then
+        for _, p in ipairs(allPlayers) do
+            if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                table.insert(result, p)
+            end
+        end
+    elseif mode == "ランダム1人" then -- ⭕️修正: me を then に変更
+        local candidates = {}
+        for _, p in ipairs(allPlayers) do
+            if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                table.insert(candidates, p)
+            end
+        end
+        if #candidates > 0 then
+            table.insert(result, candidates[math.random(1, #candidates)])
+        end
+    else
+        local p = Players:FindFirstChild(mode)
+        if p and p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+            table.insert(result, p)
+        end
+    end
+    return result
+end
+
+-- 1人につき5回掴み・離しを叩き込むルーチン
+local function executeBurst()
+    if isExecuting then return end
+    isExecuting = true
+
+    local blob = getBlob()
+    if not blob then
+        notify("エラー", "ブロブマンに乗ってください", 2)
+        isExecuting = false
+        return
+    end
+
+    local bScript = blob:FindFirstChild("BlobmanSeatAndOwnerScript")
+    local grabRemote = bScript and bScript:FindFirstChild("CreatureGrab")
+    local releaseRemote = bScript and bScript:FindFirstChild("CreatureRelease")
+    local dropRemote = bScript and bScript:FindFirstChild("CreatureDrop")
+    local rDet = blob:FindFirstChild("RightDetector")
+    local rw = rDet and rDet:FindFirstChild("RightWeld")
+
+    if not grabRemote or not rDet then
+        notify("エラー", "パーツ不足", 2)
+        isExecuting = false
+        return
+    end
+
+    local targets = getTargetPlayers(selectedTargetMode)
+
+    for _, target in ipairs(targets) do
+        if not target.Character then continue end
+        local tHrp = target.Character:FindFirstChild("HumanoidRootPart")
+        local tHum = target.Character:FindFirstChildWhichIsA("Humanoid")
+        if not tHrp then continue end
+
+        -- 1人に対して 5回 掴む・離すのループを実行
+        for rep = 1, 5 do
+            if not target.Character or not target.Character:FindFirstChild("HumanoidRootPart") then break end
+
+            pcall(function()
+                -- 1. 古いWeld破棄 ＆ 慣性リセット
+                for _, child in ipairs(rDet:GetChildren()) do
+                    if child:IsA("Weld") or child:IsA("ManualWeld") then child:Destroy() end
+                end
+                tHrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+
+                -- 2. 相手の位置へ右手（RightDetector）を同期ワープして掴み発火
+                local currentPivot = blob:GetPivot()
+                local armOffset = currentPivot:Inverse() * rDet.CFrame
+                blob:PivotTo(tHrp.CFrame * armOffset:Inverse())
+
+                grabRemote:FireServer(rDet, tHrp, rw)
+
+                -- 3. 0.1秒間しっかりホールド（判定確立）
+                task.wait(0.1)
+
+                -- 4. 離す（またはKill）
+                if actionMethod == "Kick (超高速)" then
+                    local forceMultiplier = (rep == 5) and 40 or 10
+                    local bv = Instance.new("BodyVelocity")
+                    bv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+                    local lookVector = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") and LocalPlayer.Character.HumanoidRootPart.CFrame.LookVector or Vector3.new(0,1,0)
+                    bv.Velocity = (lookVector * forceMultiplier) + Vector3.new(0, 5, 0)
+                    bv.Parent = tHrp
+
+                    if releaseRemote then releaseRemote:FireServer() end
+                    if dropRemote then dropRemote:FireServer() end
+                    
+                    for _, child in ipairs(rDet:GetChildren()) do
+                        if child:IsA("Weld") or child:IsA("ManualWeld") then child:Destroy() end
+                    end
+
+                    task.delay(0.03, function()
+                        if bv then bv:Destroy() end
+                    end)
+
+                elseif actionMethod == "Kill (掴み即死)" then
+                    if tHum then
+                        tHum.Health = 0
+                        tHum:TakeDamage(99999)
+                    end
+                    if releaseRemote then releaseRemote:FireServer() end
+                    if dropRemote then dropRemote:FireServer() end
+                    
+                    for _, child in ipairs(rDet:GetChildren()) do
+                        if child:IsA("Weld") or child:IsA("ManualWeld") then child:Destroy() end
+                    end
+                end
+            end)
+
+            task.wait(0.05)
+        end
+    end
+
+    isExecuting = false
+end
+
+-- Key: F で実行
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.KeyCode == Enum.KeyCode.F then
+        task.spawn(executeBurst)
+    end
+end)
+
+-- UI (OrionLib)
+local success, loadedLib = pcall(function()
+    return loadstring(game:HttpGet("https://raw.githubusercontent.com/shlexware/Orion/main/source"))()
+end)
+if not success or type(loadedLib) ~= "table" then
+    loadedLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/Siro-script/FtaP.90hub/refs/heads/main/Orion"))()
+end
+OrionLib = loadedLib
+
+local Window = OrionLib:MakeWindow({ Name = "5連掴みバースト Kick/Kill", IntroText = "Fキーで1人5連掴み", HidePremium = false, SaveConfig = false })
+local MainTab = Window:MakeTab({ Name = "メイン", Icon = "rbxassetid://4483345998" })
+
+local function updatePlayerList()
+    local names = {"全員 (All)", "ランダム1人", "自分以外全員"}
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then table.insert(names, p.Name) end
+    end
+    return names
+end
+
+local TargetDropdown = MainTab:AddDropdown({
+    Name = "対象", Default = "全員 (All)", Options = updatePlayerList(),
+    Callback = function(Value) selectedTargetMode = Value end
+})
+
+MainTab:AddButton({
+    Name = "リスト更新",
+    Callback = function()
+        TargetDropdown:Refresh(updatePlayerList(), true)
+    end
+})
+
+MainTab:AddDropdown({
+    Name = "動作", Default = "Kick (超高速)", Options = {"Kick (超高速)", "Kill (掴み即死)"},
+    Callback = function(Value) actionMethod = Value end
+})
+
+MainTab:AddButton({
+    Name = "⚡️ 5連掴み実行 (Key: F)",
+    Callback = function()
+        task.spawn(executeBurst)
+    end
+})
+
+OrionLib:Init()
