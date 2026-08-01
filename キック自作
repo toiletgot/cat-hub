@@ -1,61 +1,51 @@
 -- =========================================================================
---  改善版：超高速バースト＋自分含む全員TP (安定性・パフォーマンス向上)
---  発動: F / 停止: Ctrl+F (モバイルはUIボタン)
+--  掴みサイクル 0.1秒版（GRAB_REPEAT で調整）
+--  発動: F / 停止: Ctrl+F
+--  対象選択（ドロップダウン）・Kill(Direct)・Fling 追加版
 -- =========================================================================
 
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local UserInputService = game:GetService("UserInputService")
-local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
 
--- ---- 設定（調整可能） ----
+-- ---- 設定 ----
 local CONFIG = {
-    GRAB_REPEAT = 5,          -- 1人あたりの掴み連射回数
-    GRAB_INTERVAL = 0.02,     -- 連射間隔（秒）
-    HOLD_TIME = 0.1,          -- 掴みホールド時間（秒）
-    KICK_VELOCITY = 120,      -- キック時の初速
+    GRAB_REPEAT = 6,
+    GRAB_INTERVAL = 0.001,
+    HOLD_TIME = 0.01,
+    KICK_VELOCITY = 1,
+    FLING_VELOCITY = 500,
     TELEPORT_POS = Vector3.new(0, 50, 0),
-    REMOTE_BURST = 3,         -- 1回のFireServer連射数（調整）
+    REMOTE_BURST = 6,
+    USE_NETWORK_OWNER = true,
+    STOP_IF_DISMOUNT = true,
 }
 
--- ---- 状態変数 ----
 local Character = nil
 local isExecuting = false
 local stopRequested = false
 local actionMethod = "Kick (超高速)"
+local targetMode = "全員"            -- "全員" または "プレイヤー選択"
+local selectedPlayerName = nil      -- 選択されたプレイヤー名（一人）
 local OrionLib = nil
 
--- ---- 簡易通知（OrionLibフォールバック付き） ----
 local function notify(title, content, time)
     if OrionLib and type(OrionLib) == "table" and OrionLib.MakeNotification then
         OrionLib:MakeNotification({Name = title, Content = content, Time = time or 2})
     else
         print(string.format("[%s] %s", title, content))
-        -- ゲーム内チャットにも表示（任意）
-        -- game:GetService("StarterGui"):SetCore("SendNotification", {Title=title, Text=content, Duration=time or 2})
     end
 end
 
--- ---- Character初期化 ----
 local function initializeCharacter(newCharacter)
     Character = newCharacter
 end
+if LocalPlayer.Character then task.wait(0.1) initializeCharacter(LocalPlayer.Character) end
+LocalPlayer.CharacterAdded:Connect(function(newChar) task.wait(0.1) initializeCharacter(newChar) end)
 
-if LocalPlayer.Character then 
-    task.wait(0.1)
-    initializeCharacter(LocalPlayer.Character) 
-end
-LocalPlayer.CharacterAdded:Connect(function(newChar)
-    task.wait(0.1)
-    initializeCharacter(newChar)
-end)
-
--- ---- ブロブマン探索（動的・堅牢） ----
 local function getBlob()
     if not Character then return nil end
-
-    -- 1. 専用フォルダ内を検索
     local folder = Workspace:FindFirstChild(LocalPlayer.Name .. "SpawnedInToys")
     if folder then
         for _, child in ipairs(folder:GetChildren()) do
@@ -64,24 +54,18 @@ local function getBlob()
             end
         end
     end
-
-    -- 2. Characterの子孫から検索
     for _, desc in ipairs(Character:GetDescendants()) do
         if desc:IsA("Model") and desc.Name:find("CreatureBlobman") then
             return desc
         end
     end
-
-    -- 3. Workspace全体をスキャン（ただしパフォーマンス注意）
     for _, desc in ipairs(Workspace:GetDescendants()) do
         if desc:IsA("Model") and desc.Name:find("CreatureBlobman") then
             local vs = desc:FindFirstChild("VehicleSeat")
             if vs then
                 local seatWeld = vs:FindFirstChild("SeatWeld")
                 if seatWeld and seatWeld:IsA("Weld") and seatWeld.Part1 then
-                    if seatWeld.Part1:IsDescendantOf(Character) then
-                        return desc
-                    end
+                    if seatWeld.Part1:IsDescendantOf(Character) then return desc end
                 end
             end
         end
@@ -89,57 +73,74 @@ local function getBlob()
     return nil
 end
 
--- ---- 生存ターゲット取得 ----
-local function getAliveTargets()
-    local result = {}
+local function isSeated(blob)
+    if not blob then return false end
+    local seat = blob:FindFirstChild("VehicleSeat")
+    if seat and seat:IsA("VehicleSeat") then
+        return seat.Occupant == Character.Humanoid
+    end
+    return false
+end
+
+-- 対象プレイヤーをフィルタリング
+local function getFilteredTargets()
+    local all = {}
     for _, p in ipairs(Players:GetPlayers()) do
         if p ~= LocalPlayer and p.Character then
             local hrp = p.Character:FindFirstChild("HumanoidRootPart")
             local hum = p.Character:FindFirstChildWhichIsA("Humanoid")
             if hrp and hum and hum.Health > 0 then
-                table.insert(result, p)
+                table.insert(all, p)
             end
         end
     end
-    return result
+
+    if targetMode == "全員" then
+        return all
+    else
+        -- プレイヤー選択モード：selectedPlayerName と一致するプレイヤーのみ
+        if not selectedPlayerName then return {} end
+        local filtered = {}
+        for _, p in ipairs(all) do
+            if string.lower(p.Name) == string.lower(selectedPlayerName) then
+                table.insert(filtered, p)
+                break
+            end
+        end
+        return filtered
+    end
 end
 
--- ---- 全プレイヤー（自分含む）取得 ----
 local function getAllPlayersWithSelf()
     local result = {}
     for _, p in ipairs(Players:GetPlayers()) do
         local hrp = p.Character and p.Character:FindFirstChild("HumanoidRootPart")
-        if hrp then
-            table.insert(result, p)
-        end
+        if hrp then table.insert(result, p) end
     end
     return result
 end
 
--- ---- 安全なテレポート（アンカー＋速度リセット） ----
-local function safeTeleport(hrp, pos)
+local function safeTeleport(hrp, pos, useNetworkOwner)
     if not hrp then return end
+    if useNetworkOwner then pcall(function() hrp:SetNetworkOwner(LocalPlayer) end) end
     local anchor = hrp.Anchored
     hrp.Anchored = true
     hrp.AssemblyLinearVelocity = Vector3.new(0,0,0)
     hrp.AssemblyAngularVelocity = Vector3.new(0,0,0)
     hrp.CFrame = CFrame.new(pos)
-    task.wait(0.02)
+    task.wait(0.01)
     hrp.Anchored = anchor
+    if useNetworkOwner then pcall(function() hrp:SetNetworkOwner(nil) end) end
 end
 
--- ---- 全員テレポート ----
 local function teleportEveryone()
     local all = getAllPlayersWithSelf()
     for _, player in ipairs(all) do
         local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-        if hrp then
-            safeTeleport(hrp, CONFIG.TELEPORT_POS)
-        end
+        if hrp then safeTeleport(hrp, CONFIG.TELEPORT_POS, CONFIG.USE_NETWORK_OWNER) end
     end
 end
 
--- ---- クリーンアップ（Weld削除等） ----
 local function cleanUpWelds(detector)
     if not detector then return end
     for _, child in ipairs(detector:GetChildren()) do
@@ -149,7 +150,6 @@ local function cleanUpWelds(detector)
     end
 end
 
--- ---- メインルーチン（改善版） ----
 local function executeLoop()
     if isExecuting then return end
     isExecuting = true
@@ -176,19 +176,24 @@ local function executeLoop()
     local rw = rDet and rDet:FindFirstChild("RightWeld")
 
     if not grabRemote or not rDet then
-        notify("エラー", "必須パーツ不足 (grabRemote or rDet)", 2)
+        notify("エラー", "必須パーツ不足", 2)
         isExecuting = false
         return
     end
 
-    notify("開始", "改善版ループ開始！", 1.5)
+    local targetDesc = (targetMode == "全員") and "全員" or ("プレイヤー: " .. (selectedPlayerName or "未選択"))
+    notify("開始", string.format("モード: %s  対象: %s", actionMethod, targetDesc), 1.5)
 
     while not stopRequested do
-        local targets = getAliveTargets()
+        if CONFIG.STOP_IF_DISMOUNT and not isSeated(blob) then
+            notify("停止", "降車したため停止", 2)
+            break
+        end
 
-        -- ===== フェーズ1: 掴みバースト =====
+        local targets = getFilteredTargets()
         for _, target in ipairs(targets) do
             if stopRequested then break end
+            if CONFIG.STOP_IF_DISMOUNT and not isSeated(blob) then break end
 
             local tChar = target.Character
             if not tChar then continue end
@@ -196,31 +201,30 @@ local function executeLoop()
             local tHum = tChar:FindFirstChildWhichIsA("Humanoid")
             if not tHrp or not tHum or tHum.Health <= 0 then continue end
 
-            -- 1人あたり CONFIG.GRAB_REPEAT 回
+            if CONFIG.USE_NETWORK_OWNER then
+                pcall(function() tHrp:SetNetworkOwner(LocalPlayer) end)
+            end
+
             for rep = 1, CONFIG.GRAB_REPEAT do
                 if stopRequested then break end
+                if CONFIG.STOP_IF_DISMOUNT and not isSeated(blob) then break end
                 if not target.Character or not tHrp.Parent then break end
 
                 local success, err = pcall(function()
-                    -- 速度リセット
                     tHrp.AssemblyLinearVelocity = Vector3.new(0,0,0)
                     tHrp.AssemblyAngularVelocity = Vector3.new(0,0,0)
 
-                    -- Weldクリーンアップ
                     cleanUpWelds(rDet)
 
-                    -- 右手を密着
                     local armOffset = blob:GetPivot():Inverse() * rDet.CFrame
                     blob:PivotTo(tHrp.CFrame * armOffset:Inverse())
 
-                    -- リモート連射（バースト回数）
                     for _ = 1, CONFIG.REMOTE_BURST do
                         if stopRequested then break end
                         grabRemote:FireServer(rDet, tHrp, rw)
                         task.wait(CONFIG.GRAB_INTERVAL)
                     end
 
-                    -- ホールド
                     local holdStart = tick()
                     while tick() - holdStart < CONFIG.HOLD_TIME do
                         if stopRequested then break end
@@ -229,10 +233,25 @@ local function executeLoop()
 
                     if stopRequested then return end
 
-                    -- 離す or キル
-                    if actionMethod == "Kick (超高速)" then
+                    -- ===== モード分岐 =====
+                    if actionMethod == "Kill (Direct)" then
+                        tHum.Health = 0
+                        tHrp.AssemblyLinearVelocity = Vector3.new(0,0,0)
+                        tHrp.AssemblyAngularVelocity = Vector3.new(0,0,0)
+                    elseif actionMethod == "Fling" then
                         local bv = Instance.new("BodyVelocity")
-                        bv.MaxForce = Vector3.new(1e6, 1e6, 1e6)  -- 適正値
+                        bv.MaxForce = Vector3.new(1e6, 1e6, 1e6)
+                        local randomDir = Vector3.new(
+                            math.random(-10, 10),
+                            math.random(5, 15),
+                            math.random(-10, 10)
+                        ).Unit
+                        bv.Velocity = randomDir * CONFIG.FLING_VELOCITY
+                        bv.Parent = tHrp
+                        task.delay(0.1, function() if bv then bv:Destroy() end end)
+                    else
+                        local bv = Instance.new("BodyVelocity")
+                        bv.MaxForce = Vector3.new(1e6, 1e6, 1e6)
                         local randomDir = Vector3.new(
                             math.random(-10, 10),
                             math.random(8, 18),
@@ -240,55 +259,49 @@ local function executeLoop()
                         ).Unit
                         bv.Velocity = randomDir * CONFIG.KICK_VELOCITY
                         bv.Parent = tHrp
-
-                        if releaseRemote then releaseRemote:FireServer() end
-                        if dropRemote then dropRemote:FireServer() end
-
-                        cleanUpWelds(rDet)
-
-                        task.delay(0.05, function()
-                            if bv then bv:Destroy() end
-                        end)
-
-                    elseif actionMethod == "Kill (掴み即死)" then
-                        tHum.Health = 0
-                        tHum:TakeDamage(99999)
-                        if releaseRemote then releaseRemote:FireServer() end
-                        if dropRemote then dropRemote:FireServer() end
-                        cleanUpWelds(rDet)
+                        task.delay(0.05, function() if bv then bv:Destroy() end end)
                     end
+
+                    if releaseRemote then releaseRemote:FireServer() end
+                    if dropRemote then dropRemote:FireServer() end
+
+                    cleanUpWelds(rDet)
                 end)
 
                 if not success then
                     warn("掴みエラー:", err)
-                    cleanUpWelds(rDet)  -- エラー時もクリーンアップ
+                    cleanUpWelds(rDet)
                 end
 
-                task.wait(0.01)  -- 次の掴みへ
+                task.wait(0.001)
+            end
+
+            if CONFIG.USE_NETWORK_OWNER then
+                pcall(function() tHrp:SetNetworkOwner(nil) end)
             end
         end
 
         if stopRequested then break end
-
-        -- ===== フェーズ2: 全員テレポート =====
-        notify("テレポート", "自分含む全員を移動中...", 0.8)
-        teleportEveryone()
-        task.wait(0.05)
-
-        -- ブロブ自身も移動
-        blob:PivotTo(CFrame.new(CONFIG.TELEPORT_POS))
-        task.wait(0.05)
-
-        if #getAliveTargets() == 0 then
-            notify("終了", "全員死亡しました", 2)
+        if CONFIG.STOP_IF_DISMOUNT and not isSeated(blob) then
+            notify("停止", "降車したためTPをスキップ", 1)
             break
         end
 
-        -- ループ間の短い待機（停止チェック含む）
-        for _ = 1, 3 do
-            if stopRequested then break end
-            task.wait(0.05)
+        if actionMethod == "Fling" then
+            local hrp = Character and Character:FindFirstChild("HumanoidRootPart")
+            if hrp then safeTeleport(hrp, CONFIG.TELEPORT_POS, CONFIG.USE_NETWORK_OWNER) end
+            blob:PivotTo(CFrame.new(CONFIG.TELEPORT_POS))
+        else
+            teleportEveryone()
+            blob:PivotTo(CFrame.new(CONFIG.TELEPORT_POS))
         end
+
+        if #getFilteredTargets() == 0 then
+            notify("終了", "対象プレイヤーが全員死亡/不在", 2)
+            break
+        end
+
+        task.wait()
     end
 
     notify("停止", "ループを終了しました", 1.5)
@@ -298,18 +311,16 @@ end
 -- ========== ホットキー ==========
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed then return end
-
     if input.KeyCode == Enum.KeyCode.F then
         task.spawn(executeLoop)
     end
-
     if input.KeyCode == Enum.KeyCode.F and UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then
         stopRequested = true
         notify("停止", "強制停止リクエスト送信", 1)
     end
 end)
 
--- ===================== OrionLib UI（フォールバック対応） =====================
+-- ===================== OrionLib UI =====================
 local function loadOrion()
     local success, lib = pcall(function()
         return loadstring(game:HttpGet("https://raw.githubusercontent.com/shlexware/Orion/main/source"))()
@@ -326,18 +337,94 @@ OrionLib = loadOrion()
 
 if OrionLib then
     local Window = OrionLib:MakeWindow({
-        Name = "改善版 超高速バースト+TP",
+        Name = "掴み速度調整版 + 対象選択/Kill/Fling",
         IntroText = "F=開始 / Ctrl+F=停止",
         HidePremium = false,
         SaveConfig = false
     })
     local MainTab = Window:MakeTab({ Name = "メイン", Icon = "rbxassetid://4483345998" })
 
+    -- 動作モード
     MainTab:AddDropdown({
-        Name = "動作", Default = "Kick (超高速)", Options = {"Kick (超高速)", "Kill (掴み即死)"},
+        Name = "動作",
+        Default = "Kick (超高速)",
+        Options = {"Kick (超高速)", "Kill (Direct)", "Fling"},
         Callback = function(Value) actionMethod = Value end
     })
 
+    -- 対象モード（全員 or プレイヤー選択）
+    local playerNames = {}
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then
+            table.insert(playerNames, p.Name)
+        end
+    end
+    table.sort(playerNames)
+
+    MainTab:AddDropdown({
+        Name = "対象モード",
+        Default = "全員",
+        Options = {"全員", "プレイヤー選択"},
+        Callback = function(Value)
+            targetMode = Value
+            -- プレイヤー選択モードに切り替わったら、最初のプレイヤーを自動選択（任意）
+            if Value == "プレイヤー選択" and #playerNames > 0 then
+                selectedPlayerName = playerNames[1]
+            else
+                selectedPlayerName = nil
+            end
+        end
+    })
+
+    -- プレイヤー選択用ドロップダウン（常に表示、対象モードが「プレイヤー選択」のときのみ有効）
+    MainTab:AddDropdown({
+        Name = "プレイヤー選択（一人）",
+        Default = (playerNames[1] or "---"),
+        Options = playerNames,
+        Callback = function(Value)
+            selectedPlayerName = Value
+        end
+    })
+
+    -- 速度調整（掴み回数）
+    MainTab:AddSlider({
+        Name = "掴み回数（速度調整）",
+        Min = 2,
+        Max = 20,
+        Default = 6,
+        Increment = 1,
+        Callback = function(Value)
+            CONFIG.GRAB_REPEAT = Value
+            notify("速度変更", string.format("約%.2f秒/人", (CONFIG.REMOTE_BURST*CONFIG.GRAB_INTERVAL+CONFIG.HOLD_TIME+0.001)*Value), 1)
+        end
+    })
+
+    -- Fling速度
+    MainTab:AddSlider({
+        Name = "Fling速度",
+        Min = 100,
+        Max = 2000,
+        Default = 500,
+        Increment = 50,
+        Callback = function(Value)
+            CONFIG.FLING_VELOCITY = Value
+        end
+    })
+
+    -- トグル類
+    MainTab:AddToggle({
+        Name = "降車時自動停止",
+        Default = true,
+        Callback = function(Value) CONFIG.STOP_IF_DISMOUNT = Value end
+    })
+
+    MainTab:AddToggle({
+        Name = "ネットワーク所有権使用",
+        Default = true,
+        Callback = function(Value) CONFIG.USE_NETWORK_OWNER = Value end
+    })
+
+    -- ボタン
     MainTab:AddButton({
         Name = "▶️ ループ開始 (F)",
         Callback = function() task.spawn(executeLoop) end
@@ -353,7 +440,5 @@ if OrionLib then
 
     OrionLib:Init()
 else
-    -- フォールバック: 簡易UI（Fキーで開始/停止）
     notify("注意", "OrionLib読込失敗 → 簡易モード (Fキーで開始/停止)", 3)
-    -- Fキーだけでトグルする簡易モード（必要なら実装）
 end
