@@ -1,0 +1,315 @@
+-- Blobman Kick (追跡＆高速掴みver)
+-- 相手の後ろに回り込んで掴む！超高速！
+
+local OrionLib = loadstring(game:HttpGet(('https://raw.githubusercontent.com/jadpy/suki/refs/heads/main/orion')))()
+local Window = OrionLib:MakeWindow({
+    Name = "Blobman Kick",
+    HidePremium = false,
+    SaveConfig = false,
+    ConfigFolder = "BlobKickConfig"
+})
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local Player = Players.LocalPlayer
+
+local BlobmanTab = Window:MakeTab({
+    Name = "ブロブキック",
+    Icon = "rbxassetid://4483345998",
+    PremiumOnly = false
+})
+
+BlobmanTab:AddSection({ Name = "ブロブマンキック（追跡＆高速ver）" })
+
+local selectedKickPlayer = nil
+local kickLoopEnabled = false
+local kickLoopThread = nil
+
+local function DebugLog(msg)
+    print("[BlobmanKick] " .. msg)
+    OrionLib:MakeNotification({
+        Name = "Debug",
+        Content = msg,
+        Image = "rbxassetid://4483345998",
+        Time = 2
+    })
+end
+
+local function getPlayerList()
+    local list = {}
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= Player then
+            table.insert(list, plr.DisplayName .. " (" .. plr.Name .. ")")
+        end
+    end
+    return list
+end
+
+local function getPlayerFromSelection(selection)
+    if not selection then return nil end
+    local username = selection:match("%((.-)%)")
+    if username then
+        return Players:FindFirstChild(username)
+    end
+    return nil
+end
+
+BlobmanTab:AddDropdown({
+    Name = "プレイヤー選択",
+    Default = "",
+    Options = getPlayerList(),
+    Callback = function(Value)
+        selectedKickPlayer = getPlayerFromSelection(Value)
+        if selectedKickPlayer then
+            DebugLog("ターゲット選択: " .. selectedKickPlayer.Name)
+        end
+    end
+})
+
+BlobmanTab:AddButton({
+    Name = "プレイヤーリスト更新",
+    Callback = function()
+        OrionLib:MakeNotification({
+            Name = "Info",
+            Content = "ドロップダウンを開き直すと更新されます",
+            Image = "rbxassetid://4483345998",
+            Time = 5
+        })
+    end
+})
+
+BlobmanTab:AddToggle({
+    Name = "ブロブキック開始/停止",
+    Default = false,
+    Callback = function(on)
+        if kickLoopThread and not on then
+            kickLoopEnabled = false
+            task.wait(0.2)
+            kickLoopThread = nil
+            DebugLog("停止しました")
+            return
+        end
+
+        if on and not selectedKickPlayer then
+            OrionLib:MakeNotification({
+                Name = "エラー",
+                Content = "先にプレイヤーを選択してください",
+                Image = "rbxassetid://4483345998",
+                Time = 3
+            })
+            return
+        end
+
+        local char = Player.Character
+        if not char then
+            OrionLib:MakeNotification({
+                Name = "エラー",
+                Content = "キャラクターが見つかりません",
+                Image = "rbxassetid://4483345998",
+                Time = 3
+            })
+            return
+        end
+
+        local hum = char:FindFirstChild("Humanoid")
+        if not hum then
+            OrionLib:MakeNotification({
+                Name = "エラー",
+                Content = "Humanoidが見つかりません",
+                Image = "rbxassetid://4483345998",
+                Time = 3
+            })
+            return
+        end
+
+        local seat = hum.SeatPart
+        if on and (not seat or not seat.Parent or seat.Parent.Name ~= "CreatureBlobman") then
+            OrionLib:MakeNotification({
+                Name = "エラー",
+                Content = "ブロブマンに座っている必要があります",
+                Image = "rbxassetid://4483345998",
+                Time = 3
+            })
+            return
+        end
+
+        if not on then
+            kickLoopEnabled = false
+            return
+        end
+
+        kickLoopEnabled = true
+        local target = selectedKickPlayer
+        DebugLog("開始: ターゲット=" .. target.Name)
+
+        kickLoopThread = task.spawn(function()
+            -- ========== リモート取得 ==========
+            local GE = ReplicatedStorage:FindFirstChild("GrabEvents")
+            if not GE then
+                DebugLog("❌ GrabEventsなし")
+                kickLoopEnabled = false
+                return
+            end
+
+            local blob = seat.Parent
+            local blobRoot = blob:FindFirstChild("HumanoidRootPart") or blob.PrimaryPart
+            if not blobRoot then
+                DebugLog("❌ BlobmanRootなし")
+                kickLoopEnabled = false
+                return
+            end
+
+            local SavedPos = blobRoot.CFrame
+            
+            local R_Det = blob:FindFirstChild("RightDetector")
+            if not R_Det then
+                for _, child in ipairs(blob:GetChildren()) do
+                    if child.Name:lower():find("detector") then
+                        R_Det = child
+                        break
+                    end
+                end
+            end
+            if not R_Det then
+                DebugLog("❌ Detectorなし")
+                kickLoopEnabled = false
+                return
+            end
+
+            local R_Weld = R_Det:FindFirstChild("RightWeld") or R_Det:FindFirstChildWhichIsA("Weld")
+            
+            local CreateGrabLine = GE:FindFirstChild("CreateGrabLine")
+            local DestroyGrabLine = GE:FindFirstChild("DestroyGrabLine")
+            local SetNetworkOwner = GE:FindFirstChild("SetNetworkOwner")
+
+            local CG = nil
+            local CD = nil
+            
+            local scriptObj = blob:FindFirstChild("BlobmanSeatAndOwnerScript")
+            if scriptObj then
+                CG = scriptObj:FindFirstChild("CreatureGrab")
+                CD = scriptObj:FindFirstChild("CreatureDrop")
+            end
+            
+            if not CG or not CD then
+                for _, child in ipairs(blob:GetDescendants()) do
+                    if child:IsA("Script") or child:IsA("LocalScript") then
+                        if not CG and child:FindFirstChild("CreatureGrab") then CG = child:FindFirstChild("CreatureGrab") end
+                        if not CD and child:FindFirstChild("CreatureDrop") then CD = child:FindFirstChild("CreatureDrop") end
+                    end
+                end
+            end
+
+            if not CG then
+                DebugLog("❌ CreatureGrabなし")
+                kickLoopEnabled = false
+                return
+            end
+
+            -- ========== メインループ ==========
+            local grabAttempts = 0
+            local successCount = 0
+            local isGrabbing = false
+
+            local connection
+            connection = RunService.RenderStepped:Connect(function()
+                if not kickLoopEnabled then
+                    connection:Disconnect()
+                    return
+                end
+
+                if not target or not target.Parent then
+                    DebugLog("ターゲット消失")
+                    kickLoopEnabled = false
+                    connection:Disconnect()
+                    return
+                end
+
+                local tChar = target.Character
+                if not tChar then return end
+
+                local tRoot = tChar:FindFirstChild("HumanoidRootPart")
+                local tHum = tChar:FindFirstChild("Humanoid")
+                if not tRoot or not tHum or tHum.Health <= 0 then return end
+
+                if not blobRoot or not blobRoot.Parent then
+                    DebugLog("ブロブマン消失")
+                    kickLoopEnabled = false
+                    connection:Disconnect()
+                    return
+                end
+
+                -- ===== 相手の後ろに回り込む =====
+                local targetPos = tRoot.Position
+                local targetLook = tRoot.CFrame.LookVector
+                
+                -- 相手の後ろ（-LookVector方向）にブロブマンを配置
+                local behindPos = targetPos + (-targetLook * 4) + Vector3.new(0, 0, 0)
+                local newCFrame = CFrame.new(behindPos, targetPos)
+                
+                blobRoot.CFrame = newCFrame
+                blobRoot.Velocity = Vector3.zero
+
+                -- ===== 毎フレーム掴む =====
+                grabAttempts = grabAttempts + 1
+                
+                pcall(function()
+                    -- 掴む
+                    if CG and R_Det and tRoot then
+                        CG:FireServer(R_Det, tRoot, R_Weld)
+                        successCount = successCount + 1
+                        isGrabbing = true
+                    end
+
+                    if CreateGrabLine and tRoot then
+                        CreateGrabLine:FireServer(tRoot, Vector3.zero, tRoot.Position, false)
+                    end
+
+                    if SetNetworkOwner and tRoot then
+                        SetNetworkOwner:FireServer(tRoot, tRoot.CFrame)
+                    end
+
+                    -- 離す（キック）
+                    if R_Det then
+                        local weld = R_Det:FindFirstChild("RightWeld") or R_Det:FindFirstChildWhichIsA("Weld")
+                        if weld and CD then
+                            CD:FireServer(weld)
+                        end
+                    end
+
+                    if DestroyGrabLine and tRoot then
+                        DestroyGrabLine:FireServer(tRoot)
+                    end
+
+                    -- もう一度掴む
+                    if CG and R_Det and tRoot then
+                        CG:FireServer(R_Det, tRoot, R_Weld)
+                    end
+
+                    if CreateGrabLine and tRoot then
+                        CreateGrabLine:FireServer(tRoot, Vector3.zero, tRoot.Position, false)
+                    end
+                end)
+
+                if grabAttempts % 30 == 0 then
+                    DebugLog("試行: " .. grabAttempts .. " / 成功: " .. successCount .. " / 掴み中: " .. tostring(isGrabbing))
+                end
+            end)
+
+            while kickLoopEnabled do
+                task.wait(0.5)
+            end
+            
+            if connection then
+                connection:Disconnect()
+            end
+
+            DebugLog("終了 - 試行: " .. grabAttempts .. " / 成功: " .. successCount)
+            kickLoopEnabled = false
+            kickLoopThread = nil
+        end)
+    end
+})
+
+OrionLib:Init()
