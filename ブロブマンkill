@@ -1,0 +1,289 @@
+-- Xeno Executor / 選択プレイヤー永続キル 単体抽出版
+local function fetchScript(url)
+    local success, result = pcall(function()
+        if syn and syn.request then
+            local res = syn.request({Url = url, Method = "GET"})
+            return res.Body
+        else
+            return game:HttpGet(url)
+        end
+    end)
+    if not success then
+        warn("Script fetch failed: " .. tostring(result))
+        return nil
+    end
+    return result
+end
+
+local orionSource = fetchScript("https://raw.githubusercontent.com/jadpy/suki/refs/heads/main/orion")
+if not orionSource then return end
+
+local OrionLib = loadstring(orionSource)()
+
+local Window = OrionLib:MakeWindow({
+    Name = "Blobman Kill",
+    HidePremium = false,
+    SaveConfig = false,
+    ConfigFolder = "OrionTest"
+})
+
+local MainTab = Window:MakeTab({
+    Name = "Blobman Kill",
+    Icon = "rbxassetid://4483345998",
+    PremiumOnly = false
+})
+
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+-- 速度設定（TP_WAIT=0.02）
+local TP_WAIT = 0.02
+local GRAB_WAIT = 0.01
+local RETRY_WAIT = 0.01
+local MAX_RETRIES = 5
+local MAX_BLOBMAN_DISTANCE = 500
+
+-- 状態管理
+local isSelectedKill = false     -- 選択プレイヤー永続キル
+local currentBlobman = nil
+local selectedPlayer = nil
+local selectedKillThread = nil
+
+-- 既に乗っているBlobmanを検出
+local function GetSeatedBlobman()
+    local char = LocalPlayer.Character
+    if not char then return nil end
+    local humanoid = char:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return nil end
+    local seat = humanoid.SeatPart
+    if not seat or not seat:IsA("VehicleSeat") then return nil end
+
+    local obj = seat
+    while obj do
+        if obj:IsA("Model") and obj.Name == "CreatureBlobman" then
+            return obj
+        end
+        obj = obj.Parent
+    end
+    return nil
+end
+
+-- Blobman取得
+local function SpawnBlobman()
+    local seatedBlobman = GetSeatedBlobman()
+    if seatedBlobman then
+        currentBlobman = seatedBlobman
+        return seatedBlobman
+    end
+
+    if currentBlobman and currentBlobman.Parent then
+        local blobmanPos = nil
+        if currentBlobman.PrimaryPart then
+            blobmanPos = currentBlobman.PrimaryPart.Position
+        else
+            local part = currentBlobman:FindFirstChildWhichIsA("BasePart")
+            if part then blobmanPos = part.Position end
+        end
+
+        local character = LocalPlayer.Character
+        local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+        local localPos = rootPart and rootPart.Position
+
+        if blobmanPos and localPos and (blobmanPos - localPos).Magnitude < MAX_BLOBMAN_DISTANCE then
+            local seat = currentBlobman:FindFirstChild("VehicleSeat")
+            if seat then
+                local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+                if humanoid then
+                    seat:Sit(humanoid)
+                    task.wait(0.08)
+                end
+            end
+            return currentBlobman
+        else
+            pcall(function() currentBlobman:Destroy() end)
+            currentBlobman = nil
+        end
+    end
+
+    -- 新規生成
+    local character = LocalPlayer.Character
+    if not character then return nil end
+    local rootPart = character:FindFirstChild("HumanoidRootPart")
+    if not rootPart then return nil end
+
+    local spawnPos = rootPart.CFrame * CFrame.new(0, 0, -5)
+    local success, err = pcall(function()
+        ReplicatedStorage.MenuToys.SpawnToyRemoteFunction:InvokeServer(
+            "CreatureBlobman",
+            spawnPos,
+            Vector3.new(0, 127, 0)
+        )
+    end)
+    if not success then
+        warn("SpawnBlobman remote failed: " .. err)
+        return nil
+    end
+
+    local toyFolderName = LocalPlayer.Name .. "SpawnedInToys"
+    local blobman = nil
+    local startTime = tick()
+    repeat
+        local toyFolder = workspace:FindFirstChild(toyFolderName)
+        if toyFolder then
+            blobman = toyFolder:FindFirstChild("CreatureBlobman")
+        end
+        if blobman then break end
+        task.wait()
+    until tick() - startTime > 2
+
+    if not blobman then return nil end
+
+    currentBlobman = blobman
+
+    local seat = blobman:FindFirstChild("VehicleSeat")
+    if seat then
+        local humanoid = character:FindFirstChildOfClass("Humanoid")
+        if humanoid then
+            seat:Sit(humanoid)
+        end
+    end
+    task.wait(0.08)
+    return blobman
+end
+
+-- キル処理（リトライ）
+local function KillPlayer(targetPlayer)
+    if not targetPlayer or not targetPlayer.Character then return false end
+    local humanoid = targetPlayer.Character:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return false end
+
+    for _ = 1, MAX_RETRIES do
+        local success, err = pcall(function()
+            humanoid.BreakJointsOnDeath = false
+            humanoid:ChangeState(Enum.HumanoidStateType.Dead)
+        end)
+        if success and humanoid.Health <= 0 then
+            return true
+        end
+        task.wait(RETRY_WAIT)
+    end
+    return false
+end
+
+-- Grab & Release
+local function GrabRelease(blobman, targetRoot)
+    if not blobman or not targetRoot then return end
+    pcall(function()
+        local script = blobman:FindFirstChild("BlobmanSeatAndOwnerScript")
+        if script then
+            script.CreatureGrab:FireServer(
+                blobman.LeftDetector,
+                targetRoot,
+                blobman.LeftDetector.LeftWeld
+            )
+            script.CreatureRelease:FireServer(
+                blobman.LeftDetector.LeftWeld
+            )
+        end
+    end)
+end
+
+-- 1プレイヤー処理（共通）※ 生存チェック追加
+local function ProcessPlayer(targetPlayer)
+    if not targetPlayer or not targetPlayer.Character then return false end
+    local humanoid = targetPlayer.Character:FindFirstChildOfClass("Humanoid")
+    if not humanoid or humanoid.Health <= 0 then return false end
+
+    local targetRoot = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not targetRoot then return false end
+
+    local blobman = SpawnBlobman()
+    if not blobman then return false end
+
+    local localChar = LocalPlayer.Character
+    if localChar and localChar:FindFirstChild("HumanoidRootPart") then
+        localChar.HumanoidRootPart.CFrame = targetRoot.CFrame
+        task.wait(TP_WAIT)
+    end
+
+    KillPlayer(targetPlayer)
+
+    for _ = 1, 3 do
+        GrabRelease(blobman, targetRoot)
+        task.wait(GRAB_WAIT)
+    end
+
+    return true
+end
+
+-- 選択プレイヤー永続キルループ
+local function StartSelectedKillLoop()
+    while isSelectedKill do
+        if selectedPlayer then
+            local success, err = pcall(ProcessPlayer, selectedPlayer)
+            if not success then
+                warn("選択プレイヤーキルエラー: " .. tostring(err))
+            end
+        end
+        task.wait(0.05)
+    end
+    selectedKillThread = nil
+end
+
+local function updatePlayerList()
+    local list = {}
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            table.insert(list, player.Name)
+        end
+    end
+    return list
+end
+
+-- =======================
+-- UI コンポーネント
+-- =======================
+
+MainTab:AddDropdown({
+    Name = "プレイヤーを選択",
+    Default = "",
+    Options = updatePlayerList(),
+    Callback = function(Value)
+        selectedPlayer = Players:FindFirstChild(Value)
+    end
+})
+
+MainTab:AddToggle({
+    Name = "選択プレイヤー永続キル",
+    Default = false,
+    Callback = function(Value)
+        isSelectedKill = Value
+        if Value then
+            if not selectedPlayer then
+                warn("先にプレイヤーを選択してください")
+                isSelectedKill = false
+                return
+            end
+            if selectedKillThread then
+                isSelectedKill = false
+                task.wait(0.1)
+                isSelectedKill = true
+            end
+            selectedKillThread = task.spawn(StartSelectedKillLoop)
+        end
+    end
+})
+
+MainTab:AddParagraph({
+    Name = "動作説明",
+    Content = "・選択プレイヤー永続キル：トグルオンで指定プレイヤーを連続キル\n"
+           .. "・死んだプレイヤーはスキップ（無駄なテレポートなし）\n"
+           .. "・場外Blobmanは破棄→新規生成"
+})
+
+OrionLib:Init()
+
+game:BindToClose(function()
+    isSelectedKill = false
+end)
