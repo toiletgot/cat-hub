@@ -1,0 +1,2485 @@
+--[[
+    kiki hub1.0.2
+    ・名称変更、IntroText「よろしく」
+    ・クレジット名「あく」
+    ・掴む機能 → グラフタブに追加
+    ・リスキル系 → リスキル系タブに追加
+    ・アンチ → アンチタブに追加
+    ・ラグサーバー → ラグタブに追加
+    ・全機能を統合
+    ・メイン能力の整列を安定化（綺麗に並ぶように修正）
+]]
+local OrionLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/BlizTBr/scripts/main/Orion%20X"))()
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+local Debris = game:GetService("Debris")
+local player = Players.LocalPlayer
+local camera = workspace.CurrentCamera
+
+-- ========================================================================
+--  基本変数（従来通り）
+-- ========================================================================
+local mode = "None"
+local presentEnabled = false
+local presentSpeed = 25 
+local presentFollowSpeed = 30
+local monoAllEnabled = false
+local monoAllSpeed = 10
+local hoveringObjects = {}
+local objectData = {}
+local tpCoordinates = "0, 50, 0"
+local selectedTargetName = player.Name
+local selectedGiftTarget = player.Name
+local geroAllEnabled = false
+local geroSettings = { wait = 0.1, dist = 3 }
+
+local isSuikomiStopped = false
+local maxObjects = 999
+local comboActive = {true, true, true, true, true, true, true, true}
+local comboMode = {"None", "None", "None", "None", "None", "None", "None", "None"}
+local comboCount = {10, 10, 10, 10, 10, 10, 10, 10}
+local comboSpeed = {0.03, 0.03, 0.03, 0.03, 0.03, 0.03, 0.03, 0.03}
+local comboWidth = {18, 18, 18, 18, 18, 18, 18, 18}
+local comboHeight = {5, 5, 5, 5, 5, 5, 5, 5}
+local comboDensity = {1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0}
+local timeCounters = {0, 0, 0, 0, 0, 0, 0, 0}
+local timeNormal = 0
+
+local settings = {
+    speed = 0.03, width = 18, height = 5, depth = 0,
+    invertDirection = false, density = 1.0,
+    wingSize = 8, wingRange = 100, flapSpeed = 4, flapStrength = 1.5, wingSpread = 1.0,
+    speedEnabled = false, jumpEnabled = false, customSpeed = 100, customJump = 150,
+    flyEnabled = false, flySpeed = 50, infJump = false, fov = 70,
+    espNames = false, espBoxes = false, espTracers = false,
+    gravity = 196.2
+}
+
+local grabEnabled = false
+local chaosEnabled = false
+local slowUpEnabled = false
+local slowDownEnabled = false
+local grabRange = 1000 
+local posX, posY, posZ = 0, 0, 0 
+
+local flyBV = Instance.new("BodyVelocity")
+flyBV.MaxForce = Vector3.new(1,1,1) * math.huge
+local flyBG = Instance.new("BodyGyro")
+flyBG.MaxTorque = Vector3.new(1,1,1) * math.huge
+
+local viewHighlight = Instance.new("Highlight")
+viewHighlight.Name = "kiki_ViewHighlight"
+viewHighlight.FillTransparency = 0.5
+viewHighlight.Parent = nil
+
+-- --- バイパス ---
+local mt = getrawmetatable(game)
+local old_index = mt.__index
+setreadonly(mt, false)
+mt.__index = newcclosure(function(t, k)
+    if not checkcaller() and t:IsA("Humanoid") then
+        if k == "WalkSpeed" then return 16 end
+        if k == "JumpPower" then return 50 end
+    end
+    return old_index(t, k)
+end)
+setreadonly(mt, true)
+
+-- --- 便利関数 ---
+local function getPlayerList()
+    local list = {player.Name}
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= player then table.insert(list, p.Name) end
+    end
+    return list
+end
+
+local function clearObjects()
+    for obj in pairs(hoveringObjects) do
+        pcall(function()
+            if obj and obj.Parent then
+                local parts = obj:IsA("Model") and obj:GetDescendants() or {obj}
+                for _, p in ipairs(parts) do
+                    if p:IsA("BasePart") then p.CanCollide = true end
+                end
+                local root = obj:IsA("Model") and obj.PrimaryPart or obj
+                if root then
+                    if root:FindFirstChild("SyncForce") then root.SyncForce:Destroy() end
+                    if root:FindFirstChild("SyncGyro") then root.SyncGyro:Destroy() end
+                end
+            end
+        end)
+    end
+    hoveringObjects = {}; objectData = {}
+end
+
+local function isPlayerPart(part)
+    if not part or not part.Parent then return false end
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p.Character and part:IsDescendantOf(p.Character) then
+            return true
+        end
+    end
+    return false
+end
+
+local function isSelectableObject(part)
+    if not part:IsA("BasePart") or part.Anchored then return false end
+    if player.Character and part:IsDescendantOf(player.Character) then return false end
+    if isPlayerPart(part) then return false end
+    local ignoreNames = {"Baseplate", "Terrain", "SpawnLocation", "Sky", "Map", "Wall", "Floor", "Grid"}
+    if table.find(ignoreNames, part.Name) then return false end
+    local isOwner = false
+    pcall(function() if part:GetNetworkOwner() == player then isOwner = true end end)
+    if isOwner or part:FindFirstChild("creator") or part:GetAttribute("Creator") == player.UserId then 
+        return true 
+    end
+    if part.Size.X > 30 or part.Size.Y > 30 or part.Size.Z > 30 then
+        return false
+    end
+    return true
+end
+
+local function registerPart(part)
+    if isSuikomiStopped then return end 
+    if not part:IsA("BasePart") or part.Anchored then return end
+    if not isSelectableObject(part) then return end
+    local target = part.Parent:IsA("Model") and part.Parent or part
+    if target:IsA("Model") and target:IsA("Workspace") then target = part end
+    if hoveringObjects[target] then return end
+    hoveringObjects[target] = true
+    objectData[target] = { 
+        seed = math.random() * 100, 
+        phase = math.random() * math.pi * 2, 
+        offsetZ = math.random(-5, 5),
+        randX = math.random(-15, 15),
+        randZ = math.random(-15, 15),
+        fallSpeed = math.random(15, 30),
+        id = tick() + math.random() -- 安定ソート用
+    }
+    local rootPart = part
+    if target:IsA("Model") then
+        if not target.PrimaryPart then target.PrimaryPart = part end
+        rootPart = target.PrimaryPart
+        for _, p in ipairs(target:GetDescendants()) do
+            if p:IsA("BasePart") then
+                p.CanCollide = false
+                p.Anchored = false 
+                if p ~= rootPart and not p:FindFirstChildOfClass("WeldConstraint") then
+                    local weld = Instance.new("WeldConstraint")
+                    weld.Part0 = rootPart
+                    weld.Part1 = p
+                    weld.Parent = p
+                end
+            end
+        end
+    else
+        part.CanCollide = false
+    end
+    local bv = Instance.new("BodyVelocity")
+    bv.Name = "SyncForce"; bv.MaxForce = Vector3.new(1,1,1)*1e7; bv.Velocity = Vector3.zero; bv.Parent = rootPart
+    local bg = Instance.new("BodyGyro")
+    bg.Name = "SyncGyro"; bg.MaxTorque = Vector3.new(1,1,1)*1e7; bg.Parent = rootPart
+    pcall(function() rootPart:SetNetworkOwner(player) end)
+end
+
+-- --- ESP ---
+local function createESP(p)
+    local box = Drawing.new("Square")
+    box.Visible = false; box.Color = Color3.new(1, 1, 1); box.Thickness = 1
+    local name = Drawing.new("Text")
+    name.Visible = false; name.Color = Color3.new(1, 1, 1); name.Size = 16; name.Center = true; name.Outline = true
+    local tracer = Drawing.new("Line")
+    tracer.Visible = false; tracer.Color = Color3.new(1, 1, 1); tracer.Thickness = 1
+    local connection
+    connection = RunService.RenderStepped:Connect(function()
+        if p.Character and p.Character:FindFirstChild("HumanoidRootPart") and p.Character:FindFirstChildOfClass("Humanoid") then
+            local hrp = p.Character.HumanoidRootPart
+            local pos, onScreen = camera:WorldToViewportPoint(hrp.Position)
+            if onScreen then
+                if settings.espBoxes then
+                    local scale = (1 / (camera.CFrame.Position - hrp.Position).Magnitude) * 1000
+                    box.Size = Vector2.new(scale * 1.5, scale * 2)
+                    box.Position = Vector2.new(pos.X - box.Size.X / 2, pos.Y - box.Size.Y / 2); box.Visible = true
+                else box.Visible = false end
+                if settings.espNames then
+                    name.Text = p.Name; name.Position = Vector2.new(pos.X, pos.Y - 40); name.Visible = true
+                else name.Visible = false end
+                if settings.espTracers then
+                    tracer.From = Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y)
+                    tracer.To = Vector2.new(pos.X, pos.Y); tracer.Visible = true
+                else tracer.Visible = false end
+            else box.Visible = false; name.Visible = false; tracer.Visible = false end
+        else
+            box.Visible = false; name.Visible = false; tracer.Visible = false
+            if not p.Parent then box:Remove(); name:Remove(); tracer:Remove(); connection:Disconnect() end
+        end
+    end)
+end
+for _, v in ipairs(Players:GetPlayers()) do if v ~= player then createESP(v) end end
+Players.PlayerAdded:Connect(function(v) if v ~= player then createESP(v) end end)
+
+-- ========================================================================
+--  座標計算関数（従来通り）
+-- ========================================================================
+local function calculatePosition(currentMode, idx, count, hrp, data, timeCounter, lookCFrame, flapWave, invertMult, useWidth, useHeight, useDensity)
+    if currentMode == "None" then return nil, nil end
+    local targetPos
+    local rotCFrame = nil
+    local baseCenter = hrp.Position + (lookCFrame.LookVector * settings.depth)
+    local directionAngle = settings.invertDirection and CFrame.Angles(0, math.pi, 0) or CFrame.identity
+
+    if currentMode == "VerticalOrbit" then
+        local angle = timeCounter + (idx * (math.pi * 2 / count) * useDensity)
+        targetPos = baseCenter + Vector3.new(0, math.sin(angle) * useWidth + useHeight, math.cos(angle) * useWidth)
+        rotCFrame = CFrame.lookAt(targetPos, baseCenter + Vector3.new(0, useHeight, 0)) * directionAngle
+    elseif currentMode == "Square" then
+        local angle = timeCounter + (idx * (math.pi * 2 / count) * useDensity)
+        local rawX, rawZ = math.cos(angle), math.sin(angle)
+        local maxVal = math.max(math.abs(rawX), math.abs(rawZ))
+        local radius = useWidth / maxVal
+        targetPos = baseCenter + Vector3.new(rawX * radius, useHeight, rawZ * radius)
+        rotCFrame = CFrame.lookAt(targetPos, baseCenter) * directionAngle
+    elseif currentMode == "Triangle" then
+        local angle = timeCounter + (idx * (math.pi * 2 / count) * useDensity)
+        local deg = (angle % (math.pi * 2)) / (math.pi * 2) * 3
+        local side = math.floor(deg)
+        local f = deg - side
+        local p1, p2
+        if side == 0 then p1 = Vector3.new(0,0,1) p2 = Vector3.new(math.sqrt(3)/2,0,-0.5)
+        elseif side == 1 then p1 = Vector3.new(math.sqrt(3)/2,0,-0.5) p2 = Vector3.new(-math.sqrt(3)/2,0,-0.5)
+        else p1 = Vector3.new(-math.sqrt(3)/2,0,-0.5) p2 = Vector3.new(0,0,1) end
+        local p = p1:Lerp(p2, f) * useWidth
+        targetPos = baseCenter + Vector3.new(p.X, useHeight, p.Z)
+        rotCFrame = CFrame.lookAt(targetPos, baseCenter) * directionAngle
+    elseif currentMode == "Hexagon" then
+        local angle = timeCounter + (idx * (math.pi * 2 / count) * useDensity)
+        local deg = (angle % (math.pi * 2)) / (math.pi * 2) * 6
+        local side = math.floor(deg)
+        local f = deg - side
+        local r = useWidth
+        local p1Angle = side * (math.pi / 3)
+        local p2Angle = (side + 1) * (math.pi / 3)
+        local p1 = Vector3.new(math.cos(p1Angle),0,math.sin(p1Angle)) * r
+        local p2 = Vector3.new(math.cos(p2Angle),0,math.sin(p2Angle)) * r
+        local p = p1:Lerp(p2, f)
+        targetPos = baseCenter + Vector3.new(p.X, useHeight, p.Z)
+        rotCFrame = CFrame.lookAt(targetPos, baseCenter) * directionAngle
+    elseif currentMode == "Water" then
+        local angle = (idx / count) * math.pi * 2 + timeCounter
+        local waveY = math.sin(timeCounter * 3 + idx * 0.5) * 1.5 + math.cos(timeCounter * 2 + idx) * 0.5
+        local radius = useWidth * 0.7 + math.sin(timeCounter + idx) * 1.0
+        targetPos = baseCenter + Vector3.new(math.cos(angle) * radius, useHeight + waveY, math.sin(angle) * radius)
+        rotCFrame = CFrame.lookAt(targetPos, baseCenter + Vector3.new(0, waveY, 0)) * directionAngle
+    elseif currentMode == "Gourd" then
+        local ratio = idx / count
+        local angle = ratio * math.pi * 2 * 3 + timeCounter
+        local heightLocal = (ratio - 0.5) * (useHeight * 2.5) * useDensity
+        local gourdRadius = math.abs(math.sin(ratio * math.pi)) * (useWidth * 0.4) * useDensity
+        if ratio > 0.5 then gourdRadius = gourdRadius * 0.7 end
+        targetPos = baseCenter + Vector3.new(math.cos(angle) * gourdRadius, useHeight + heightLocal, math.sin(angle) * gourdRadius)
+        rotCFrame = CFrame.Angles(0, angle, 0) * directionAngle
+    elseif currentMode == "Stickman" then
+        local headCut = math.floor(count * 0.2); local bodyCut = math.floor(count * 0.5); local armCut = math.floor(count * 0.75)
+        local localVec = Vector3.zero
+        local ds = useDensity 
+        if idx <= headCut then
+            local angle = (idx / headCut) * math.pi * 2 + timeCounter
+            localVec = Vector3.new(math.cos(angle) * 2 * ds, (6 + math.sin(angle) * 2) * ds, 0)
+        elseif idx <= bodyCut then
+            local progress = (idx - headCut) / (bodyCut - headCut)
+            localVec = Vector3.new(0, (4 - (progress * 5)) * ds, 0)
+        elseif idx <= armCut then
+            local progress = (idx - bodyCut) / (armCut - bodyCut)
+            localVec = Vector3.new((progress - 0.5) * 6 * ds, (2.5 + math.sin(timeCounter)*0.5) * ds, 0)
+        else
+            local progress = (idx - armCut) / (count - armCut)
+            local side = (idx % 2 == 0) and 1 or -1
+            localVec = Vector3.new(side * (progress * 3) * ds, (-1 - (progress * 4)) * ds, 0)
+        end
+        targetPos = (lookCFrame + (lookCFrame.LookVector * settings.depth)):PointToWorldSpace(localVec + Vector3.new(0, useHeight, -5))
+        rotCFrame = lookCFrame * directionAngle
+    elseif currentMode == "ReverseOrbit" then
+        local angle = -timeCounter - (idx * (math.pi * 2 / count) * useDensity)
+        local radius = useWidth * (settings.invertDirection and -1.0 or 1.0)
+        targetPos = baseCenter + Vector3.new(math.cos(angle) * radius, useHeight, math.sin(angle) * radius)
+        rotCFrame = CFrame.lookAt(targetPos, baseCenter) * directionAngle
+    elseif currentMode == "Island" then
+        local goldenRatio = (1 + 5^0.5) / 2
+        local theta = idx * math.pi * 2 * goldenRatio * useDensity + timeCounter
+        local r = math.sqrt(idx / count) * (useWidth * 0.45)
+        local floatY = math.sin(timeCounter * 1.5 + idx * 0.1) * 0.2
+        targetPos = baseCenter + Vector3.new(math.cos(theta) * r, -3.2 + floatY, math.sin(theta) * r)
+        rotCFrame = lookCFrame * CFrame.Angles(0, theta, 0) * directionAngle
+    elseif currentMode == "Star2" then
+        local angle = (idx / count) * math.pi * 2 + (timeCounter * 1.5)
+        local starAngle = (angle * 5) % (math.pi * 2)
+        local r = useWidth * 0.6 * (1 / (2 - math.cos(starAngle)))
+        targetPos = baseCenter + Vector3.new(math.cos(angle) * r, useHeight + math.sin(timeCounter * 2 + idx) * 0.4, math.sin(angle) * r)
+        rotCFrame = CFrame.Angles(0, angle, 0) * directionAngle
+    elseif currentMode == "Heart2" then
+        local angle = (idx / count) * math.pi * 2
+        local pulse = 1 + math.sin(timeCounter * 4) * 0.1
+        local size = useWidth * 0.5 * pulse
+        local x = 16 * math.pow(math.sin(angle), 3)
+        local y = 13 * math.cos(angle) - 5 * math.cos(2*angle) - 2 * math.cos(3*angle) - math.cos(4*angle)
+        x = (x / 16) * size; y = (y / 16) * size
+        local zDist = -5 - (math.sin(idx + timeCounter) * 0.5)
+        targetPos = (lookCFrame + (lookCFrame.LookVector * settings.depth)):PointToWorldSpace(Vector3.new(x, y + useHeight, zDist))
+        rotCFrame = lookCFrame * directionAngle
+    elseif currentMode == "Number" then
+        local digitSegments = {[0]={1,1,1,0,1,1,1},[1]={0,0,1,0,0,1,0},[2]={1,0,1,1,1,0,1},[3]={1,0,1,1,0,1,1},[4]={0,1,1,1,0,1,0},[5]={1,1,0,1,0,1,1},[6]={1,1,0,1,1,1,1},[7]={1,1,1,0,0,1,0},[8]={1,1,1,1,1,1,1},[9]={1,1,1,1,0,1,1}}
+        local segmentLines = {{Vector3.new(-1,2,0),Vector3.new(1,2,0)},{Vector3.new(-1,2,0),Vector3.new(-1,0,0)},{Vector3.new(1,2,0),Vector3.new(1,0,0)},{Vector3.new(-1,0,0),Vector3.new(1,0,0)},{Vector3.new(-1,0,0),Vector3.new(-1,-2,0)},{Vector3.new(1,0,0),Vector3.new(1,-2,0)},{Vector3.new(-1,-2,0),Vector3.new(1,-2,0)}}
+        local currentDigit = math.floor(tick()) % 10
+        local activeSegments = digitSegments[currentDigit]
+        local validLines = {}
+        for sId, active in ipairs(activeSegments) do if active == 1 then table.insert(validLines, segmentLines[sId]) end end
+        local lineCount = #validLines
+        if lineCount > 0 then
+            local pPerLine = math.ceil(count / lineCount)
+            local lineIdx = math.floor((idx - 1) / pPerLine) + 1
+            if lineIdx > lineCount then lineIdx = lineCount end
+            local localIdx = (idx - 1) % pPerLine
+            local ratio = pPerLine > 1 and (localIdx / (pPerLine - 1)) or 0.5
+            local line = validLines[lineIdx]
+            local localVec = line[1]:Lerp(line[2], ratio) * (useWidth * 0.25)
+            localVec = Vector3.new(localVec.X, localVec.Y + useHeight + 3, -6)
+            targetPos = (lookCFrame + (lookCFrame.LookVector * settings.depth)):PointToWorldSpace(localVec)
+            rotCFrame = lookCFrame * directionAngle
+        else targetPos = baseCenter + Vector3.new(0, useHeight, 0) end
+    elseif currentMode == "Cursor" then
+        local progress = (idx / count)
+        local arrowLength = useWidth * 0.5
+        local yOffset = useHeight + 8
+        if progress < 0.4 then
+            local segt = progress / 0.4
+            local fwd = -arrowLength * 0.3 + (segt * arrowLength * 0.6)
+            targetPos = baseCenter + Vector3.new(0, yOffset, 0) + (lookCFrame.LookVector * fwd)
+        else
+            local segt = (progress - 0.4) / 0.6
+            local side = (idx % 2 == 0) and 1 or -1
+            local fwd = arrowLength * 0.3 - (segt * arrowLength * 0.5)
+            local right = side * (segt * arrowLength * 0.4)
+            targetPos = baseCenter + Vector3.new(0, yOffset, 0) + (lookCFrame.LookVector * fwd) + (lookCFrame.RightVector * right)
+        end
+        rotCFrame = lookCFrame * CFrame.Angles(0, math.pi, 0) * directionAngle
+    elseif currentMode == "Poop" then
+        local angle = (idx * 0.5 * useDensity) + (timeCounter * 2)
+        local heightProgress = (idx / count) 
+        local radius = useWidth * 0.4 * (1 - heightProgress * 0.9)
+        local yOffset = (useHeight - 3) + (heightProgress * 6)
+        targetPos = baseCenter + Vector3.new(math.cos(angle) * radius, yOffset, math.sin(angle) * radius)
+        rotCFrame = CFrame.lookAt(targetPos, baseCenter + Vector3.new(0, yOffset, 0)) * directionAngle
+    elseif currentMode == "Flower" then
+        local petalCount = 5
+        if idx <= math.floor(count * 0.15) then
+            local angle = (idx / count) * math.pi * 2 + timeCounter
+            targetPos = baseCenter + Vector3.new(math.cos(angle) * 1.5, useHeight + math.sin(timeCounter * 3 + idx) * 0.5, math.sin(angle) * 1.5)
+        else
+            local angle = (idx / count) * math.pi * 2 + (timeCounter * 0.5)
+            local r = useWidth * 0.5 * math.abs(math.cos(petalCount * angle * 0.5))
+            targetPos = baseCenter + Vector3.new(math.cos(angle) * r, useHeight, math.sin(angle) * r)
+        end
+        rotCFrame = CFrame.Angles(0, timeCounter, 0) * directionAngle
+    elseif currentMode == "Magic3" then
+        local layer = idx % 3
+        local perLayer = math.ceil(count / 3)
+        local layerIdx = math.floor((idx - 1) / perLayer)
+        local layerSpeed = (layerIdx == 0) and 1.5 or ((layerIdx == 1) and -2.2 or 0.8)
+        local angle = (idx / perLayer) * math.pi * 2 + (timeCounter * layerSpeed)
+        local pulse = math.sin(timeCounter * 4 + layerIdx * 2) * 1.2
+        local radius = (useWidth * (0.3 + (layerIdx * 0.3))) + pulse
+        local floatY = math.cos(timeCounter * 2 + layerIdx) * 0.8
+        local yOffset = useHeight + (layerIdx * 4) - 4 + floatY
+        targetPos = baseCenter + Vector3.new(math.cos(angle) * radius, yOffset, math.sin(angle) * radius)
+        rotCFrame = CFrame.lookAt(targetPos, baseCenter + Vector3.new(0, yOffset, 0)) * CFrame.Angles(math.rad(10), angle, 0) * directionAngle
+    elseif currentMode == "CubeArea" then
+        local size = (useWidth * 0.4)
+        local sides = 6
+        local perSide = math.ceil(count / sides)
+        local sideIdx = math.floor((idx - 1) / perSide) + 1
+        local localIdx = (idx - 1) % perSide
+        local t = perSide > 1 and (localIdx / (perSide - 1) * 2 - 1) or 0
+        local u = math.sin(localIdx * 1.5) 
+        local x, y, z = 0, useHeight, 0
+        if sideIdx == 1 then x = size; y = y + t * size; z = u * size
+        elseif sideIdx == 2 then x = -size; y = y + t * size; z = u * size
+        elseif sideIdx == 3 then x = t * size; y = y + size; z = u * size
+        elseif sideIdx == 4 then x = t * size; y = y - size; z = u * size
+        elseif sideIdx == 5 then x = t * size; y = y + u * size; z = size
+        else x = t * size; y = y + u * size; z = -size end
+        targetPos = baseCenter + Vector3.new(x, y - useHeight, z)
+        rotCFrame = CFrame.lookAt(targetPos, baseCenter + Vector3.new(0, y - useHeight, 0)) * directionAngle
+    elseif currentMode == "SphereArea" then
+        local radius = (useWidth * 0.5)
+        local phi = math.acos(1 - 2 * (idx / count))
+        local theta = math.pi * (1 + 5^0.5) * idx + (timeCounter * 0.5)
+        local x = math.cos(theta) * math.sin(phi) * radius
+        local y = math.sin(phi) * math.sin(theta) * radius + useHeight
+        local z = math.cos(phi) * radius
+        targetPos = baseCenter + Vector3.new(x, y - useHeight, z)
+        rotCFrame = CFrame.lookAt(targetPos, baseCenter + Vector3.new(0, y - useHeight, 0)) * directionAngle
+    elseif currentMode == "Shield" then
+        local size = useWidth * 0.4
+        local columns = math.ceil(math.sqrt(count))
+        local row = math.floor((idx - 1) / columns)
+        local col = (idx - 1) % columns
+        local x = (col - (columns / 2)) * (size / columns) * 2
+        local y = (row - (columns / 2)) * (size / columns) * 2 + useHeight
+        local localOffset = Vector3.new(x, y, -4)
+        targetPos = (lookCFrame + (lookCFrame.LookVector * settings.depth)):PointToWorldSpace(localOffset)
+        rotCFrame = lookCFrame * directionAngle
+    elseif currentMode == "Matsuri" then
+        local layer = idx % 3
+        local perLayer = math.ceil(count / 3)
+        local angle = (idx / perLayer) * math.pi * 2 + (timeCounter * 2)
+        local radius = (useWidth * 0.6) + (layer * 3)
+        local yOffset = useHeight + (layer * 2.5) + math.sin(timeCounter * 3 + idx) * 0.5
+        targetPos = baseCenter + Vector3.new(math.cos(angle) * radius, yOffset, math.sin(angle) * radius)
+        rotCFrame = CFrame.lookAt(targetPos, baseCenter + Vector3.new(0, yOffset, 0)) * directionAngle
+    elseif currentMode == "Clock" then
+        local radius = useWidth * 0.5
+        if idx % 3 == 0 then 
+            local t = (idx / count) * (useWidth * 0.4)
+            local angle = timeCounter * 0.5
+            targetPos = baseCenter + Vector3.new(math.cos(angle) * t, useHeight, math.sin(angle) * t)
+        elseif idx % 3 == 1 then 
+            local t = (idx / count) * (useWidth * 0.25)
+            local angle = timeCounter * 0.05
+            targetPos = baseCenter + Vector3.new(math.cos(angle) * t, useHeight, math.sin(angle) * t)
+        else 
+            local angle = (idx / count) * math.pi * 2
+            targetPos = baseCenter + Vector3.new(math.cos(angle) * radius, useHeight, math.sin(angle) * radius)
+        end
+        rotCFrame = CFrame.Angles(math.rad(90), 0, 0) * directionAngle
+    elseif currentMode == "Sun" then
+        local radius = useWidth * 0.4
+        if idx <= math.floor(count * 0.4) then 
+            local phi = math.acos(1 - 2 * (idx / count))
+            local theta = math.pi * (1 + 5^0.5) * idx + timeCounter
+            targetPos = baseCenter + Vector3.new(math.cos(theta)*math.sin(phi)*radius, useHeight + math.sin(phi)*math.cos(theta)*radius, math.cos(phi)*radius)
+        else 
+            local angle = (idx / count) * math.pi * 2 + timeCounter
+            local heatWave = radius + math.sin(timeCounter * 10 + idx) * 3.5
+            local yHeat = useHeight + math.cos(timeCounter * 8 + idx) * 2
+            targetPos = baseCenter + Vector3.new(math.cos(angle) * heatWave, yHeat, math.sin(angle) * heatWave)
+        end
+        rotCFrame = CFrame.Angles(math.random(), math.random(), math.random()) * directionAngle
+    elseif currentMode == "Tree" then
+        local progress = (idx / count)
+        local yOffset = useHeight - 2 + (progress * useHeight * 2.5)
+        local radius = useWidth * 0.5 * (1 - (progress * 0.8)) 
+        local angle = (idx * 1.2 * useDensity) + timeCounter
+        if progress < 0.15 then radius = 1 end 
+        targetPos = baseCenter + Vector3.new(math.cos(angle) * radius, yOffset, math.sin(angle) * radius)
+        rotCFrame = CFrame.lookAt(targetPos, baseCenter + Vector3.new(0, yOffset, 0)) * directionAngle
+    elseif currentMode == "Crown" then
+        local angle = (idx / count) * math.pi * 2 + timeCounter
+        local radius = useWidth * 0.2
+        local yBase = useHeight + 1.0
+        local peak = math.abs(math.sin((idx / count) * math.pi * 5)) * (useHeight * 0.4)
+        targetPos = baseCenter + Vector3.new(math.cos(angle) * radius, yBase + peak, math.sin(angle) * radius)
+        rotCFrame = CFrame.lookAt(targetPos, baseCenter + Vector3.new(0, yBase, 0)) * CFrame.Angles(math.rad(15), 0, 0) * directionAngle
+    elseif currentMode == "Rain" then
+        local topY = useHeight + 18
+        local bottomY = useHeight - 8
+        local rx = data and data.randX or 0
+        local rz = data and data.randZ or 0
+        local fallSpd = data and data.fallSpeed or 20
+        local currentY = topY - (((timeCounter * fallSpd + (idx * 1.5)) % (topY - bottomY)))
+        targetPos = baseCenter + Vector3.new(rx, currentY, rz)
+        rotCFrame = CFrame.Angles(math.rad(180), 0, 0) * directionAngle
+    elseif currentMode == "Wing" then
+        local side = (idx % 2 == 0) and 1 or -1
+        local wingIndex = math.ceil(idx / 2)
+        local maxWingObjects = math.ceil(count / 2)
+        local t = wingIndex / maxWingObjects
+        local spacingFactor = math.clamp(1 / math.log10(maxWingObjects + 3), 0.4, 1.0)
+        local xOffset = (1.8 + (t * settings.wingSize * settings.wingSpread)) * side
+        local yOffset = 1.0 + (t * (settings.wingSize * 0.4) * spacingFactor) + (flapWave * t * spacingFactor)
+        local zOffset = 1.0 + (t * 0.6)
+        targetPos = (lookCFrame + (lookCFrame.LookVector * settings.depth)):PointToWorldSpace(Vector3.new(xOffset, yOffset, zOffset))
+        rotCFrame = CFrame.lookAt(targetPos, targetPos + (lookCFrame.RightVector * side * 5 + lookCFrame.UpVector * flapWave), lookCFrame.UpVector) * directionAngle
+    elseif currentMode == "Heart" then
+        local angle = (idx / count) * math.pi * 2 + (timeCounter * 0.5)
+        local size = useWidth * 0.6
+        local x = 16 * math.pow(math.sin(angle), 3)
+        local y = 13 * math.cos(angle) - 5 * math.cos(2*angle) - 2 * math.cos(3*angle) - math.cos(4*angle)
+        x = (x / 16) * size; y = (y / 16) * size
+        targetPos = (lookCFrame + (lookCFrame.LookVector * settings.depth)):PointToWorldSpace(Vector3.new(x, y + useHeight, 3))
+        rotCFrame = lookCFrame * directionAngle
+    elseif currentMode == "Tornado" then
+        local angle = (timeCounter * 3) + (idx * (math.pi * 2 / math.min(count, 8)) * useDensity)
+        local heightPercent = (idx / count)
+        local radius = (3 + (heightPercent * useWidth))
+        local yOffset = (heightPercent * useHeight * 4) - (useHeight * 1.5)
+        targetPos = baseCenter + Vector3.new(math.cos(angle) * radius, yOffset, math.sin(angle) * radius)
+        rotCFrame = CFrame.lookAt(targetPos, baseCenter + Vector3.new(0, yOffset, 0)) * directionAngle
+    elseif currentMode == "Star" then
+        local angle = (timeCounter * 2) + (idx / count * math.pi * 2 * useDensity)
+        local r = useWidth * (2 / (3 - math.cos(5 * angle)))
+        targetPos = baseCenter + Vector3.new(math.cos(angle) * r, useHeight, math.sin(angle) * r)
+        rotCFrame = CFrame.Angles(0, angle, 0) * directionAngle
+    elseif currentMode == "Lightning" then
+        local angle = (timeCounter * 5) + (idx / count * math.pi * 2)
+        local zig = math.sin(idx * 50) * 3
+        local radius = (useWidth + zig)
+        targetPos = baseCenter + Vector3.new(math.cos(angle) * radius, useHeight + (math.cos(idx*20)*2), math.sin(angle) * radius)
+        rotCFrame = CFrame.Angles(math.random(), math.random(), math.random()) * directionAngle
+    elseif currentMode == "Beam" then
+        local beamIndex = (idx % 6)
+        local step = math.floor(idx / 6)
+        local angle = (beamIndex * (math.pi * 2 / 6)) + (timeCounter * 0.2)
+        local distance = 4 + (step * 3.5)
+        targetPos = baseCenter + Vector3.new(math.cos(angle) * distance, useHeight, math.sin(angle) * distance)
+        rotCFrame = CFrame.lookAt(targetPos, baseCenter + Vector3.new(0, useHeight, 0)) * directionAngle
+    elseif currentMode == "Saturn" then
+        local size = useWidth
+        if idx % 3 == 0 then
+            local t = idx / count * math.pi * 2
+            targetPos = baseCenter + Vector3.new(math.cos(t)*3, useHeight + math.sin(timeCounter+idx)*2, math.sin(t)*3)
+        else
+            local angle = timeCounter + (idx * (math.pi * 2 / count) * useDensity)
+            local ringCFrame = hrp.CFrame * CFrame.Angles(math.rad(15), 0, math.rad(15))
+            targetPos = baseCenter + ringCFrame:VectorToWorldSpace(Vector3.new(math.cos(angle)*size, 0, math.sin(angle)*size))
+        end
+        rotCFrame = CFrame.lookAt(targetPos, baseCenter) * directionAngle
+    elseif currentMode == "Magic2" then
+        local angle = (timeCounter * 2) + (idx / count * math.pi * 2 * useDensity)
+        local radius = (idx % 2 == 0 and useWidth or useWidth * 0.6)
+        targetPos = baseCenter + Vector3.new(math.cos(angle)*radius, useHeight, math.sin(angle)*radius)
+        rotCFrame = hrp.CFrame * CFrame.Angles(0, angle * (idx % 2 == 0 and 1 or -1), 0) * directionAngle
+    elseif currentMode == "MagicCircle" then
+        local angle = (timeCounter * 2) + (idx / count * math.pi * 2 * useDensity)
+        local s = (useWidth / 2)
+        local x = math.sign(math.cos(angle)) * math.pow(math.abs(math.cos(angle)), 0.2) * s
+        local z = math.sign(math.sin(angle)) * math.pow(math.abs(math.sin(angle)), 0.2) * s
+        targetPos = baseCenter + Vector3.new(0, useHeight, 0) + (CFrame.Angles(math.rad(11.5), 0, math.rad(11.5)) * Vector3.new(x, 0, z))
+        rotCFrame = hrp.CFrame * CFrame.Angles(math.rad(11.5), angle, math.rad(11.5)) * directionAngle
+    elseif currentMode == "Orbit" then
+        local angle = timeCounter + (idx * (math.pi * 2 / count) * useDensity)
+        local radius = useWidth
+        targetPos = baseCenter + Vector3.new(math.cos(angle) * radius, useHeight, math.sin(angle) * radius)
+        rotCFrame = CFrame.lookAt(targetPos, baseCenter) * directionAngle
+    elseif currentMode == "Ghost" then
+        local t = timeCounter + (data and data.seed or 0)
+        local radius = useWidth
+        targetPos = baseCenter + Vector3.new(math.sin(t * 0.7) * radius * useDensity, math.cos(t * 0.5) * (radius * 0.5) + useHeight, math.sin(t * 0.3) * radius * useDensity)
+        rotCFrame = targetPos and CFrame.Angles(0.05, 0.05, 0.05) * directionAngle or CFrame.identity
+    elseif currentMode == "Manji" then
+        local b = (idx - 1) % 4
+        local a = (b * math.pi / 2) + (timeCounter * 1.5)
+        local sIdx = math.floor((idx - 1) / 4)
+        local r = math.min(1, sIdx / (math.max(1, count/4) * 0.6 + 0.1))
+        local radius = (r * useWidth) * useDensity
+        targetPos = baseCenter + Vector3.new(math.cos(a) * radius, useHeight, math.sin(a) * radius)
+        rotCFrame = CFrame.lookAt(Vector3.zero, Vector3.new(math.cos(a), 0, math.sin(a))) * directionAngle
+    elseif currentMode == "Divine" then
+        local a = (idx / count) * math.pi * 2 * useDensity + (timeCounter * 0.5)
+        local radius = useWidth
+        targetPos = baseCenter + Vector3.new(math.cos(a) * radius, useHeight + math.sin(timeCounter + idx) * 0.5, math.sin(a) * radius)
+        rotCFrame = CFrame.lookAt(targetPos, baseCenter + Vector3.new(0, 10, 0)) * directionAngle
+    elseif currentMode == "Geometry" then
+        local n = 12 
+        local sA = timeCounter * 1.5 + (data and data.phase or 0)
+        local lA = ((idx - 1) % n / n) * math.pi * 2 * useDensity + (timeCounter * 0.2)
+        local radius = useWidth
+        targetPos = baseCenter + Vector3.new(math.cos(lA) * radius + math.cos(sA) * 5, useHeight, math.sin(lA) * radius + math.sin(sA) * 5)
+        rotCFrame = CFrame.lookAt(targetPos, targetPos + Vector3.new(math.cos(lA), 0, math.sin(lA))) * directionAngle
+    elseif currentMode == "Spin" then
+        local sAngle = (timeCounter * 2) + (idx / count * math.pi * 2)
+        targetPos = baseCenter + Vector3.new(math.cos(sAngle) * useWidth, math.sin(timeCounter * 5 + idx) * (useWidth/2), math.sin(sAngle) * useWidth)
+        rotCFrame = CFrame.lookAt(targetPos, baseCenter) * directionAngle
+    end
+    return targetPos, rotCFrame
+end
+
+-- ========================================================================
+--  メインループ（物理管理） ★ 整列安定化修正済み
+-- ========================================================================
+local frameCounter = 0
+RunService.Stepped:Connect(function()
+    if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+        local hrp = player.Character.HumanoidRootPart
+        local hum = player.Character:FindFirstChildOfClass("Humanoid")
+        if settings.flyEnabled then
+            flyBV.Parent = hrp; flyBG.Parent = hrp; flyBG.CFrame = camera.CFrame
+            flyBV.Velocity = hum.MoveDirection.Magnitude > 0 and camera.CFrame.LookVector * settings.flySpeed or Vector3.new(0, 0.1, 0)
+            hum.PlatformStand = true
+        else
+            flyBV.Parent = nil; flyBG.Parent = nil
+            if hum then
+                hum.PlatformStand = false
+                hum.WalkSpeed = settings.speedEnabled and settings.customSpeed or 16
+                hum.JumpPower = settings.jumpEnabled and settings.customJump or 50
+            end
+        end
+        if hum then hum.Gravity = settings.gravity or 196.2 end
+    end
+    camera.FieldOfView = settings.fov
+end)
+
+UserInputService.JumpRequest:Connect(function()
+    if settings.infJump and player.Character then
+        local hum = player.Character:FindFirstChildOfClass("Humanoid")
+        if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end
+    end
+end)
+
+local timeCounter = 0
+RunService.Heartbeat:Connect(function()
+    timeCounter = timeCounter + settings.speed
+    frameCounter = frameCounter + 1
+
+    if grabEnabled or chaosEnabled or slowUpEnabled or slowDownEnabled then
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p ~= player and p.Character then
+                local hrp = p.Character:FindFirstChild("HumanoidRootPart")
+                if hrp and (hrp.Position - player.Character.HumanoidRootPart.Position).Magnitude <= grabRange then
+                    for _, part in ipairs(p.Character:GetDescendants()) do
+                        if part:IsA("BasePart") then registerPart(part) end
+                    end
+                end
+            end
+        end
+    end
+
+    if not (grabEnabled or chaosEnabled or slowUpEnabled or slowDownEnabled) and frameCounter % 5 == 0 then
+        local targetUser = presentEnabled and Players:FindFirstChild(selectedGiftTarget) or (monoAllEnabled and nil or Players:FindFirstChild(selectedTargetName))
+        if targetUser and targetUser.Character then
+            for _, part in ipairs(targetUser.Character:GetDescendants()) do
+                if part:IsA("BasePart") then registerPart(part) end
+            end
+        end
+        if monoAllEnabled then
+            for _, p in ipairs(Players:GetPlayers()) do
+                if p ~= player and p.Character then
+                    for _, part in ipairs(p.Character:GetDescendants()) do
+                        if part:IsA("BasePart") then registerPart(part) end
+                    end
+                end
+            end
+        end
+    end
+
+    -- ★ 綺麗に整列させるための安定ソート
+    local currentObjects = {}
+    for obj in pairs(objectData) do 
+        if (grabEnabled or chaosEnabled or slowUpEnabled or slowDownEnabled) then
+            if isPlayerPart(obj) or (obj:IsA("Model") and isPlayerPart(obj.PrimaryPart)) then
+                table.insert(currentObjects, obj)
+            end
+        else
+            table.insert(currentObjects, obj)
+        end
+    end
+
+    table.sort(currentObjects, function(a, b)
+        local dataA = objectData[a]
+        local dataB = objectData[b]
+        if dataA and dataB then
+            if dataA.id and dataB.id then
+                return dataA.id < dataB.id
+            elseif dataA.seed and dataB.seed then
+                return dataA.seed < dataB.seed
+            end
+        end
+        return tostring(a) < tostring(b)
+    end)
+
+    if #currentObjects > maxObjects and not (grabEnabled or chaosEnabled or slowUpEnabled or slowDownEnabled) then
+        for i = maxObjects + 1, #currentObjects do
+            local obj = currentObjects[i]
+            if obj and obj.Parent then
+                pcall(function()
+                    local parts = obj:IsA("Model") and obj:GetDescendants() or {obj}
+                    for _, p in ipairs(parts) do if p:IsA("BasePart") then p.CanCollide = true end end
+                    local root = obj:IsA("Model") and obj.PrimaryPart or obj
+                    if root then
+                        if root:FindFirstChild("SyncForce") then root.SyncForce:Destroy() end
+                        if root:FindFirstChild("SyncGyro") then root.SyncGyro:Destroy() end
+                    end
+                end)
+                hoveringObjects[obj] = nil
+                objectData[obj] = nil
+            end
+        end
+        local newList = {}
+        for i = 1, math.min(maxObjects, #currentObjects) do newList[i] = currentObjects[i] end
+        currentObjects = newList
+    end
+
+    if #currentObjects == 0 then return end
+
+    for i, obj in ipairs(currentObjects) do
+        local rootPart = obj:IsA("Model") and obj.PrimaryPart or obj
+        if rootPart and rootPart.Parent and rootPart:FindFirstChild("SyncForce") then
+            local currentPos = rootPart.Position
+            local targetPos = nil
+            local rotCFrame = nil
+            local hrp = nil
+
+            if grabEnabled or chaosEnabled or slowUpEnabled or slowDownEnabled then
+                local targetVel = Vector3.zero
+                if grabEnabled then targetVel = (Vector3.new(posX, posY, posZ) - currentPos) * 30 end
+                if slowUpEnabled then targetVel = targetVel + Vector3.new(0, 8, 0)
+                elseif slowDownEnabled then targetVel = targetVel + Vector3.new(0, -8, 0) end
+                if chaosEnabled then
+                    targetVel = targetVel + Vector3.new(math.random(-100,100), math.random(-100,100), math.random(-100,100))
+                    rootPart.SyncGyro.CFrame = CFrame.Angles(math.rad(math.random(-180,180)), math.rad(math.random(-180,180)), math.rad(math.random(-180,180)))
+                else
+                    rootPart.SyncGyro.CFrame = CFrame.new(currentPos, currentPos + Vector3.new(0,0,1))
+                end
+                rootPart.SyncForce.Velocity = targetVel
+                if math.random() > 0.98 then pcall(function() rootPart:SetNetworkOwner(player) end) end
+                continue
+            end
+
+            local useCombined = (mode == "Combined")
+            local usePresent = presentEnabled
+            local useMono = monoAllEnabled
+
+            if useMono then
+                local others = {}
+                for _, p in ipairs(Players:GetPlayers()) do
+                    if p ~= player and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                        table.insert(others, p.Character.HumanoidRootPart)
+                    end
+                end
+                if #others > 0 then
+                    local targetHRP = others[(i % #others) + 1]
+                    local pAngle = (timeCounter * monoAllSpeed) + (i * 0.5)
+                    targetPos = targetHRP.Position + Vector3.new(math.cos(pAngle)*5, math.sin(timeCounter*3+i)*2, math.sin(pAngle)*5)
+                    rootPart.SyncForce.Velocity = (targetPos - currentPos) * 35
+                end
+            elseif usePresent then
+                local target = Players:FindFirstChild(selectedGiftTarget)
+                if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then
+                    hrp = target.Character.HumanoidRootPart
+                    local pAngle = (timeCounter * (presentSpeed/10)) + (i / #currentObjects * math.pi * 2)
+                    targetPos = hrp.Position + Vector3.new(math.cos(pAngle)*4, math.sin(timeCounter*2+i)*2, math.sin(pAngle)*4)
+                    rootPart.SyncForce.Velocity = (targetPos - currentPos) * presentFollowSpeed
+                end
+            elseif useCombined then
+                local targetPlayer = Players:FindFirstChild(selectedTargetName) or player
+                if targetPlayer and targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                    hrp = targetPlayer.Character.HumanoidRootPart
+                    local lookCFrame = hrp.CFrame
+                    local flapWave = math.sin(tick() * settings.flapSpeed) * settings.flapStrength
+                    local invertMult = settings.invertDirection and -1.0 or 1.0
+                    local placed = false
+                    local runningSum = 0
+                    for cId = 1, 8 do
+                        local prevSum = runningSum
+                        runningSum = runningSum + comboCount[cId]
+                        if i <= runningSum and comboMode[cId] ~= "None" and comboActive[cId] then
+                            local idx = i - prevSum
+                            targetPos, rotCFrame = calculatePosition(comboMode[cId], idx, comboCount[cId], hrp, objectData[obj], timeCounters[cId], lookCFrame, flapWave, invertMult, comboWidth[cId], comboHeight[cId], comboDensity[cId])
+                            placed = true
+                            break
+                        end
+                    end
+                    if not placed then
+                        if obj and obj.Parent then
+                            local parts = obj:IsA("Model") and obj:GetDescendants() or {obj}
+                            for _, p in ipairs(parts) do if p:IsA("BasePart") then p.CanCollide = true end end
+                            if rootPart then
+                                if rootPart:FindFirstChild("SyncForce") then rootPart.SyncForce:Destroy() end
+                                if rootPart:FindFirstChild("SyncGyro") then rootPart.SyncGyro:Destroy() end
+                            end
+                        end
+                        hoveringObjects[obj] = nil; objectData[obj] = nil
+                        targetPos = nil
+                    end
+                end
+            else
+                local targetPlayer = Players:FindFirstChild(selectedTargetName) or player
+                if targetPlayer and targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                    hrp = targetPlayer.Character.HumanoidRootPart
+                    local lookCFrame = hrp.CFrame
+                    local flapWave = math.sin(tick() * settings.flapSpeed) * settings.flapStrength
+                    local invertMult = settings.invertDirection and -1.0 or 1.0
+                    targetPos, rotCFrame = calculatePosition(mode, i, #currentObjects, hrp, objectData[obj], timeCounter, lookCFrame, flapWave, invertMult, settings.width, settings.height, settings.density)
+                end
+            end
+
+            if targetPos then
+                rootPart.SyncForce.Velocity = rootPart.SyncForce.Velocity:Lerp((targetPos - currentPos) * 30, 0.15)
+            end
+            if rotCFrame then
+                rootPart.SyncGyro.CFrame = rotCFrame
+            end
+            if math.random() > 0.98 then pcall(function() rootPart:SetNetworkOwner(player) end) end
+        end
+    end
+
+    for i = 1, 8 do
+        timeCounters[i] = timeCounters[i] + comboSpeed[i]
+    end
+end)
+
+local function setupCharacter(char)
+    char:WaitForChild("HumanoidRootPart")
+    for _, v in ipairs(char:GetDescendants()) do
+        if v:IsA("BasePart") then
+            v.Touched:Connect(function(hit) 
+                local anyEnabled = (mode ~= "None" or presentEnabled or monoAllEnabled or grabEnabled or chaosEnabled or slowUpEnabled or slowDownEnabled)
+                if not anyEnabled then return end
+                if (grabEnabled or chaosEnabled or slowUpEnabled or slowDownEnabled) then
+                    if isPlayerPart(hit) then registerPart(hit) end
+                else
+                    registerPart(hit)
+                end
+            end)
+        end
+    end
+end
+for _, p in ipairs(Players:GetPlayers()) do if p.Character then setupCharacter(p.Character) end p.CharacterAdded:Connect(setupCharacter) end
+
+-- ========================================================================
+--  1. アンチ機能（Anti Gucci Train）  ← 既存
+-- ========================================================================
+local antiGucciActive = false
+local antiGucciConnection = nil
+local safePosition = Vector3.zero
+local restoreFrames = 0
+
+local function startAntiGucci()
+    local char = player.Character or player.CharacterAdded:Wait()
+    local hum = char:WaitForChild("Humanoid")
+    local root = char:WaitForChild("HumanoidRootPart")
+    safePosition = root.Position
+
+    local map = workspace:FindFirstChild("Map")
+    local folder = map and map:FindFirstChild("AlwaysHereTweenedObjects")
+    local train = folder and folder:FindFirstChild("Train")
+    if train then
+        for _, d in ipairs(train:GetDescendants()) do
+            if d:IsA("Seat") then
+                root.CFrame = d.CFrame + Vector3.new(0, 2, 0)
+                d:Sit(hum)
+                break
+            end
+        end
+    end
+
+    hum:GetPropertyChangedSignal("Jump"):Connect(function()
+        if hum.Jump and hum.Sit then
+            restoreFrames = 15
+            safePosition = root.Position
+        end
+    end)
+
+    if antiGucciConnection then antiGucciConnection:Disconnect() end
+    antiGucciConnection = RunService.Heartbeat:Connect(function()
+        if not root or not hum then return end
+        local charEvents = ReplicatedStorage:FindFirstChild("CharacterEvents")
+        local ragdoll = charEvents and charEvents:FindFirstChild("RagdollRemote")
+        if ragdoll then ragdoll:FireServer(root, 0) end
+        if restoreFrames > 0 then
+            root.CFrame = CFrame.new(safePosition)
+            restoreFrames = restoreFrames - 1
+        end
+    end)
+
+    task.spawn(function()
+        while hum.Sit do task.wait(1) end
+        task.wait(0.5)
+        root.CFrame = CFrame.new(safePosition)
+    end)
+end
+
+local function stopAntiGucci()
+    if antiGucciConnection then
+        antiGucciConnection:Disconnect()
+        antiGucciConnection = nil
+    end
+end
+
+-- ========================================================================
+--  2. ブロブマン関連（既存だがUIからは削除済み）
+-- ========================================================================
+local blobman = nil
+local kickTarget = nil
+local spinAngle = 0
+local isSpinning = false
+
+local function findBlobman()
+    for _, v in ipairs(Workspace:GetChildren()) do
+        if v:IsA("Model") and (v.Name:lower():find("blobman") or v.Name:lower():find("creatureblobman")) then
+            blobman = v
+            return v
+        end
+    end
+    local folder = Workspace:FindFirstChild(player.Name .. "SpawnedInToys")
+    if folder then
+        for _, v in ipairs(folder:GetChildren()) do
+            if v:IsA("Model") and v.Name:lower():find("blobman") then
+                blobman = v
+                return v
+            end
+        end
+    end
+    return nil
+end
+
+local function spawnBlobman()
+    local existing = findBlobman()
+    if existing then return existing end
+    local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+    if not root then return nil end
+    local success, result = pcall(function()
+        return ReplicatedStorage.MenuToys.SpawnToyRemoteFunction:InvokeServer("CreatureBlobman", root.CFrame * CFrame.new(0,0,-5), Vector3.zero)
+    end)
+    if success then
+        task.wait(1.0)
+        local blob = findBlobman()
+        if blob then return blob end
+    end
+    local blobEvents = ReplicatedStorage:FindFirstChild("BlobEvents")
+    if blobEvents and blobEvents:FindFirstChild("CreateBlob") then
+        pcall(function() blobEvents.CreateBlob:FireServer() end)
+        task.wait(1.5)
+        local blob = findBlobman()
+        if blob then return blob end
+    end
+    return nil
+end
+
+local function rideBlobman()
+    if not blobman then
+        blobman = spawnBlobman()
+        if not blobman then return false end
+    end
+    local char = player.Character
+    if not char then return false end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not hum then return false end
+    local seat = blobman:FindFirstChild("VehicleSeat")
+    if seat and seat:IsA("VehicleSeat") then
+        hum.Sit = true
+        hum.SeatPart = seat
+        seat:Sit(hum)
+        task.wait(0.2)
+        return true
+    end
+    return false
+end
+
+local function physicalKick(targetRoot, power, upForce)
+    if not targetRoot or not targetRoot.Parent then return false end
+    pcall(function()
+        targetRoot.AssemblyLinearVelocity = Vector3.zero
+        targetRoot.AssemblyAngularVelocity = Vector3.zero
+        targetRoot.CFrame = targetRoot.CFrame + Vector3.new(0, 25, 0)
+        task.wait(0.02)
+        local bv = Instance.new("BodyVelocity")
+        bv.MaxForce = Vector3.new(1e7, 1e7, 1e7)
+        local dir = Vector3.new(math.random(-1,1), 1, math.random(-1,1)).Unit
+        bv.Velocity = dir * (power or 200) + Vector3.new(0, upForce or 150, 0)
+        bv.Parent = targetRoot
+        task.delay(0.3, function() if bv then bv:Destroy() end end)
+        targetRoot.AssemblyLinearVelocity = Vector3.new(math.random(-50,50), upForce or 200, math.random(-50,50))
+    end)
+    return true
+end
+
+local function performKick(target)
+    if not target or not target.Character then return false end
+    local tRoot = target.Character:FindFirstChild("HumanoidRootPart")
+    if not tRoot then return false end
+    if not blobman or not blobman.Parent then
+        blobman = spawnBlobman()
+        task.wait(0.5)
+        rideBlobman()
+    end
+    local grabEvents = ReplicatedStorage:FindFirstChild("GrabEvents")
+    if grabEvents then
+        local setOwner = grabEvents:FindFirstChild("SetNetworkOwner")
+        local createLine = grabEvents:FindFirstChild("CreateGrabLine")
+        local destroyLine = grabEvents:FindFirstChild("DestroyGrabLine")
+        if setOwner and createLine and destroyLine then
+            pcall(function()
+                setOwner:FireServer(tRoot, tRoot.CFrame)
+                createLine:FireServer(tRoot, Vector3.zero, tRoot.Position, false)
+                task.wait(0.05)
+                destroyLine:FireServer(tRoot)
+                if blobman then
+                    local script = blobman:FindFirstChild("BlobmanSeatAndOwnerScript")
+                    if script then
+                        local grab = script:FindFirstChild("CreatureGrab")
+                        local drop = script:FindFirstChild("CreatureDrop")
+                        local detector = blobman:FindFirstChild("RightDetector")
+                        local weld = detector and detector:FindFirstChild("RightWeld")
+                        if grab and detector then grab:FireServer(detector, tRoot, weld) end
+                        task.wait(0.05)
+                        if drop then drop:FireServer() end
+                    end
+                end
+            end)
+        end
+    end
+    physicalKick(tRoot, 250, 180)
+    return true
+end
+
+local function spinKickLoop()
+    if not kickTarget then return end
+    isSpinning = true
+    local savedPos = player.Character and player.Character:FindFirstChild("HumanoidRootPart") and player.Character.HumanoidRootPart.CFrame or CFrame.identity
+    local speed = _G.SpinSpeed or 15
+    while isSpinning do
+        if not blobman or not blobman.Parent then
+            blobman = spawnBlobman()
+            rideBlobman()
+            if not blobman then break end
+        end
+        if not kickTarget or not kickTarget.Character then break end
+        local tRoot = kickTarget.Character:FindFirstChild("HumanoidRootPart")
+        if not tRoot then break end
+        spinAngle = spinAngle + math.rad(speed * 2)
+        if spinAngle > math.pi * 2 then spinAngle = spinAngle - math.pi * 2 end
+        if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+            local myRoot = player.Character.HumanoidRootPart
+            myRoot.CFrame = CFrame.new(savedPos.Position) * CFrame.Angles(0, spinAngle, 0)
+        end
+        local distance = 8
+        local targetPos = savedPos.Position + Vector3.new(math.sin(spinAngle)*distance, 0, math.cos(spinAngle)*distance)
+        tRoot.CFrame = CFrame.new(targetPos)
+        tRoot.AssemblyLinearVelocity = Vector3.zero
+        tRoot.AssemblyAngularVelocity = Vector3.zero
+        physicalKick(tRoot, 100, 50)
+        local grabEvents = ReplicatedStorage:FindFirstChild("GrabEvents")
+        if grabEvents and grabEvents:FindFirstChild("SetNetworkOwner") then
+            pcall(function() grabEvents.SetNetworkOwner:FireServer(tRoot, tRoot.CFrame) end)
+        end
+        RunService.Heartbeat:Wait()
+    end
+end
+
+local kickAllActive = false
+local kickAllTargets = {}
+local kickAllWhitelistFriends = false
+local kickAllPlayerStatus = {}
+
+Players.PlayerRemoving:Connect(function(plr)
+    if kickAllPlayerStatus[plr.UserId] == "Kicked" then
+        OrionLib:MakeNotification({Name = "キックしました", Content = plr.DisplayName, Image = "rbxassetid://3944680095", Time = 5})
+    end
+    kickAllPlayerStatus[plr.UserId] = nil
+end)
+
+local function kickAllFunction()
+    if kickAllActive then return end
+    kickAllActive = true
+    local allPlayers = {}
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= player then
+            local isFriend = false
+            if kickAllWhitelistFriends then
+                pcall(function() isFriend = player:IsFriendsWith(p.UserId) end)
+            end
+            if not isFriend then table.insert(allPlayers, p) end
+        end
+    end
+    if #allPlayers == 0 then
+        OrionLib:MakeNotification({Name = "対象なし", Content = "キックできるプレイヤーがいません", Time = 3})
+        kickAllActive = false
+        return
+    end
+    for _, p in ipairs(allPlayers) do kickAllPlayerStatus[p.UserId] = "Targeting" end
+
+    local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+    if root then
+        local spawnPos = root.CFrame * CFrame.new(0,0,-5)
+        ReplicatedStorage.MenuToys.SpawnToyRemoteFunction:InvokeServer("CreatureBlobman", spawnPos, Vector3.new(0,127,0))
+    end
+    task.wait(0.5)
+    local toyFolder = Workspace:FindFirstChild(player.Name .. "SpawnedInToys")
+    local blob = toyFolder and toyFolder:FindFirstChild("CreatureBlobman")
+    if not blob then kickAllActive = false; return end
+    local seat = blob:FindFirstChild("VehicleSeat")
+    if seat and player.Character then seat:Sit(player.Character:FindFirstChildOfClass("Humanoid")) end
+    task.wait(0.3)
+    local myRoot = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+    if not myRoot then kickAllActive = false; return end
+
+    for _, target in ipairs(allPlayers) do
+        local tRoot = target.Character and target.Character:FindFirstChild("HumanoidRootPart")
+        if tRoot then
+            myRoot.CFrame = tRoot.CFrame
+            task.wait(0.02)
+            for i = 1, 5 do
+                pcall(function()
+                    blob.BlobmanSeatAndOwnerScript.CreatureGrab:FireServer(blob.LeftDetector, tRoot, blob.LeftDetector.LeftWeld)
+                    blob.BlobmanSeatAndOwnerScript.CreatureRelease:FireServer(blob.LeftDetector.LeftWeld)
+                end)
+                if i < 5 then task.wait(0.08) end
+            end
+        end
+    end
+    myRoot.CFrame = CFrame.new(0, 100, 0)
+    task.wait(0.1)
+    for _, part in ipairs(blob:GetDescendants()) do if part:IsA("BasePart") then pcall(function() part.Anchored = true end) end end
+    task.wait(0.1)
+    local radius = 15
+    for i, target in ipairs(allPlayers) do
+        local tRoot = target.Character and target.Character:FindFirstChild("HumanoidRootPart")
+        if tRoot then
+            local angle = math.rad((i-1)*(360/#allPlayers))
+            tRoot.CFrame = CFrame.new(radius*math.cos(angle), 110, radius*math.sin(angle))
+        end
+    end
+    task.wait(0.1)
+    for _ = 1, 2 do
+        for _, target in ipairs(allPlayers) do
+            local tRoot = target.Character and target.Character:FindFirstChild("HumanoidRootPart")
+            if tRoot then
+                task.spawn(function()
+                    pcall(function()
+                        ReplicatedStorage.GrabEvents.SetNetworkOwner:FireServer(tRoot, CFrame.new(tRoot.Position))
+                        ReplicatedStorage.GrabEvents.DestroyGrabLine:FireServer(tRoot)
+                    end)
+                end)
+            end
+        end
+        task.wait(0.1)
+    end
+    task.wait(0.3)
+    for _, target in ipairs(allPlayers) do
+        local tRoot = target.Character and target.Character:FindFirstChild("HumanoidRootPart")
+        if tRoot then
+            task.spawn(function()
+                pcall(function()
+                    blob.BlobmanSeatAndOwnerScript.CreatureGrab:FireServer(blob.LeftDetector, tRoot, blob.LeftDetector.LeftWeld)
+                    blob.BlobmanSeatAndOwnerScript.CreatureGrab:FireServer(blob.RightDetector, tRoot, blob.RightDetector.RightWeld)
+                end)
+            end)
+        end
+    end
+    task.wait(0.1)
+    for _, target in ipairs(allPlayers) do
+        if target and target.Parent == Players then kickAllPlayerStatus[target.UserId] = "Kicked" end
+    end
+    myRoot.CFrame = CFrame.new(0, -50000, 0)
+    for _, part in ipairs(blob:GetDescendants()) do if part:IsA("BasePart") then pcall(function() part.Anchored = false end) end end
+    task.wait(1)
+    kickAllActive = false
+end
+
+-- ========================================================================
+--  3. UFO機能（既存）
+-- ========================================================================
+local ufoHitboxes = {}
+local ufoSpinEnabled = false
+local ufoFollowEnabled = false
+local ufoSpinSpeed = 6
+local ufoRadius = 15
+local ufoHeight = 5
+local ufoAngle = 0
+
+local function spawnShurikens(count)
+    local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+    local spawnCFrame = root.CFrame * CFrame.new(0, 3, 0)
+    for i = 1, count do
+        pcall(function()
+            ReplicatedStorage.MenuToys.SpawnToyRemoteFunction:InvokeServer("NinjaShuriken", spawnCFrame, Vector3.zero)
+        end)
+        task.wait(0.05)
+    end
+end
+
+local function ufoSteal(ufoName)
+    local ufo = Workspace.Map.AlwaysHereTweenedObjects[ufoName].Object.ObjectModel.Body
+    if not ufo then return end
+    spawnShurikens(10)
+    task.wait(1)
+    local folder = Workspace:FindFirstChild(player.Name .. "SpawnedInToys")
+    for i = 1, 10 do
+        local shur = folder and folder:FindFirstChild("NinjaShuriken")
+        if shur then
+            shur.Name = i
+            pcall(function() ReplicatedStorage.PlayerEvents.StickyPartEvent:FireServer(shur.StickyPart, ufo, CFrame.Angles(0,0,0)) end)
+        end
+    end
+    for i = 1, 100 do
+        local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+        if root then
+            root.CFrame = ufo.CFrame
+            pcall(function() ReplicatedStorage.GrabEvents.SetNetworkOwner:FireServer(ufo, ufo.CFrame) end)
+        end
+        task.wait()
+    end
+    local obj = Workspace.Map.AlwaysHereTweenedObjects[ufoName].Object
+    local body = obj.ObjectModel.Body
+    local attach = body:FindFirstChild("ObjectModelAttachment")
+    if attach then attach:Destroy() end
+    obj.FollowThisPart.AlignPosition.Attachment0 = nil
+    obj.FollowThisPart.AlignOrientation.Attachment0 = nil
+end
+
+local function getUfoHitboxes()
+    local folder = Workspace.Map.AlwaysHereTweenedObjects.OuterUFO.Object.ObjectModel
+    ufoHitboxes = {}
+    for _, child in ipairs(folder:GetChildren()) do
+        if child.Name:match("Hitbox") then
+            table.insert(ufoHitboxes, child)
+        end
+    end
+end
+
+-- ========================================================================
+--  4. 電車（既存）
+-- ========================================================================
+local trainAutomationEnabled = false
+local trainAutomationConnection = nil
+local trainOccupiedSeats = {}
+local trainFirstTimeRiders = {}
+local trainAllSeats = {}
+local trainTargetItemName = "InstrumentWoodwindOcarina"
+local trainSecondItemName = "FoodMayonnaise"
+
+local function getPlayerCharacter()
+    local char = Workspace:FindFirstChild(player.Name .. "_sub")
+    if not char then char = Workspace:FindFirstChild(player.Name) end
+    if not char then char = player.Character end
+    return char
+end
+
+local function getAllItems()
+    local items = {}
+    for _, obj in pairs(Workspace:GetDescendants()) do
+        if obj:IsA("RemoteFunction") and obj.Name == "HoldItemRemoteFunction" then
+            local holdPart = obj.Parent
+            if holdPart and holdPart.Name == "HoldPart" then
+                local item = holdPart.Parent
+                if item then
+                    local dropRemote = holdPart:FindFirstChild("DropItemRemoteFunction")
+                    table.insert(items, {
+                        Name = item.Name,
+                        Object = item,
+                        RemoteFunction = obj,
+                        DropRemoteFunction = dropRemote,
+                    })
+                end
+            end
+        end
+    end
+    return items
+end
+
+local function holdItem(itemData)
+    local char = getPlayerCharacter()
+    if char and itemData.RemoteFunction then
+        pcall(function() itemData.RemoteFunction:InvokeServer(itemData.Object, char) end)
+        return true
+    end
+    return false
+end
+
+local function useItem(itemData)
+    local useRemote = ReplicatedStorage:FindFirstChild("HoldEvents")
+    if useRemote and useRemote:FindFirstChild("Use") then
+        pcall(function() useRemote.Use:FireServer(itemData.Object) end)
+        return true
+    end
+    return false
+end
+
+local function dropItemAtPlayer(itemData)
+    if itemData.DropRemoteFunction then
+        local char = getPlayerCharacter()
+        local root = char and char:FindFirstChild("HumanoidRootPart")
+        if root then
+            pcall(function()
+                itemData.DropRemoteFunction:InvokeServer(itemData.Object, root.CFrame * CFrame.new(0, 900, 0), Vector3.new(0,900,0))
+            end)
+            return true
+        end
+    end
+    return false
+end
+
+local function spawnTrainItem(itemName)
+    local char = getPlayerCharacter()
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if root then
+        pcall(function()
+            ReplicatedStorage.MenuToys.SpawnToyRemoteFunction:InvokeServer(itemName, CFrame.new(root.Position + Vector3.new(0,900,0)), Vector3.zero)
+        end)
+    end
+end
+
+local function findTrainItem(name)
+    local items = getAllItems()
+    for _, item in ipairs(items) do
+        if item.Name == name then return item end
+    end
+    return nil
+end
+
+local function performTrainAutoAction(isFirstTime)
+    if isFirstTime then
+        local target = findTrainItem(trainTargetItemName)
+        if not target then spawnTrainItem(trainTargetItemName) end
+        local second = findTrainItem(trainSecondItemName)
+        if not second then spawnTrainItem(trainSecondItemName) end
+        task.wait(1.0)
+        target = findTrainItem(trainTargetItemName)
+        second = findTrainItem(trainSecondItemName)
+        if target then holdItem(target); task.wait(0.1) end
+        if second then holdItem(second); task.wait(0.1) end
+        if target then useItem(target); task.wait(0.1); dropItemAtPlayer(target); task.wait(0.1) end
+        if second then dropItemAtPlayer(second) end
+    else
+        local target = findTrainItem(trainTargetItemName)
+        if not target then spawnTrainItem(trainTargetItemName); task.wait(1.0); target = findTrainItem(trainTargetItemName) end
+        if target then
+            if holdItem(target) then task.wait(0.3); dropItemAtPlayer(target) end
+        end
+    end
+end
+
+local function setupSeat(seat)
+    local conn = seat:GetPropertyChangedSignal("Occupant"):Connect(function()
+        local hum = seat.Occupant
+        if hum then
+            local char = hum.Parent
+            local plr = Players:GetPlayerFromCharacter(char)
+            if plr then
+                trainOccupiedSeats[seat] = plr
+                local isFirst = not trainFirstTimeRiders[plr.UserId]
+                if isFirst then trainFirstTimeRiders[plr.UserId] = true end
+                if trainAutomationEnabled then performTrainAutoAction(isFirst) end
+            end
+            local sitConn
+            sitConn = hum:GetPropertyChangedSignal("Sit"):Connect(function()
+                if not hum.Sit and plr then
+                    trainOccupiedSeats[seat] = nil
+                    if sitConn then sitConn:Disconnect() end
+                    if trainAutomationEnabled then performTrainAutoAction(false) end
+                end
+            end)
+        end
+    end)
+    trainAllSeats[seat] = conn
+end
+
+local function startSeatDetection()
+    for _, obj in pairs(Workspace:GetDescendants()) do
+        if obj:IsA("Seat") and obj.Name == "Seat" then setupSeat(obj) end
+    end
+    Workspace.DescendantAdded:Connect(function(obj)
+        if obj:IsA("Seat") and obj.Name == "Seat" then setupSeat(obj) end
+    end)
+end
+
+local function sitOnRandomSeat()
+    local empty = {}
+    for seat, _ in pairs(trainAllSeats) do
+        if seat and seat.Parent and not seat.Occupant then table.insert(empty, seat) end
+    end
+    if #empty == 0 then return end
+    local seat = empty[math.random(1, #empty)]
+    local char = getPlayerCharacter()
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if hum and root then
+        hum.Sit = false; task.wait(0.2)
+        root.CFrame = seat.CFrame + Vector3.new(0,3,0); task.wait(0.2)
+        seat:Sit(hum)
+    end
+end
+
+local function startTrainAutomation()
+    if trainAutomationConnection then trainAutomationConnection:Disconnect() end
+    local char = getPlayerCharacter()
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if hum then
+        trainAutomationConnection = hum.Seated:Connect(function(active, seat)
+            if trainAutomationEnabled then
+                if active then task.wait(0.1); performTrainAutoAction(true)
+                else task.wait(0.1); performTrainAutoAction(false) end
+            end
+        end)
+        if hum.SeatPart then performTrainAutoAction(true) end
+    end
+end
+
+-- ========================================================================
+--  5. バリア破壊（既存）
+-- ========================================================================
+local barrierRunning = false
+local barrierNoTPRunning = false
+
+local function executeBarrierBreak()
+    if barrierRunning then return false end
+    barrierRunning = true
+    local success, err = pcall(function()
+        local plotItems = Workspace:FindFirstChild("PlotItems")
+        if plotItems and plotItems:FindFirstChild("PlayersInPlots") and plotItems.PlayersInPlots:FindFirstChild(player.Name) then
+            OrionLib:MakeNotification({Name = "エラー", Content = "家の外で実行してください", Time = 3})
+            return false
+        end
+        if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then return false end
+        local hum = player.Character:FindFirstChildOfClass("Humanoid")
+        if not hum then return false end
+        local origSpeed = hum.WalkSpeed
+        local origPos = player.Character.HumanoidRootPart.CFrame
+        hum.WalkSpeed = 0
+        if not ReplicatedStorage:FindFirstChild("MenuToys") then hum.WalkSpeed = origSpeed; return false end
+        ReplicatedStorage.MenuToys.SpawnToyRemoteFunction:InvokeServer("InstrumentWoodwindOcarina", CFrame.new(184.148834, -5.54824972, 498.136749), Vector3.new(0,34,0))
+        task.wait(0.4)
+        local folder = Workspace:FindFirstChild(player.Name .. "SpawnedInToys")
+        local ocarina = folder and folder:FindFirstChild("InstrumentWoodwindOcarina")
+        if not ocarina or not ocarina:FindFirstChild("HoldPart") then hum.WalkSpeed = origSpeed; return false end
+        ocarina.HoldPart.HoldItemRemoteFunction:InvokeServer(ocarina, Workspace[player.Name])
+        if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+            player.Character.HumanoidRootPart.CFrame = CFrame.new(304.06, 25.77, 488.54)
+        end
+        task.wait(0.21)
+        if folder and folder:FindFirstChild("InstrumentWoodwindOcarina") then
+            ReplicatedStorage.MenuToys.DestroyToy:FireServer(folder.InstrumentWoodwindOcarina)
+        end
+        if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+            player.Character.HumanoidRootPart.CFrame = origPos
+        end
+        task.wait(0.7)
+        ReplicatedStorage.MenuToys.SpawnToyRemoteFunction:InvokeServer("Campfire", CFrame.new(257.638672, -5.57392979, 450.103638), Vector3.new(0,161.972,0))
+        task.wait(0.7)
+        local folder2 = Workspace:FindFirstChild(player.Name .. "SpawnedInToys")
+        if folder2 and folder2:FindFirstChild("Campfire") then
+            hum.WalkSpeed = origSpeed
+            OrionLib:MakeNotification({Name = "成功", Content = "Barrier破壊に成功！", Time = 5})
+            return true
+        end
+        hum.WalkSpeed = origSpeed
+        return false
+    end)
+    if not success then
+        local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+        if hum then hum.WalkSpeed = 16 end
+        OrionLib:MakeNotification({Name = "エラー", Content = tostring(err), Time = 3})
+    end
+    barrierRunning = false
+    return success
+end
+
+local function executeBarrierBreakNoTP()
+    if barrierNoTPRunning then return false end
+    barrierNoTPRunning = true
+    local success, err = pcall(function()
+        local plotItems = Workspace:FindFirstChild("PlotItems")
+        if plotItems and plotItems:FindFirstChild("PlayersInPlots") and plotItems.PlayersInPlots:FindFirstChild(player.Name) then
+            OrionLib:MakeNotification({Name = "エラー", Content = "家の外で実行してください", Time = 3})
+            return false
+        end
+        if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then return false end
+        local hum = player.Character:FindFirstChildOfClass("Humanoid")
+        if not hum then return false end
+        hum.WalkSpeed = 0
+        if not ReplicatedStorage:FindFirstChild("MenuToys") then hum.WalkSpeed = 16; return false end
+        ReplicatedStorage.MenuToys.SpawnToyRemoteFunction:InvokeServer("InstrumentWoodwindOcarina", CFrame.new(184.148834, -5.54824972, 498.136749), Vector3.new(0,34,0))
+        task.wait(0.4)
+        local folder = Workspace:FindFirstChild(player.Name .. "SpawnedInToys")
+        local ocarina = folder and folder:FindFirstChild("InstrumentWoodwindOcarina")
+        if not ocarina or not ocarina:FindFirstChild("HoldPart") then hum.WalkSpeed = 16; return false end
+        ocarina.HoldPart.HoldItemRemoteFunction:InvokeServer(ocarina, Workspace[player.Name])
+        task.wait(0.2)
+        ocarina.HoldPart.DropItemRemoteFunction:InvokeServer(ocarina, CFrame.new(304.06, 25.77, 488.54), Vector3.new(0,70.486,0))
+        task.wait(0.1)
+        if folder and folder:FindFirstChild("InstrumentWoodwindOcarina") then
+            ReplicatedStorage.MenuToys.DestroyToy:FireServer(folder.InstrumentWoodwindOcarina)
+        end
+        task.wait(1.5)
+        ReplicatedStorage.MenuToys.SpawnToyRemoteFunction:InvokeServer("Campfire", CFrame.new(257.638672, -5.57392979, 450.103638), Vector3.new(0,161.972,0))
+        task.wait(1)
+        local folder2 = Workspace:FindFirstChild(player.Name .. "SpawnedInToys")
+        if folder2 and folder2:FindFirstChild("Campfire") then
+            hum.WalkSpeed = 16
+            OrionLib:MakeNotification({Name = "成功", Content = "Barrier破壊に成功！", Time = 3})
+            return true
+        end
+        hum.WalkSpeed = 16
+        return false
+    end)
+    if not success then
+        local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+        if hum then hum.WalkSpeed = 16 end
+        OrionLib:MakeNotification({Name = "エラー", Content = tostring(err), Time = 3})
+    end
+    barrierNoTPRunning = false
+    return success
+end
+
+-- ========================================================================
+--  6. ラインラグ・ネットスパム（既存）
+-- ========================================================================
+local lineLagThread = nil
+local lineLagRunning = false
+
+local function startLineLag()
+    if lineLagRunning then return end
+    lineLagRunning = true
+    lineLagThread = coroutine.create(function()
+        local grabEvents = ReplicatedStorage:FindFirstChild("GrabEvents")
+        if not grabEvents then return end
+        local createLine = grabEvents:FindFirstChild("CreateGrabLine")
+        if not createLine then return end
+        while lineLagRunning do
+            local spawnLoc = Workspace:FindFirstChild("SpawnLocation") or Workspace:FindFirstChild("Spawn") or (player.Character and player.Character:FindFirstChild("HumanoidRootPart"))
+            if spawnLoc then
+                local rx, rz = math.random(-1e9, 1e9), math.random(-1e9, 1e9)
+                local dirs = {CFrame.new(rx,0,rz), CFrame.new(-rx,0,-rz), CFrame.new(rx,0,-rz), CFrame.new(-rx,0,rz)}
+                for _, pos in ipairs(dirs) do pcall(function() createLine:FireServer(spawnLoc, pos) end) end
+            end
+            task.wait()
+        end
+    end)
+    coroutine.resume(lineLagThread)
+end
+
+local function stopLineLag()
+    lineLagRunning = false
+    if lineLagThread then coroutine.close(lineLagThread); lineLagThread = nil end
+end
+
+local netSpamRunning = false
+local netSpamTask = nil
+
+local function startNetSpam()
+    if netSpamRunning then return end
+    netSpamRunning = true
+    netSpamTask = task.spawn(function()
+        while netSpamRunning do
+            for _, p in ipairs(Players:GetPlayers()) do
+                if p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                    local hrp = p.Character.HumanoidRootPart
+                    pcall(function()
+                        local ge = ReplicatedStorage:FindFirstChild("GrabEvents")
+                        if ge and ge:FindFirstChild("SetNetworkOwner") then ge.SetNetworkOwner:FireServer(hrp, hrp.CFrame) end
+                    end)
+                end
+            end
+            task.wait(0.05)
+        end
+    end)
+end
+
+local function stopNetSpam()
+    netSpamRunning = false
+    if netSpamTask then task.cancel(netSpamTask); netSpamTask = nil end
+end
+
+local function destroyServer()
+    task.spawn(function()
+        startLineLag()
+        task.wait(1)
+        local players = {}
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p ~= player and p.Character then
+                local hrp = p.Character:FindFirstChild("HumanoidRootPart")
+                if hrp then table.insert(players, {plr=p, hrp=hrp}) end
+            end
+        end
+        local height = 35
+        local radius = 40
+        for idx, data in ipairs(players) do
+            local angle = ((idx-1) / math.max(#players,1)) * math.pi * 2
+            local x, z = math.cos(angle)*radius, math.sin(angle)*radius
+            data.hrp.CFrame = CFrame.new(x, height, z)
+            data.hrp.AssemblyLinearVelocity = Vector3.zero
+            local bp = Instance.new("BodyPosition")
+            bp.MaxForce = Vector3.new(1e9,1e9,1e9); bp.P = 40000000; bp.Position = Vector3.new(x,height,z)
+            bp.Parent = data.hrp
+            task.delay(2, function() pcall(function() bp:Destroy() end) end)
+        end
+        task.wait(2)
+    end)
+end
+
+-- ========================================================================
+--  7. UI構築（OrionLib）
+-- ========================================================================
+local Window = OrionLib:MakeWindow({ Name = "kiki hub1.0.2", HidePremium = false, IntroText = "よろしく 🐈" })
+
+-- -------- 7-1. メインタブ --------
+local MainTab = Window:MakeTab({ Name = "メイン能力", Icon = "rbxassetid://4483345998" })
+local targetDropdown = MainTab:AddDropdown({
+    Name = "能力の対象", Default = player.Name, Options = getPlayerList(),
+    Callback = function(V) selectedTargetName = V end
+})
+MainTab:AddButton({ Name = "リスト更新", Callback = function() targetDropdown:Refresh(getPlayerList(), true) end })
+
+local allModes = {"None","スピン","回転","魔法陣","幽霊","神聖","卍","幾何学の輪","羽","ハート","竜巻","星","電気","ビーム","土星","魔法2","魔法3","四角形cm3","丸cm3","盾","祭り","時計","太陽","木","冠","雨","マーソル","うんち","花","星2","ハート2","数字","島","水","ひょうたん","人（棒人間）","丸（回転の逆のやつ）","縦丸","四角","三角","六角"}
+local modeMap = {["None"]="None",["スピン"]="Spin",["回転"]="Orbit",["魔法陣"]="MagicCircle",["幽霊"]="Ghost",["神聖"]="Divine",["卍"]="Manji",["幾何学の輪"]="Geometry",["羽"]="Wing",["ハート"]="Heart",["竜巻"]="Tornado",["星"]="Star",["電気"]="Lightning",["ビーム"]="Beam",["土星"]="Saturn",["魔法2"]="Magic2",["魔法3"]="Magic3",["四角形cm3"]="CubeArea",["丸cm3"]="SphereArea",["盾"]="Shield",["祭り"]="Matsuri",["時計"]="Clock",["太陽"]="Sun",["木"]="Tree",["冠"]="Crown",["雨"]="Rain",["マーソル"]="Cursor",["うんち"]="Poop",["花"]="Flower",["星2"]="Star2",["ハート2"]="Heart2",["数字"]="Number",["島"]="Island",["水"]="Water",["ひょうたん"]="Gourd",["人（棒人間）"]="Stickman",["丸（回転の逆のやつ）"]="ReverseOrbit",["縦丸"]="VerticalOrbit",["四角"]="Square",["三角"]="Triangle",["六角"]="Hexagon"}
+MainTab:AddDropdown({ Name = "モード選択", Default = "None", Options = allModes, Callback = function(V) mode = modeMap[V] or "None"; if mode == "None" then clearObjects() end end })
+MainTab:AddTextbox({ Name = "パーツの最大保持数", Default = "999", TextDisappear = false, Callback = function(T) maxObjects = math.max(1, math.floor(tonumber(T) or 999)) end })
+MainTab:AddToggle({ Name = "これ以上パーツを吸い込まない", Default = false, Callback = function(V) isSuikomiStopped = V end })
+MainTab:AddButton({ Name = "全パーツ解除", Callback = function() clearObjects() end })
+
+-- -------- 7-2. グラフタブ（＋掴む機能） --------
+local GradTab = Window:MakeTab({ Name = "グラフ", Icon = "rbxassetid://4483345998" })
+GradTab:AddTextbox({ Name = "座標 X", Default = "0", Callback = function(V) posX = tonumber(V) or 0 end })
+GradTab:AddTextbox({ Name = "座標 Y", Default = "0", Callback = function(V) posY = tonumber(V) or 0 end })
+GradTab:AddTextbox({ Name = "座標 Z", Default = "0", Callback = function(V) posZ = tonumber(V) or 0 end })
+GradTab:AddButton({ Name = "現在地をターゲットにする", Callback = function()
+    local p = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+    if p then posX, posY, posZ = math.floor(p.X), math.floor(p.Y), math.floor(p.Z) end
+end})
+GradTab:AddTextbox({ Name = "吸引範囲（10～5000）", Default = "1000", TextDisappear = false, Callback = function(V) grabRange = math.max(10, tonumber(V) or 1000) end })
+GradTab:AddToggle({ Name = "tp grab (吸引)", Default = false, Callback = function(V) grabEnabled = V; if not V and not chaosEnabled and not slowUpEnabled and not slowDownEnabled then clearObjects() end end })
+GradTab:AddToggle({ Name = "chaos (暴れ)", Default = false, Callback = function(V) chaosEnabled = V; if not V and not grabEnabled and not slowUpEnabled and not slowDownEnabled then clearObjects() end end })
+GradTab:AddToggle({ Name = "slow up (ゆっくり上昇)", Default = false, Callback = function(V) slowUpEnabled = V; if V then slowDownEnabled = false end end })
+GradTab:AddToggle({ Name = "slow down (ゆっくり下降)", Default = false, Callback = function(V) slowDownEnabled = V; if V then slowUpEnabled = false end end })
+
+-- ▼▼▼ 掴む機能（グラフタブに追加） ▼▼▼
+GradTab:AddSection({ Name = "掴む機能 (Grab)" })
+local nageruPower = 400
+GradTab:AddTextbox({ Name = "投げる力（100～1000）", Default = "400", Callback = function(V) nageruPower = tonumber(V) or 400 end })
+-- 投げる（常時有効）
+local strengthConnection
+strengthConnection = Workspace.ChildAdded:Connect(function(model)
+    if model.Name == "GrabParts" then
+        local part = model:FindFirstChild("GrabPart")
+        if part and part:FindFirstChild("WeldConstraint") then
+            local target = part.WeldConstraint.Part1
+            if target then
+                local bv = Instance.new("BodyVelocity", target)
+                model:GetPropertyChangedSignal("Parent"):Connect(function()
+                    if not model.Parent then
+                        if UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then
+                            bv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+                            bv.Velocity = camera.CFrame.LookVector * nageruPower
+                            Debris:AddItem(bv, 1)
+                        else bv:Destroy() end
+                    end
+                end)
+            end
+        end
+    end
+end)
+
+local grabToggleStates = {Kill=false, Sky=false, Down=false, Stable=false}
+local grabConnections = {}
+
+local function handleGrabPart(model, mode)
+    if model.Name == "GrabParts" then
+        local part = model:FindFirstChild("GrabPart")
+        if part and part:FindFirstChild("WeldConstraint") then
+            local target = part.WeldConstraint.Part1
+            if mode == "Kill" and target then target.Parent:BreakJoints(); return end
+            local bv = Instance.new("BodyVelocity", part)
+            if mode == "Sky" then bv.Velocity = Vector3.new(0,20,0)
+            elseif mode == "Down" then bv.Velocity = Vector3.new(0,-20,0)
+            else bv.Velocity = Vector3.new(0,0,0) end
+            bv.MaxForce = Vector3.new(0,math.huge,0)
+        end
+    end
+end
+
+local function toggleGrab(flag, mode)
+    if grabToggleStates[flag] then
+        if grabConnections[flag] then grabConnections[flag]:Disconnect() end
+        grabConnections[flag] = Workspace.ChildAdded:Connect(function(m) handleGrabPart(m, mode) end)
+    elseif grabConnections[flag] then
+        grabConnections[flag]:Disconnect(); grabConnections[flag] = nil
+    end
+end
+
+GradTab:AddToggle({ Name = "掴むキル", Default = false, Callback = function(V) grabToggleStates.Kill = V; toggleGrab("Kill","Kill") end })
+GradTab:AddToggle({ Name = "掴む上昇", Default = false, Callback = function(V) grabToggleStates.Sky = V; toggleGrab("Sky","Sky") end })
+GradTab:AddToggle({ Name = "掴む下降", Default = false, Callback = function(V) grabToggleStates.Down = V; toggleGrab("Down","Down") end })
+GradTab:AddToggle({ Name = "掴む固定", Default = false, Callback = function(V) grabToggleStates.Stable = V; toggleGrab("Stable","Stable") end })
+
+-- 毒／火／ノクリップ（個別に実行）
+local poisonRunning = false
+local fireRunning = false
+local noclipRunning = false
+local poisonThread, fireThread, noclipThread
+
+GradTab:AddToggle({ Name = "掴む毒（PoisonHurt）", Default = false, Callback = function(V)
+    if V then
+        poisonRunning = true
+        poisonThread = coroutine.create(function()
+            local poisonParts = {}
+            for _,p in pairs(Workspace:GetDescendants()) do if p.Name=="PoisonHurtPart" then table.insert(poisonParts,p) end end
+            while poisonRunning do
+                local g = Workspace:FindFirstChild("GrabParts")
+                if g and g:FindFirstChild("GrabPart") and g.GrabPart:FindFirstChild("WeldConstraint") then
+                    local head = g.GrabPart.WeldConstraint.Part1.Parent:FindFirstChild("Head")
+                    if head then
+                        while Workspace:FindFirstChild("GrabParts") and poisonRunning do
+                            for _,p in pairs(poisonParts) do p.Position = head.Position; p.Size = Vector3.new(2,2,2); p.Transparency = 1 end
+                            wait()
+                        end
+                        for _,p in pairs(poisonParts) do p.Position = Vector3.new(0,-200,0) end
+                    end
+                end
+                wait()
+            end
+        end)
+        coroutine.resume(poisonThread)
+    else
+        poisonRunning = false
+        if poisonThread then coroutine.close(poisonThread); poisonThread = nil end
+    end
+end})
+
+GradTab:AddToggle({ Name = "掴む火（Campfire必須）", Default = false, Callback = function(V)
+    if V then
+        fireRunning = true
+        fireThread = coroutine.create(function()
+            while fireRunning do
+                local g = Workspace:FindFirstChild("GrabParts")
+                if g and g.GrabPart and g.GrabPart.WeldConstraint then
+                    local head = g.GrabPart.WeldConstraint.Part1.Parent:FindFirstChild("Head")
+                    if head then
+                        local folder = Workspace:FindFirstChild(player.Name.."SpawnedInToys")
+                        if folder and not folder:FindFirstChild("Campfire") then
+                            pcall(function()
+                                ReplicatedStorage.MenuToys.SpawnToyRemoteFunction:InvokeServer("Campfire", head.CFrame, Vector3.zero)
+                            end)
+                        end
+                        local cf = folder and folder:FindFirstChild("Campfire")
+                        if cf and cf:FindFirstChild("FirePlayerPart") then
+                            local fp = cf.FirePlayerPart
+                            fp.Size = Vector3.new(7,7,7); fp.Position = head.Position; wait(0.3); fp.Position = Vector3.new(0,-50,0)
+                        end
+                    end
+                end
+                wait()
+            end
+        end)
+        coroutine.resume(fireThread)
+    else
+        fireRunning = false
+        if fireThread then coroutine.close(fireThread); fireThread = nil end
+    end
+end})
+
+GradTab:AddToggle({ Name = "掴むノクリップ", Default = false, Callback = function(V)
+    if V then
+        noclipRunning = true
+        noclipThread = coroutine.create(function()
+            while noclipRunning do
+                local g = Workspace:FindFirstChild("GrabParts")
+                if g and g.GrabPart and g.GrabPart.WeldConstraint then
+                    local char = g.GrabPart.WeldConstraint.Part1.Parent
+                    if char and char:FindFirstChild("HumanoidRootPart") then
+                        while Workspace:FindFirstChild("GrabParts") and noclipRunning do
+                            for _,p in pairs(char:GetChildren()) do if p:IsA("BasePart") then p.CanCollide = false end end
+                            wait()
+                        end
+                        for _,p in pairs(char:GetChildren()) do if p:IsA("BasePart") then p.CanCollide = true end end
+                    end
+                end
+                wait()
+            end
+        end)
+        coroutine.resume(noclipThread)
+    else
+        noclipRunning = false
+        if noclipThread then coroutine.close(noclipThread); noclipThread = nil end
+    end
+end})
+-- ▲▲▲ 掴む機能ここまで ▲▲▲
+
+-- -------- 7-3. 能力調整タブ --------
+local AdjustTab = Window:MakeTab({ Name = "能力調整", Icon = "rbxassetid://4483345998" })
+AdjustTab:AddSection({ Name = "基本調整（数字入力）" })
+AdjustTab:AddTextbox({ Name = "回転速度（0.01～0.15）", Default = "0.03", TextDisappear = false, Callback = function(V) settings.speed = tonumber(V) or 0.03 end })
+AdjustTab:AddTextbox({ Name = "広がり（5～100）", Default = "18", TextDisappear = false, Callback = function(V) settings.width = tonumber(V) or 18 end })
+AdjustTab:AddTextbox({ Name = "高さ（-20～30）", Default = "5", TextDisappear = false, Callback = function(V) settings.height = tonumber(V) or 5 end })
+AdjustTab:AddTextbox({ Name = "密度（間隔）", Default = "1.0", TextDisappear = false, Callback = function(V) settings.density = tonumber(V) or 1.0 end })
+AdjustTab:AddTextbox({ Name = "前後オフセット", Default = "0", TextDisappear = false, Callback = function(V) settings.depth = tonumber(V) or 0 end })
+AdjustTab:AddToggle({ Name = "方向反転", Default = false, Callback = function(V) settings.invertDirection = V end })
+AdjustTab:AddSection({ Name = "羽（ウイング）専用（数字入力）" })
+AdjustTab:AddTextbox({ Name = "全体サイズ", Default = "8", TextDisappear = false, Callback = function(V) settings.wingSize = tonumber(V) or 8 end })
+AdjustTab:AddTextbox({ Name = "羽ばたき速度", Default = "4", TextDisappear = false, Callback = function(V) settings.flapSpeed = tonumber(V) or 4 end })
+AdjustTab:AddTextbox({ Name = "羽ばたき強さ", Default = "1.5", TextDisappear = false, Callback = function(V) settings.flapStrength = tonumber(V) or 1.5 end })
+AdjustTab:AddTextbox({ Name = "翼の広がり", Default = "1.0", TextDisappear = false, Callback = function(V) settings.wingSpread = tonumber(V) or 1.0 end })
+AdjustTab:AddTextbox({ Name = "吸い込み範囲", Default = "100", TextDisappear = false, Callback = function(V) settings.wingRange = tonumber(V) or 100 end })
+
+-- -------- 7-4. 合体モードタブ --------
+local ComboTab = Window:MakeTab({ Name = "合体モード (1~8)", Icon = "rbxassetid://4483345998" })
+ComboTab:AddSection({ Name = "1〜8つのモードを個別に有効化して本数指定" })
+local function makeComboSetting(num)
+    ComboTab:AddSection({ Name = "コンボ" .. num })
+    ComboTab:AddToggle({ Name = "コンボ" .. num .. "有効", Default = true, Callback = function(V) comboActive[num] = V end })
+    ComboTab:AddDropdown({ Name = "コンボ" .. num .. "モード", Default = "None", Options = allModes, Callback = function(V) comboMode[num] = modeMap[V] or "None" end })
+    ComboTab:AddTextbox({ Name = "コンボ" .. num .. "割り当て本数", Default = "10", TextDisappear = false, Callback = function(T) comboCount[num] = math.max(0, math.floor(tonumber(T) or 10)) end })
+    ComboTab:AddTextbox({ Name = "コンボ" .. num .. "速度", Default = "0.03", TextDisappear = false, Callback = function(T) comboSpeed[num] = tonumber(T) or 0.03 end })
+    ComboTab:AddTextbox({ Name = "コンボ" .. num .. "広がり", Default = "18", TextDisappear = false, Callback = function(T) comboWidth[num] = tonumber(T) or 18 end })
+    ComboTab:AddTextbox({ Name = "コンボ" .. num .. "高さ", Default = "5", TextDisappear = false, Callback = function(T) comboHeight[num] = tonumber(T) or 5 end })
+    ComboTab:AddTextbox({ Name = "コンボ" .. num .. "密度", Default = "1.0", TextDisappear = false, Callback = function(T) comboDensity[num] = tonumber(T) or 1.0 end })
+end
+for i = 1, 8 do makeComboSetting(i) end
+ComboTab:AddButton({ Name = "合体モード実行 (メインモードを「None」にして使用)", Callback = function() mode = "Combined" end })
+ComboTab:AddButton({ Name = "合体モード解除", Callback = function() mode = "None" end })
+
+-- -------- 7-5. 身体・設定タブ --------
+local MiscTab = Window:MakeTab({ Name = "身体・設定", Icon = "rbxassetid://4483345998" })
+MiscTab:AddToggle({ Name = "Fly (飛行)", Default = false, Callback = function(V) settings.flyEnabled = V end })
+MiscTab:AddTextbox({ Name = "Fly速度（10～300）", Default = "50", TextDisappear = false, Callback = function(V) settings.flySpeed = tonumber(V) or 50 end })
+MiscTab:AddToggle({ Name = "高速移動有効", Default = false, Callback = function(V) settings.speedEnabled = V end })
+MiscTab:AddTextbox({ Name = "速度設定（16～500）", Default = "100", TextDisappear = false, Callback = function(V) settings.customSpeed = tonumber(V) or 100 end })
+MiscTab:AddToggle({ Name = "ジャンプ有効", Default = false, Callback = function(V) settings.jumpEnabled = V end })
+MiscTab:AddTextbox({ Name = "ジャンプ設定（50～500）", Default = "150", TextDisappear = false, Callback = function(V) settings.customJump = tonumber(V) or 150 end })
+MiscTab:AddToggle({ Name = "無限ジャンプ", Default = false, Callback = function(V) settings.infJump = V end })
+MiscTab:AddTextbox({ Name = "視野角 FOV（30～120）", Default = "70", TextDisappear = false, Callback = function(V) settings.fov = tonumber(V) or 70 end })
+MiscTab:AddTextbox({ Name = "重力（0～500）", Default = "196.2", TextDisappear = false, Callback = function(V) settings.gravity = tonumber(V) or 196.2 end })
+
+-- -------- 7-6. プレゼントタブ --------
+local PresentTab = Window:MakeTab({ Name = "プレゼント", Icon = "rbxassetid://4483345998" })
+local giftDropdown = PresentTab:AddDropdown({ Name = "贈る相手を選択", Default = player.Name, Options = getPlayerList(), Callback = function(V) selectedGiftTarget = V end })
+PresentTab:AddButton({ Name = "リスト更新", Callback = function() giftDropdown:Refresh(getPlayerList(), true) end })
+PresentTab:AddTextbox({ Name = "荒ぶる速度（5～100）", Default = "25", TextDisappear = false, Callback = function(V) presentSpeed = tonumber(V) or 25 end })
+PresentTab:AddTextbox({ Name = "追いかける速度（5～100）", Default = "30", TextDisappear = false, Callback = function(V) presentFollowSpeed = tonumber(V) or 30 end })
+PresentTab:AddToggle({ Name = "プレゼント開始", Default = false, Callback = function(V) presentEnabled = V; if V then mode = "None"; monoAllEnabled = false end end })
+
+-- -------- 7-7. 荒らしタブ --------
+local TrollTab = Window:MakeTab({ Name = "荒らし", Icon = "rbxassetid://4483345998" })
+TrollTab:AddToggle({ Name = "ものおーる (自分以外全員)", Default = false, Callback = function(V) monoAllEnabled = V; if V then mode = "None"; presentEnabled = false end end })
+TrollTab:AddTextbox({ Name = "ものおーる速度（1～30）", Default = "10", TextDisappear = false, Callback = function(V) monoAllSpeed = tonumber(V) or 10 end })
+TrollTab:AddToggle({ Name = "げろおーる (実行)", Default = false, Callback = function(V)
+    geroAllEnabled = V
+    if V then
+        task.spawn(function()
+            while geroAllEnabled do
+                for _, p in ipairs(Players:GetPlayers()) do
+                    if not geroAllEnabled then break end
+                    if p ~= player and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                        if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+                            player.Character.HumanoidRootPart.CFrame = p.Character.HumanoidRootPart.CFrame * CFrame.new(0,0,geroSettings.dist)
+                        end
+                    end
+                    task.wait(geroSettings.wait)
+                end
+                task.wait()
+            end
+        end)
+    end
+end})
+TrollTab:AddTextbox({ Name = "げろおーる速度（0.01～1）", Default = "0.1", TextDisappear = false, Callback = function(V) geroSettings.wait = tonumber(V) or 0.1 end })
+TrollTab:AddTextbox({ Name = "げろおーる距離（-20～20）", Default = "3", TextDisappear = false, Callback = function(V) geroSettings.dist = tonumber(V) or 3 end })
+
+-- -------- 7-8. TPタブ --------
+local TPTab = Window:MakeTab({ Name = "TP", Icon = "rbxassetid://4483345998" })
+TPTab:AddTextbox({ Name = "座標入力", Default = "0, 50, 0", TextDisappear = false, Callback = function(V) tpCoordinates = V end })
+TPTab:AddButton({ Name = "座標へ移動実行", Callback = function()
+    local coords = string.split(tpCoordinates, ",")
+    if #coords == 3 then
+        local x,y,z = tonumber(coords[1]), tonumber(coords[2]), tonumber(coords[3])
+        if x and y and z and player.Character then player.Character.HumanoidRootPart.CFrame = CFrame.new(x,y,z) end
+    end
+end})
+local playerDropdownTP = TPTab:AddDropdown({ Name = "プレイヤーを選択", Options = getPlayerList(), Callback = function(V) selectedTargetName = V end })
+TPTab:AddButton({ Name = "リスト更新", Callback = function() playerDropdownTP:Refresh(getPlayerList(), true) end })
+TPTab:AddButton({ Name = "選択プレイヤーへ移動", Callback = function()
+    local target = Players:FindFirstChild(selectedTargetName)
+    if target and target.Character then player.Character.HumanoidRootPart.CFrame = target.Character.HumanoidRootPart.CFrame * CFrame.new(0,0,3) end
+end})
+
+-- -------- 7-9. ESPタブ --------
+local ESPTab = Window:MakeTab({ Name = "ESP", Icon = "rbxassetid://4483345998" })
+ESPTab:AddToggle({ Name = "名前を表示", Default = false, Callback = function(V) settings.espNames = V end })
+ESPTab:AddToggle({ Name = "ボックスを表示", Default = false, Callback = function(V) settings.espBoxes = V end })
+ESPTab:AddToggle({ Name = "トレーサーを表示", Default = false, Callback = function(V) settings.espTracers = V end })
+
+-- -------- 7-10. 視点変更タブ --------
+local ViewTab = Window:MakeTab({ Name = "視点変更", Icon = "rbxassetid://4483345998" })
+local playerDropdownView = ViewTab:AddDropdown({ Name = "プレイヤーを選択", Options = getPlayerList(), Callback = function(V) selectedTargetName = V end })
+ViewTab:AddButton({ Name = "リスト更新", Callback = function() playerDropdownView:Refresh(getPlayerList(), true) end })
+ViewTab:AddToggle({ Name = "観戦モード", Default = false, Callback = function(V)
+    if V then
+        local t = Players:FindFirstChild(selectedTargetName)
+        if t and t.Character then camera.CameraSubject = t.Character:FindFirstChildOfClass("Humanoid") end
+    else
+        if player.Character then camera.CameraSubject = player.Character:FindFirstChildOfClass("Humanoid") end
+    end
+end})
+ViewTab:AddToggle({ Name = "ターゲットハイライト", Default = false, Callback = function(V)
+    if V then
+        local t = Players:FindFirstChild(selectedTargetName)
+        if t and t.Character then viewHighlight.Parent = t.Character end
+    else viewHighlight.Parent = nil end
+end})
+
+-- -------- 7-11. アンチタブ（既存＋新アンチ機能） --------
+local AntiTab = Window:MakeTab({ Name = "アンチ", Icon = "rbxassetid://4483345998" })
+AntiTab:AddToggle({ Name = "Anti Gucci (Train)", Default = false, Callback = function(V)
+    antiGucciActive = V
+    if V then startAntiGucci() else stopAntiGucci() end
+end})
+AntiTab:AddLabel("---- 新アンチ機能 ----")
+
+-- アンチ掴む（Struggle連打）
+local antiGrabRunning = false
+local antiGrabThread
+AntiTab:AddToggle({ Name = "アンチ掴む", Default = false, Callback = function(V)
+    if V then
+        antiGrabRunning = true
+        antiGrabThread = coroutine.create(function()
+            local Struggle = ReplicatedStorage.CharacterEvents.Struggle
+            while antiGrabRunning do
+                local char = player.Character
+                if char and char:FindFirstChild("Head") then
+                    local po = char.Head:FindFirstChild("PartOwner")
+                    if po then
+                        pcall(function()
+                            Struggle:FireServer()
+                            ReplicatedStorage.GameCorrectionEvents.StopAllVelocity:FireServer()
+                            for _,p in pairs(char:GetChildren()) do if p:IsA("BasePart") then p.Anchored = true end end
+                            while player:FindFirstChild("IsHeld") and player.IsHeld.Value do wait() end
+                            for _,p in pairs(char:GetChildren()) do if p:IsA("BasePart") then p.Anchored = false end end
+                        end)
+                    end
+                end
+                wait()
+            end
+        end)
+        coroutine.resume(antiGrabThread)
+    else
+        antiGrabRunning = false
+        if antiGrabThread then coroutine.close(antiGrabThread); antiGrabThread = nil end
+    end
+end})
+
+-- アンチキック（手裏剣で固定）
+local antiKickRunning = false
+local antiKickThread
+AntiTab:AddToggle({ Name = "アンチキック", Default = false, Callback = function(V)
+    if V then
+        antiKickRunning = true
+        antiKickThread = coroutine.create(function()
+            while antiKickRunning do
+                local char = player.Character
+                if char then
+                    local hrp = char:FindFirstChild("HumanoidRootPart")
+                    local hum = char:FindFirstChildOfClass("Humanoid")
+                    if hrp and hum and hum.Health > 0 then
+                        local folder = Workspace:FindFirstChild(player.Name.."SpawnedInToys")
+                        local ninja = folder and folder:FindFirstChild("NinjaKunai")
+                        if not ninja then
+                            pcall(function() ReplicatedStorage.MenuToys.SpawnToyRemoteFunction:InvokeServer("NinjaKunai", hrp.CFrame, Vector3.zero) end)
+                            wait()
+                            ninja = folder and folder:FindFirstChild("NinjaKunai")
+                        end
+                        if ninja and ninja:FindFirstChild("StickyPart") then
+                            local st = ninja.StickyPart
+                            if not st:FindFirstChild("StickyWeld") or not st.StickyWeld.Part1 then
+                                pcall(function()
+                                    ReplicatedStorage.PlayerEvents.StickyPartEvent:FireServer(st, char["Right Leg"], CFrame.new(0.049,0.5,0)*CFrame.Angles(0,0,0))
+                                end)
+                            end
+                        end
+                    end
+                end
+                wait()
+            end
+        end)
+        coroutine.resume(antiKickThread)
+    else
+        antiKickRunning = false
+        if antiKickThread then coroutine.close(antiKickThread); antiKickThread = nil end
+    end
+end})
+
+-- アンチファイヤ（消火器対策）
+local antiFireRunning = false
+local antiFireThread
+AntiTab:AddToggle({ Name = "アンチファイヤ", Default = false, Callback = function(V)
+    if V then
+        antiFireRunning = true
+        antiFireThread = coroutine.create(function()
+            while antiFireRunning do
+                local char = player.Character
+                if char and char:FindFirstChild("HumanoidRootPart") then
+                    local root = char.HumanoidRootPart
+                    for _, p in pairs(Players:GetPlayers()) do
+                        local toys = Workspace:FindFirstChild(p.Name.."SpawnedInToys")
+                        if toys then
+                            for _, obj in pairs(toys:GetChildren()) do
+                                if obj:IsA("Model") and obj.Name == "FireExtinguisher" then
+                                    local sp = obj:FindFirstChild("SoundPart")
+                                    if sp and sp:IsA("BasePart") and (sp.Position - root.Position).Magnitude <= 20 then
+                                        pcall(function()
+                                            sp.CanCollide = false
+                                            sp.Transparency = 1
+                                            local bv = sp:FindFirstChild("l") or Instance.new("BodyVelocity", sp)
+                                            bv.Name = "l"; bv.Velocity = Vector3.zero; bv.MaxForce = Vector3.new(0,math.huge,0)
+                                            Debris:AddItem(bv, 0)
+                                        end)
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+                wait()
+            end
+        end)
+        coroutine.resume(antiFireThread)
+    else
+        antiFireRunning = false
+        if antiFireThread then coroutine.close(antiFireThread); antiFireThread = nil end
+    end
+end})
+
+-- アンチブロブマン（Detector削除）
+local antiBlobRunning = false
+local antiBlobThread
+AntiTab:AddToggle({ Name = "アンチブロブマン", Default = false, Callback = function(V)
+    if V then
+        antiBlobRunning = true
+        antiBlobThread = coroutine.create(function()
+            while antiBlobRunning do
+                for _,p in pairs(Players:GetPlayers()) do
+                    if p ~= player then
+                        local toys = Workspace:FindFirstChild(p.Name.."SpawnedInToys")
+                        if toys then
+                            for _,b in pairs(toys:GetChildren()) do
+                                if b.Name == "CreatureBlobman" then
+                                    for _,d in pairs(b:GetChildren()) do
+                                        if d.Name == "LeftDetector" or d.Name == "RightDetector" then d:Destroy() end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+                wait(0.5)
+            end
+        end)
+        coroutine.resume(antiBlobThread)
+    else
+        antiBlobRunning = false
+        if antiBlobThread then coroutine.close(antiBlobThread); antiBlobThread = nil end
+    end
+end})
+
+-- アンチ爆発（Ragdolled時にアンカー）
+local function setupAntiExplosion(char)
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if hum then
+        local rag = hum:FindFirstChild("Ragdolled")
+        if rag then
+            rag:GetPropertyChangedSignal("Value"):Connect(function()
+                for _,p in pairs(char:GetChildren()) do if p:IsA("BasePart") then p.Anchored = rag.Value end end
+            end)
+        end
+    end
+end
+if player.Character then setupAntiExplosion(player.Character) end
+player.CharacterAdded:Connect(setupAntiExplosion)
+
+-- アンチラグ（スクリプト無効化）
+local antiLagRunning = false
+AntiTab:AddToggle({ Name = "アンチラグ（スクリプト無効）", Default = false, Callback = function(V)
+    antiLagRunning = V
+    if player and player:FindFirstChild("PlayerScripts") and player.PlayerScripts:FindFirstChild("CharacterAndBeamMove") then
+        player.PlayerScripts.CharacterAndBeamMove.Disabled = antiLagRunning
+    end
+end})
+
+-- アンチラグドール（自動復帰）
+local antiRagdollRunning = false
+local antiRagdollThread
+AntiTab:AddToggle({ Name = "アンチラグドール", Default = false, Callback = function(V)
+    if V then
+        antiRagdollRunning = true
+        antiRagdollThread = coroutine.create(function()
+            while antiRagdollRunning do
+                local char = player.Character
+                if char and char:FindFirstChild("HumanoidRootPart") then
+                    pcall(function()
+                        ReplicatedStorage.CharacterEvents.RagdollRemote:FireServer(char.HumanoidRootPart, 1)
+                    end)
+                end
+                task.wait()
+            end
+            if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+                pcall(function()
+                    ReplicatedStorage.CharacterEvents.RagdollRemote:FireServer(player.Character.HumanoidRootPart, 0)
+                end)
+            end
+        end)
+        coroutine.resume(antiRagdollThread)
+    else
+        antiRagdollRunning = false
+        if antiRagdollThread then coroutine.close(antiRagdollThread); antiRagdollThread = nil end
+    end
+end})
+
+-- Bring軽減（BodyPositionで引き戻し）
+local bringRunning = false
+local bringThread
+local bringHeight = -30
+AntiTab:AddTextbox({ Name = "Bring軽減高さ（デフォルト-30）", Default = "-30", Callback = function(V) bringHeight = tonumber(V) or -30 end })
+AntiTab:AddToggle({ Name = "Bring軽減（BodyPosition）", Default = false, Callback = function(V)
+    if V then
+        bringRunning = true
+        bringThread = coroutine.create(function()
+            while bringRunning do
+                for _,p in pairs(Workspace:GetDescendants()) do
+                    if p:IsA("BasePart") and not p.Anchored and not p:IsDescendantOf(player.Character) then
+                        if not p:FindFirstChildOfClass("BodyPosition") then
+                            local bp = Instance.new("BodyPosition", p)
+                            bp.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+                            bp.Position = Vector3.new(0, bringHeight, 0)
+                            bp.P = 6000000000000; bp.D = 6000000
+                        end
+                    end
+                end
+                wait()
+            end
+        end)
+        coroutine.resume(bringThread)
+    else
+        bringRunning = false
+        if bringThread then coroutine.close(bringThread); bringThread = nil end
+    end
+end})
+-- ▲▲▲ 新アンチここまで ▲▲▲
+
+-- -------- 7-12. ブロブマンタブ（空） --------
+local BlobTab = Window:MakeTab({ Name = "ブロブマン", Icon = "rbxassetid://4483345998" })
+-- 空
+
+-- -------- 7-13. UFOタブ --------
+local UFOTab = Window:MakeTab({ Name = "UFO", Icon = "rbxassetid://4483345998" })
+UFOTab:AddButton({ Name = "UFO1 (OuterUFO) 奪取", Callback = function() ufoSteal("OuterUFO") end })
+UFOTab:AddButton({ Name = "UFO2 (InnerUFO) 奪取", Callback = function() ufoSteal("InnerUFO") end })
+UFOTab:AddButton({ Name = "Train 奪取", Callback = function() ufoSteal("Train") end })
+UFOTab:AddSection({ Name = "ヒットボックス制御" })
+UFOTab:AddButton({ Name = "ヒットボックス取得", Callback = function() getUfoHitboxes() end })
+UFOTab:AddToggle({ Name = "ヒットボックス回転", Default = false, Callback = function(V)
+    ufoSpinEnabled = V
+    if V then ufoFollowEnabled = false end
+end})
+UFOTab:AddToggle({ Name = "ヒットボックス追従", Default = false, Callback = function(V)
+    ufoFollowEnabled = V
+    if V then ufoSpinEnabled = false end
+end})
+UFOTab:AddSlider({ Name = "回転速度", Min = 1, Max = 20, Default = 6, Increment = 1, Callback = function(V) ufoSpinSpeed = V end })
+UFOTab:AddSlider({ Name = "半径", Min = 5, Max = 30, Default = 15, Increment = 1, Callback = function(V) ufoRadius = V end })
+UFOTab:AddSlider({ Name = "高さ", Min = -5, Max = 20, Default = 5, Increment = 1, Callback = function(V) ufoHeight = V end })
+RunService.RenderStepped:Connect(function(dt)
+    local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+    if ufoSpinEnabled and #ufoHitboxes > 0 then
+        ufoAngle = ufoAngle + dt * ufoSpinSpeed
+        local count = #ufoHitboxes
+        for i, hitbox in ipairs(ufoHitboxes) do
+            if hitbox and hitbox.Parent then
+                local offset = (i / count) * 2 * math.pi
+                local x = math.sin(ufoAngle + offset) * ufoRadius
+                local z = math.cos(ufoAngle + offset) * ufoRadius
+                hitbox.CFrame = CFrame.new(hrp.Position + Vector3.new(x, ufoHeight, z))
+            end
+        end
+    elseif ufoFollowEnabled and #ufoHitboxes > 0 then
+        for _, hitbox in ipairs(ufoHitboxes) do
+            if hitbox and hitbox.Parent then
+                hitbox.CFrame = CFrame.new(hrp.Position + Vector3.new(0, ufoHeight + 3, 0))
+            end
+        end
+    end
+end)
+
+-- -------- 7-14. 電車タブ --------
+local TrainTab = Window:MakeTab({ Name = "電車", Icon = "rbxassetid://4483345998" })
+TrainTab:AddSection({ Name = "座席操作" })
+TrainTab:AddButton({ Name = "ランダムな空席に座る", Callback = function() sitOnRandomSeat() end })
+TrainTab:AddSection({ Name = "自動化" })
+TrainTab:AddToggle({ Name = "自動化を有効化", Default = false, Callback = function(V)
+    trainAutomationEnabled = V
+    if V then
+        startSeatDetection()
+        startTrainAutomation()
+    else
+        if trainAutomationConnection then trainAutomationConnection:Disconnect(); trainAutomationConnection = nil end
+    end
+end})
+TrainTab:AddParagraph("自動化の動作", "乗車/降車時に"..trainTargetItemName.."を自動操作します")
+TrainTab:AddSection({ Name = "アイテム操作" })
+TrainTab:AddButton({ Name = "全てのアイテムを持つ", Callback = function()
+    local items = getAllItems()
+    for _, item in ipairs(items) do holdItem(item); task.wait(0.05) end
+end})
+TrainTab:AddButton({ Name = "全てのアイテムを使う", Callback = function()
+    local items = getAllItems()
+    for _, item in ipairs(items) do useItem(item); task.wait(0.05) end
+end})
+TrainTab:AddButton({ Name = "全てのアイテムを捨てる", Callback = function()
+    local items = getAllItems()
+    for _, item in ipairs(items) do dropItemAtPlayer(item); task.wait(0.05) end
+end})
+
+-- -------- 7-15. バリア破壊タブ --------
+local BarrierTab = Window:MakeTab({ Name = "バリア破壊", Icon = "rbxassetid://4483345998" })
+BarrierTab:AddButton({ Name = "Break Barrier (1回実行)", Callback = function() executeBarrierBreak() end })
+BarrierTab:AddSection({ Name = "自動実行" })
+local autoBarrierToggle
+autoBarrierToggle = BarrierTab:AddToggle({ Name = "Auto Barrier破壊", Default = false, Callback = function(V)
+    if V then
+        task.spawn(function()
+            while V do
+                local result = executeBarrierBreak()
+                if result then if autoBarrierToggle then autoBarrierToggle:Set(false) end; break end
+                task.wait(1)
+            end
+        end)
+    end
+end})
+BarrierTab:AddSection({ Name = "NoTP版 (Beta)" })
+BarrierTab:AddButton({ Name = "Break Barrier NoTP (1回実行)", Callback = function() executeBarrierBreakNoTP() end })
+local autoBarrierNoTPToggle
+autoBarrierNoTPToggle = BarrierTab:AddToggle({ Name = "Auto Barrier破壊 NoTP", Default = false, Callback = function(V)
+    if V then
+        task.spawn(function()
+            while V do
+                local result = executeBarrierBreakNoTP()
+                if result then if autoBarrierNoTPToggle then autoBarrierNoTPToggle:Set(false) end; break end
+                task.wait(1.5)
+            end
+        end)
+    end
+end})
+
+-- -------- 7-16. リスキル系タブ --------
+local KillTab = Window:MakeTab({ Name = "リスキル系", Icon = "rbxassetid://4483345998" })
+KillTab:AddLabel("---- プレイヤーをキル ----")
+
+local loopkillRunning = false
+local loopkillThread
+local killTargets = {}
+
+local function killPlayer(plr)
+    if plr and plr.Character then
+        pcall(function()
+            local root = plr.Character:FindFirstChild("HumanoidRootPart")
+            if root then
+                root.CFrame = root.CFrame * CFrame.new(0, -50, 0)
+                root.AssemblyLinearVelocity = Vector3.new(0, -100, 0)
+                task.wait(0.1)
+                plr.Character:BreakJoints()
+            end
+        end)
+    end
+end
+
+KillTab:AddDropdown({ Name = "対象プレイヤー", Options = getPlayerList(), Callback = function(V) selectedTargetName = V end })
+KillTab:AddButton({ Name = "対象を1回キル", Callback = function()
+    local target = Players:FindFirstChild(selectedTargetName)
+    if target then killPlayer(target) end
+end})
+KillTab:AddToggle({ Name = "指定プレイヤーを連続キル", Default = false, Callback = function(V)
+    loopkillRunning = V
+    if V then
+        loopkillThread = coroutine.create(function()
+            while loopkillRunning do
+                local target = Players:FindFirstChild(selectedTargetName)
+                if target then killPlayer(target) end
+                wait()
+            end
+        end)
+        coroutine.resume(loopkillThread)
+    else
+        if loopkillThread then coroutine.close(loopkillThread); loopkillThread = nil end
+    end
+end})
+
+KillTab:AddToggle({ Name = "全員（自分以外）を連続キル", Default = false, Callback = function(V)
+    loopkillRunning = V
+    if V then
+        loopkillThread = coroutine.create(function()
+            while loopkillRunning do
+                for _, target in pairs(Players:GetPlayers()) do
+                    if target ~= player then killPlayer(target) end
+                end
+                wait()
+            end
+        end)
+        coroutine.resume(loopkillThread)
+    else
+        if loopkillThread then coroutine.close(loopkillThread); loopkillThread = nil end
+    end
+end})
+
+-- -------- 7-17. ラグタブ --------
+local LagTab = Window:MakeTab({ Name = "ラグ", Icon = "rbxassetid://4483345998" })
+LagTab:AddLabel("---- ライン連射（サーバーラグ） ----")
+local lineSpamRunning = false
+local lineSpamThread
+local lineCount = 100
+LagTab:AddTextbox({ Name = "1回のライン数（デフォルト100）", Default = "100", Callback = function(V) lineCount = tonumber(V) or 100 end })
+LagTab:AddToggle({ Name = "ライン連射（サーバーラグ）", Default = false, Callback = function(V)
+    if V then
+        lineSpamRunning = true
+        lineSpamThread = coroutine.create(function()
+            local createLine = ReplicatedStorage.GrabEvents.CreateGrabLine
+            while lineSpamRunning do
+                for i = 1, lineCount do
+                    pcall(function()
+                        createLine:FireServer(Workspace:FindFirstChildOfClass("Part"), CFrame.new(math.random(-9999,9999), math.random(-9999,9999), math.random(-9999,9999)))
+                    end)
+                end
+                wait()
+            end
+        end)
+        coroutine.resume(lineSpamThread)
+    else
+        lineSpamRunning = false
+        if lineSpamThread then coroutine.close(lineSpamThread); lineSpamThread = nil end
+    end
+end})
+
+LagTab:AddSection({ Name = "カラーライン（RGB）" })
+local colorMode = 1
+LagTab:AddDropdown({ Name = "カラーモード", Default = "単色", Options = {"単色","2色","多色"}, Callback = function(V)
+    if V == "単色" then colorMode = 1
+    elseif V == "2色" then colorMode = 2
+    else colorMode = 3 end
+end})
+local colorSpamRunning = false
+local colorSpamThread
+LagTab:AddToggle({ Name = "カラーライン連射", Default = false, Callback = function(V)
+    if V then
+        colorSpamRunning = true
+        colorSpamThread = coroutine.create(function()
+            while colorSpamRunning do
+                local keys = {}
+                if colorMode == 1 then
+                    keys = {ColorSequenceKeypoint.new(0, Color3.fromRGB(math.random(0,255), math.random(0,255), math.random(0,255)))}
+                elseif colorMode == 2 then
+                    keys = {
+                        ColorSequenceKeypoint.new(0, Color3.fromRGB(math.random(0,255), math.random(0,255), math.random(0,255))),
+                        ColorSequenceKeypoint.new(1, Color3.fromRGB(math.random(0,255), math.random(0,255), math.random(0,255)))
+                    }
+                else
+                    local count = math.random(3,6)
+                    for i=0,count do
+                        if i==0 then table.insert(keys, ColorSequenceKeypoint.new(0, Color3.fromRGB(math.random(0,255), math.random(0,255), math.random(0,255))))
+                        elseif i==count then table.insert(keys, ColorSequenceKeypoint.new(1, Color3.fromRGB(math.random(0,255), math.random(0,255), math.random(0,255))))
+                        else table.insert(keys, ColorSequenceKeypoint.new(i/count, Color3.fromRGB(math.random(0,255), math.random(0,255), math.random(0,255)))) end
+                    end
+                end
+                pcall(function()
+                    ReplicatedStorage.DataEvents.UpdateLineColorsEvent:FireServer(ColorSequence.new(keys))
+                end)
+                wait()
+            end
+        end)
+        coroutine.resume(colorSpamThread)
+    else
+        colorSpamRunning = false
+        if colorSpamThread then coroutine.close(colorSpamThread); colorSpamThread = nil end
+    end
+end})
+
+LagTab:AddSection({ Name = "透明ライン" })
+local invsLineRunning = false
+local invsLineThread
+LagTab:AddToggle({ Name = "透明ライン連射", Default = false, Callback = function(V)
+    if V then
+        invsLineRunning = true
+        invsLineThread = coroutine.create(function()
+            while invsLineRunning do
+                pcall(function() ReplicatedStorage.GrabEvents.CreateGrabLine:FireServer() end)
+                wait()
+            end
+        end)
+        coroutine.resume(invsLineThread)
+    else
+        invsLineRunning = false
+        if invsLineThread then coroutine.close(invsLineThread); invsLineThread = nil end
+    end
+end})
+
+LagTab:AddSection({ Name = "クレイジーライン" })
+local crazyLineRunning = false
+local crazyLineThread
+local crazyCount = 5
+LagTab:AddTextbox({ Name = "1回のライン数（デフォルト5）", Default = "5", Callback = function(V) crazyCount = tonumber(V) or 5 end })
+LagTab:AddToggle({ Name = "クレイジーライン（ランダム対象）", Default = false, Callback = function(V)
+    if V then
+        crazyLineRunning = true
+        crazyLineThread = coroutine.create(function()
+            local list = Players:GetPlayers()
+            while crazyLineRunning do
+                if #list > 1 then
+                    local p = list[math.random(2, #list)]
+                    for i = 1, crazyCount do
+                        pcall(function()
+                            ReplicatedStorage.GrabEvents.CreateGrabLine:FireServer(
+                                p.Character and p.Character:FindFirstChild("HumanoidRootPart") or nil,
+                                CFrame.new(0,0,0)
+                            )
+                        end)
+                    end
+                end
+                wait()
+            end
+        end)
+        coroutine.resume(crazyLineThread)
+    else
+        crazyLineRunning = false
+        if crazyLineThread then coroutine.close(crazyLineThread); crazyLineThread = nil end
+    end
+end})
+
+LagTab:AddSection({ Name = "サーバークラッシュ（注意）" })
+LagTab:AddButton({ Name = "サーバークラッシュ（200kライン）", Callback = function()
+    task.spawn(function()
+        for i = 1, 200000 do
+            pcall(function()
+                ReplicatedStorage.GrabEvents.CreateGrabLine:FireServer(
+                    Workspace:FindFirstChildOfClass("Part"),
+                    CFrame.new(math.random(-9999,9999), math.random(-9999,9999), math.random(-9999,9999))
+                )
+            end)
+            if i % 1000 == 0 then task.wait() end
+        end
+    end)
+end})
+
+-- -------- 7-18. アラタブ（ネットワークスパム） --------
+local AlaTab = Window:MakeTab({ Name = "アラ", Icon = "rbxassetid://4483345998" })
+AlaTab:AddToggle({ Name = "ネットワークスパム", Default = false, Callback = function(V) if V then startNetSpam() else stopNetSpam() end end })
+
+-- -------- 7-19. クレジットタブ --------
+local CreditTab = Window:MakeTab({ Name = "クレジット", Icon = "rbxassetid://4483345998" })
+CreditTab:AddLabel("kiki hub1.0.2 完全統合版")
+CreditTab:AddLabel("キャットコミュニティー🐈")
+CreditTab:AddLabel("作：うんちブリリリリリュw / 拡散：自由な犬+あく")
+
+-- -------- 7-20. Discordタブ --------
+local DiscordTab = Window:MakeTab({ Name = "Discord", Icon = "rbxassetid://4483345998" })
+DiscordTab:AddLabel("新サーバー (メイン)")
+DiscordTab:AddButton({ Name = "新サーバーリンクをコピー", Callback = function()
+    pcall(function() setclipboard("https://discord.gg/G2m8RRDgz") end)
+end})
+DiscordTab:AddLabel("旧サーバー (アーカイブ)")
+DiscordTab:AddButton({ Name = "旧サーバーリンクをコピー", Callback = function()
+    pcall(function() setclipboard("https://discord.gg/wZpmpCryX") end)
+end})
+
+-- -------- 7-21. スクリプト hub タブ --------
+local ScriptHubTab = Window:MakeTab({ Name = "スクリプト hub", Icon = "rbxassetid://4483345998" })
+ScriptHubTab:AddLabel("外部スクリプトを読み込みます (実行には注意)")
+ScriptHubTab:AddButton({ Name = "スクリプト hub を実行", Callback = function()
+    pcall(function()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/toiletgot/cat-hub/refs/heads/main/スプリクト%20hub"))()
+    end)
+end})
+
+-- ========================================================================
+--  初期化
+-- ========================================================================
+OrionLib:Init()
