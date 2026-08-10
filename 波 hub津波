@@ -1,0 +1,192 @@
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local UserInputService = game:GetService("UserInputService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local CoreGui = game:GetService("CoreGui")
+local HttpService = game:GetService("HttpService")
+local RunService = game:GetService("RunService")
+local LocalPlayer = Players.LocalPlayer
+
+local function PlaySound(soundId)
+    local sound = Instance.new("Sound")
+    sound.SoundId = "rbxassetid://" .. soundId
+    sound.Parent = CoreGui
+    sound:Play()
+    sound.Ended:Connect(function()
+        sound:Destroy()
+    end)
+end
+
+PlaySound("9120391824")
+
+local Settings = {
+    radius = 50,
+    height = 100,
+    rotationSpeed = 1,
+    attractionStrength = 1000,
+}
+
+local Orion = loadstring(game:HttpGet("https://raw.githubusercontent.com/Siro-script/FtaP.90hub/refs/heads/main/Orion"))()
+local Window = Orion:MakeWindow({
+    Name = "波hub（環境サバイバル版）",
+    HidePremium = false,
+    SaveConfig = true,
+    IntroText = "波hub"
+})
+
+local isEnabled = false
+local trackedParts = {}
+
+local MainTab = Window:MakeTab({
+    Name = "波hub 環境版",
+    Icon = "rbxassetid://4483362458",
+    PremiumOnly = false
+})
+
+MainTab:AddToggle({
+    Name = "起動",
+    Default = false,
+    Callback = function(value)
+        isEnabled = value
+        PlaySound("9120391824")
+    end
+})
+
+MainTab:AddSlider({
+    Name = "半径",
+    Min = 0,
+    Max = 500,
+    Default = Settings.radius,
+    Color = Color3.fromRGB(153, 153, 153),
+    Increment = 1,
+    ValueName = "",
+    Callback = function(value)
+        Settings.radius = value
+    end
+})
+
+MainTab:AddSlider({
+    Name = "高さ",
+    Min = 0,
+    Max = 500,
+    Default = Settings.height,
+    Color = Color3.fromRGB(153, 0, 0),
+    Increment = 1,
+    ValueName = "",
+    Callback = function(value)
+        Settings.height = value
+    end
+})
+
+MainTab:AddSlider({
+    Name = "回転速度",
+    Min = 0,
+    Max = 200,
+    Default = Settings.rotationSpeed,
+    Color = Color3.fromRGB(153, 153, 0),
+    Increment = 1,
+    ValueName = "",
+    Callback = function(value)
+        Settings.rotationSpeed = value
+    end
+})
+
+MainTab:AddSlider({
+    Name = "吸い込む強さ",
+    Min = 0,
+    Max = 5000,
+    Default = Settings.attractionStrength,
+    Color = Color3.fromRGB(153, 0, 0),
+    Increment = 1,
+    ValueName = "",
+    Callback = function(value)
+        Settings.attractionStrength = value
+    end
+})
+
+MainTab:AddButton({
+    Name = "Fly",
+    Callback = function()
+        PlaySound("9120391824")
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/Siro-script/FtaP.90hub/refs/heads/main/Fly"))()
+    end
+})
+
+if not getgenv().Network then
+    getgenv().Network = {
+        BaseParts = {},
+        Velocity = Vector3.new(14.46262424, 14.46262424, 14.46262424)
+    }
+
+    local function initNetwork()
+        LocalPlayer.ReplicationFocus = Workspace
+        RunService.Heartbeat:Connect(function()
+            sethiddenproperty(LocalPlayer, "SimulationRadius", math.huge)
+            for _, part in pairs(getgenv().Network.BaseParts) do
+                if part:IsDescendantOf(Workspace) then
+                    part.Velocity = getgenv().Network.Velocity
+                end
+            end
+        end)
+    end
+    initNetwork()
+end
+
+local function AddPart(part)
+    if part:IsA("BasePart") and not part.Anchored and part:IsDescendantOf(Workspace) then
+        if part.Parent == LocalPlayer.Character or part:IsDescendantOf(LocalPlayer.Character) then
+            return false
+        end
+        part.CanCollide = false
+        part.CustomPhysicalProperties = PhysicalProperties.new(0, 0, 0, 0, 0)
+        if not table.find(trackedParts, part) then
+            table.insert(trackedParts, part)
+        end
+        return true
+    end
+    return false
+end
+
+local function RemovePart(part)
+    local index = table.find(trackedParts, part)
+    if index then
+        table.remove(trackedParts, index)
+    end
+end
+
+for _, part in pairs(Workspace:GetDescendants()) do
+    AddPart(part)
+end
+
+Workspace.DescendantAdded:Connect(AddPart)
+Workspace.DescendantRemoving:Connect(RemovePart)
+
+RunService.Heartbeat:Connect(function()
+    if not isEnabled then return end
+
+    local character = LocalPlayer.Character
+    local head = character and character:FindFirstChild("Head")
+    if not head then return end
+
+    local headPos = head.Position
+
+    for _, part in pairs(trackedParts) do
+        if part.Parent and not part.Anchored then
+            local partPos = part.Position
+            local distance = (Vector3.new(partPos.X, headPos.Y, partPos.Z) - headPos).Magnitude
+            local angle = math.atan2(partPos.Z - headPos.Z, partPos.X - headPos.X)
+            local newAngle = angle + math.rad(Settings.rotationSpeed)
+
+            local targetPos = Vector3.new(
+                headPos.X + (math.cos(newAngle) * math.min(Settings.radius, distance)),
+                headPos.Y + (Settings.height * math.abs(math.sin((partPos.Y - headPos.Y) / Settings.height))),
+                headPos.Z + (math.sin(newAngle) * math.min(Settings.radius, distance))
+            )
+
+            local direction = (targetPos - partPos).Unit
+            part.Velocity = direction * Settings.attractionStrength
+        end
+    end
+end)
+
+Orion:Init()
