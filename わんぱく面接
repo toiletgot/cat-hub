@@ -2147,7 +2147,345 @@ AntiTab:AddToggle({ Name = "Bring軽減（BodyPosition）", Default = false, Cal
 end})
 -- ▲▲▲ 新アンチここまで ▲▲▲
 
--- -------- 7-12. ブロブマンタブ（空） --------
+-- ========================================================================
+--  7-12. ブロブマンタブ（完全完成版）
+-- ========================================================================
+local BlobTab = Window:MakeTab({ Name = "ブロブマン", Icon = "rbxassetid://4483345998" })
+
+-- ====================== 変数 ======================
+local blobSelectedPlayer = nil
+local blobKickAllWhitelist = false
+local blobSpinSpeed = 15
+local blobIsSpinning = false
+local blobKillAura = false
+local blobSelectedKill = false
+local blobLoopEnabled = false
+local blobLoopMode = "Kick"           -- Kick / Kill / Fling
+local blobTargetMode = "全員"         -- 全員 / プレイヤー選択
+local blobFlingPower = 500
+local blobGrabRepeat = 6
+local blobAuraRange = 40
+
+-- ====================== ヘルパー ======================
+local function BlobGetPlayers()
+    local t = {}
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= player then table.insert(t, p.Name) end
+    end
+    return t
+end
+
+local function BlobNotify(name, content, time)
+    OrionLib:MakeNotification({
+        Name = name,
+        Content = content,
+        Image = "rbxassetid://4483345998",
+        Time = time or 3
+    })
+end
+
+-- ====================== 基本操作 ======================
+BlobTab:AddSection({ Name = "基本操作" })
+
+BlobTab:AddButton({
+    Name = "ブロブマンをスポーン",
+    Callback = function()
+        local blob = spawnBlobman()
+        if blob then
+            BlobNotify("成功", "ブロブマンをスポーンしました", 3)
+        else
+            BlobNotify("失敗", "スポーンに失敗しました", 3)
+        end
+    end
+})
+
+BlobTab:AddButton({
+    Name = "ブロブマンに乗る",
+    Callback = function()
+        if rideBlobman() then
+            BlobNotify("成功", "ブロブマンに乗りました", 3)
+        else
+            BlobNotify("失敗", "乗れませんでした。先にスポーンしてください", 3)
+        end
+    end
+})
+
+BlobTab:AddButton({
+    Name = "ブロブマンを破壊",
+    Callback = function()
+        local blob = findBlobman()
+        if blob then
+            pcall(function()
+                ReplicatedStorage.MenuToys.DestroyToy:FireServer(blob)
+            end)
+            blobman = nil
+            BlobNotify("成功", "ブロブマンを破壊しました", 3)
+        else
+            BlobNotify("失敗", "ブロブマンが見つかりません", 3)
+        end
+    end
+})
+
+-- ====================== 単体キック ======================
+BlobTab:AddSection({ Name = "単体キック" })
+
+local blobPlayerDrop = BlobTab:AddDropdown({
+    Name = "対象プレイヤー",
+    Default = "",
+    Options = BlobGetPlayers(),
+    Callback = function(v) blobSelectedPlayer = v end
+})
+
+BlobTab:AddButton({
+    Name = "リスト更新",
+    Callback = function()
+        blobPlayerDrop:Refresh(BlobGetPlayers(), true)
+    end
+})
+
+BlobTab:AddButton({
+    Name = "選択プレイヤーをキック",
+    Callback = function()
+        if not blobSelectedPlayer then
+            BlobNotify("エラー", "プレイヤーを選択してください", 3)
+            return
+        end
+        local target = Players:FindFirstChild(blobSelectedPlayer)
+        if target then
+            performKick(target)
+            BlobNotify("成功", target.Name .. " をキックしました", 3)
+        else
+            BlobNotify("エラー", "プレイヤーが見つかりません", 3)
+        end
+    end
+})
+
+-- ====================== Kick All ======================
+BlobTab:AddSection({ Name = "Kick All" })
+
+BlobTab:AddToggle({
+    Name = "フレンドを除外（ホワイトリスト）",
+    Default = false,
+    Callback = function(v)
+        blobKickAllWhitelist = v
+        kickAllWhitelistFriends = v
+    end
+})
+
+BlobTab:AddButton({
+    Name = "全員キック (Kick All)",
+    Callback = function()
+        if kickAllActive then
+            BlobNotify("注意", "既に実行中です", 3)
+            return
+        end
+        kickAllFunction()
+        BlobNotify("実行", "Kick All を開始しました", 4)
+    end
+})
+
+-- ====================== スピンキック ======================
+BlobTab:AddSection({ Name = "スピンキック" })
+
+BlobTab:AddTextbox({
+    Name = "スピン速度",
+    Default = "15",
+    Callback = function(v)
+        blobSpinSpeed = tonumber(v) or 15
+        _G.SpinSpeed = blobSpinSpeed
+    end
+})
+
+BlobTab:AddToggle({
+    Name = "スピンキック 開始/停止",
+    Default = false,
+    Callback = function(v)
+        if v then
+            if not blobSelectedPlayer then
+                BlobNotify("エラー", "先にプレイヤーを選択してください", 3)
+                return
+            end
+            local target = Players:FindFirstChild(blobSelectedPlayer)
+            if not target then
+                BlobNotify("エラー", "プレイヤーが見つかりません", 3)
+                return
+            end
+            kickTarget = target
+            isSpinning = true
+            task.spawn(spinKickLoop)
+            BlobNotify("開始", "スピンキック開始", 3)
+        else
+            isSpinning = false
+            BlobNotify("停止", "スピンキック停止", 3)
+        end
+    end
+})
+
+-- ====================== 掴みサイクルループ ======================
+BlobTab:AddSection({ Name = "掴みサイクルループ" })
+
+BlobTab:AddDropdown({
+    Name = "動作モード",
+    Default = "Kick",
+    Options = {"Kick", "Kill", "Fling"},
+    Callback = function(v) blobLoopMode = v end
+})
+
+BlobTab:AddDropdown({
+    Name = "対象モード",
+    Default = "全員",
+    Options = {"全員", "プレイヤー選択"},
+    Callback = function(v) blobTargetMode = v end
+})
+
+BlobTab:AddTextbox({
+    Name = "掴み回数（多いほど強い）",
+    Default = "6",
+    Callback = function(v)
+        blobGrabRepeat = math.clamp(tonumber(v) or 6, 2, 20)
+    end
+})
+
+BlobTab:AddTextbox({
+    Name = "Fling威力",
+    Default = "500",
+    Callback = function(v) blobFlingPower = tonumber(v) or 500 end
+})
+
+BlobTab:AddToggle({
+    Name = "ループ開始 / 停止",
+    Default = false,
+    Callback = function(v)
+        blobLoopEnabled = v
+        if v then
+            BlobNotify("開始", "掴みサイクル開始（Fキーでも可）", 3)
+            task.spawn(function()
+                while blobLoopEnabled do
+                    local targets = {}
+                    if blobTargetMode == "全員" then
+                        for _, p in ipairs(Players:GetPlayers()) do
+                            if p ~= player then table.insert(targets, p) end
+                        end
+                    else
+                        if blobSelectedPlayer then
+                            local t = Players:FindFirstChild(blobSelectedPlayer)
+                            if t then table.insert(targets, t) end
+                        end
+                    end
+
+                    for _, target in ipairs(targets) do
+                        if not blobLoopEnabled then break end
+                        if target.Character and target.Character:FindFirstChild("HumanoidRootPart") then
+                            if blobLoopMode == "Kill" then
+                                pcall(function()
+                                    target.Character:BreakJoints()
+                                end)
+                            elseif blobLoopMode == "Fling" then
+                                local root = target.Character.HumanoidRootPart
+                                local bv = Instance.new("BodyVelocity")
+                                bv.MaxForce = Vector3.new(1e6, 1e6, 1e6)
+                                bv.Velocity = Vector3.new(math.random(-1,1), 1, math.random(-1,1)).Unit * blobFlingPower
+                                bv.Parent = root
+                                Debris:AddItem(bv, 0.3)
+                            else
+                                performKick(target)
+                            end
+                        end
+                        task.wait(0.08)
+                    end
+                    task.wait(0.1)
+                end
+            end)
+        else
+            BlobNotify("停止", "掴みサイクル停止", 3)
+        end
+    end
+})
+
+-- ====================== Kill Aura / Selected Kill ======================
+BlobTab:AddSection({ Name = "Kill Aura / Selected Kill" })
+
+BlobTab:AddTextbox({
+    Name = "Aura範囲",
+    Default = "40",
+    Callback = function(v) blobAuraRange = tonumber(v) or 40 end
+})
+
+BlobTab:AddToggle({
+    Name = "Kill Aura（範囲内自動）",
+    Default = false,
+    Callback = function(v)
+        blobKillAura = v
+        if v then
+            BlobNotify("開始", "Kill Aura 開始", 3)
+            task.spawn(function()
+                while blobKillAura do
+                    local myRoot = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+                    if myRoot then
+                        for _, p in ipairs(Players:GetPlayers()) do
+                            if p ~= player and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                                local dist = (myRoot.Position - p.Character.HumanoidRootPart.Position).Magnitude
+                                if dist <= blobAuraRange then
+                                    performKick(p)
+                                end
+                            end
+                        end
+                    end
+                    task.wait(0.12)
+                end
+            end)
+        else
+            BlobNotify("停止", "Kill Aura 停止", 3)
+        end
+    end
+})
+
+BlobTab:AddToggle({
+    Name = "Selected Kill（選択プレイヤー連続）",
+    Default = false,
+    Callback = function(v)
+        blobSelectedKill = v
+        if v then
+            if not blobSelectedPlayer then
+                BlobNotify("エラー", "プレイヤーを選択してください", 3)
+                return
+            end
+            BlobNotify("開始", blobSelectedPlayer .. " 連続キル開始", 3)
+            task.spawn(function()
+                while blobSelectedKill do
+                    local target = Players:FindFirstChild(blobSelectedPlayer)
+                    if target then
+                        performKick(target)
+                    end
+                    task.wait(0.18)
+                end
+            end)
+        else
+            BlobNotify("停止", "Selected Kill 停止", 3)
+        end
+    end
+})
+
+-- ====================== ホットキー ======================
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.KeyCode == Enum.KeyCode.F then
+        if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then
+            -- Ctrl + F = 強制停止
+            blobLoopEnabled = false
+            isSpinning = false
+            blobKillAura = false
+            blobSelectedKill = false
+            BlobNotify("ホットキー", "全停止 (Ctrl+F)", 2)
+        else
+            -- F単押し = ループ開始
+            if not blobLoopEnabled then
+                blobLoopEnabled = true
+                BlobNotify("ホットキー", "掴みサイクル開始 (F)", 2)
+            end
+        end
+    end
+end)
 local BlobTab = Window:MakeTab({ Name = "ブロブマン", Icon = "rbxassetid://4483345998" })
 -- 空
 
