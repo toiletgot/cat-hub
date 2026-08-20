@@ -1,0 +1,612 @@
+local OrionLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/BlizTBr/scripts/main/Orion%20X"))()
+
+local Window = OrionLib:MakeWindow({
+    Name = "kiki hub",
+    HidePremium = false,
+    IntroText = "kiki hub"
+})
+
+-- ESPの設定
+local ESPEnabled = false
+local ESPObjects = {}
+local ESPConnections = {}
+local SelectedESPType = "Box"
+local ESPHistory = {} -- 履歴保存用
+local MaxHistory = 20 -- 最大履歴数
+
+-- ESPの種類定義
+local ESPTypes = {
+    ["Box"] = {
+        Name = "ボックス",
+        Icon = "rbxassetid://4483345998",
+        Description = "プレイヤーを四角で囲む"
+    },
+    ["Highlight"] = {
+        Name = "ハイライト",
+        Icon = "rbxassetid://4483345998",
+        Description = "プレイヤーを光らせる"
+    },
+    ["Chams"] = {
+        Name = "チャムズ",
+        Icon = "rbxassetid://4483345998",
+        Description = "透過とアウトライン"
+    },
+    ["Skeleton"] = {
+        Name = "スケルトン",
+        Icon = "rbxassetid://4483345998",
+        Description = "骨格を表示"
+    },
+    ["Circle"] = {
+        Name = "サークル",
+        Icon = "rbxassetid://4483345998",
+        Description = "足元に円を表示"
+    },
+    ["Tracer"] = {
+        Name = "トレーサー",
+        Icon = "rbxassetid://4483345998",
+        Description = "プレイヤーへの線を表示"
+    },
+    ["Glow"] = {
+        Name = "グロー",
+        Icon = "rbxassetid://4483345998",
+        Description = "発光効果"
+    },
+    ["HealthBar"] = {
+        Name = "ヘルスバー",
+        Icon = "rbxassetid://4483345998",
+        Description = "体力バーを表示"
+    },
+    ["NameOnly"] = {
+        Name = "ネームのみ",
+        Icon = "rbxassetid://4483345998",
+        Description = "名前のみ表示"
+    },
+    ["AllInOne"] = {
+        Name = "オールインワン",
+        Icon = "rbxassetid://4483345998",
+        Description = "全ての機能を組み合わせる"
+    }
+}
+
+-- 履歴に追加
+local function AddHistory(action, details)
+    table.insert(ESPHistory, 1, {
+        Action = action,
+        Details = details,
+        Time = os.time()
+    })
+    
+    if #ESPHistory > MaxHistory then
+        table.remove(ESPHistory)
+    end
+end
+
+-- 特定のプレイヤーのESPを削除
+local function RemoveESPFromPlayer(player)
+    local toRemove = {}
+    for i, esp in pairs(ESPObjects) do
+        if esp.Player == player then
+            table.insert(toRemove, i)
+        end
+    end
+    
+    for _, index in pairs(toRemove) do
+        local esp = ESPObjects[index]
+        if esp and esp.Data then
+            for _, obj in pairs(esp.Data) do
+                if obj and obj.Parent then
+                    obj:Destroy()
+                end
+            end
+        end
+        table.remove(ESPObjects, index)
+    end
+    
+    AddHistory("プレイヤー削除", player.Name)
+end
+
+-- 最新のESPを1つ取り消し
+local function UndoLastESP()
+    if #ESPObjects == 0 then
+        OrionLib:MakeNotification({
+            Name = "取り消しエラー",
+            Content = "取り消せるESPがありません",
+            Image = "rbxassetid://4483345998",
+            Time = 3
+        })
+        return false
+    end
+    
+    local lastESP = ESPObjects[#ESPObjects]
+    if lastESP and lastESP.Data then
+        for _, obj in pairs(lastESP.Data) do
+            if obj and obj.Parent then
+                obj:Destroy()
+            end
+        end
+    end
+    table.remove(ESPObjects)
+    
+    AddHistory("最後のESPを取り消し", "1件削除")
+    
+    OrionLib:MakeNotification({
+        Name = "取り消し完了",
+        Content = "最後のESPが削除されました",
+        Image = "rbxassetid://4483345998",
+        Time = 2
+    })
+    return true
+end
+
+-- 全てのESPを一括削除
+local function RemoveAllESP()
+    if #ESPObjects == 0 then
+        OrionLib:MakeNotification({
+            Name = "削除エラー",
+            Content = "削除するESPがありません",
+            Image = "rbxassetid://4483345998",
+            Time = 3
+        })
+        return
+    end
+    
+    local count = #ESPObjects
+    for _, esp in pairs(ESPObjects) do
+        if esp and esp.Data then
+            for _, obj in pairs(esp.Data) do
+                if obj and obj.Parent then
+                    obj:Destroy()
+                end
+            end
+        end
+    end
+    ESPObjects = {}
+    
+    AddHistory("全てのESPを削除", count .. "件削除")
+    
+    OrionLib:MakeNotification({
+        Name = "一括削除完了",
+        Content = count .. "件のESPが削除されました",
+        Image = "rbxassetid://4483345998",
+        Time = 3
+    })
+end
+
+-- ESP作成関数
+local function CreateESP(player, espType)
+    if not player.Character then return end
+    
+    local character = player.Character
+    local humanoid = character:FindFirstChild("Humanoid")
+    if not humanoid then return end
+    
+    local playerColor = player.TeamColor or BrickColor.new("Bright red")
+    local espData = {}
+    
+    -- 各ESPタイプの処理（省略 - 以前と同じコード）
+    if espType == "Box" then
+        local box = Instance.new("BoxHandleAdornment")
+        box.Parent = character
+        box.Size = Vector3.new(4, 6, 2)
+        box.Adornee = character
+        box.AlwaysOnTop = true
+        box.ZIndex = 5
+        box.Color3 = playerColor.Color
+        box.Transparency = 0.5
+        espData.Box = box
+        
+    elseif espType == "Highlight" then
+        local highlight = Instance.new("Highlight")
+        highlight.Parent = character
+        highlight.FillColor = playerColor.Color
+        highlight.FillTransparency = 0.3
+        highlight.OutlineColor = Color3.new(1, 1, 1)
+        highlight.OutlineTransparency = 0
+        highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+        espData.Highlight = highlight
+        
+    elseif espType == "Chams" then
+        for _, part in pairs(character:GetDescendants()) do
+            if part:IsA("BasePart") then
+                local chams = Instance.new("Highlight")
+                chams.Parent = part
+                chams.FillColor = playerColor.Color
+                chams.FillTransparency = 0.2
+                chams.OutlineColor = Color3.new(1, 1, 1)
+                chams.OutlineTransparency = 0
+                chams.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+                table.insert(espData, chams)
+            end
+        end
+        
+    elseif espType == "Skeleton" then
+        local function createLine(startPos, endPos, color)
+            local line = Instance.new("SelectionBox")
+            line.Parent = character
+            line.Adornee = character
+            line.Color3 = color
+            line.Transparency = 0.5
+            line.LineThickness = 2
+            return line
+        end
+        
+        local head = character:FindFirstChild("Head")
+        local torso = character:FindFirstChild("UpperTorso") or character:FindFirstChild("Torso")
+        
+        if head and torso then
+            local line1 = createLine(head.Position, torso.Position, playerColor.Color)
+            table.insert(espData, line1)
+        end
+        
+    elseif espType == "Circle" then
+        local circle = Instance.new("CylinderHandleAdornment")
+        circle.Parent = character
+        circle.Radius = 3
+        circle.Height = 0.1
+        circle.Adornee = character
+        circle.AlwaysOnTop = true
+        circle.Color3 = playerColor.Color
+        circle.Transparency = 0.3
+        espData.Circle = circle
+        
+    elseif espType == "Tracer" then
+        local tracer = Instance.new("LineHandleAdornment")
+        tracer.Parent = character
+        tracer.Adornee = character
+        tracer.Color3 = playerColor.Color
+        tracer.Thickness = 2
+        tracer.Transparency = 0.5
+        tracer.AlwaysOnTop = true
+        espData.Tracer = tracer
+        
+    elseif espType == "Glow" then
+        local glow = Instance.new("Highlight")
+        glow.Parent = character
+        glow.FillColor = playerColor.Color
+        glow.FillTransparency = 0.1
+        glow.OutlineColor = playerColor.Color
+        glow.OutlineTransparency = 0.5
+        glow.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+        espData.Glow = glow
+        
+    elseif espType == "HealthBar" then
+        local healthBar = Instance.new("BillboardGui")
+        healthBar.Parent = character
+        healthBar.Size = UDim2.new(0, 100, 0, 10)
+        healthBar.Adornee = character:FindFirstChild("Head") or character
+        healthBar.AlwaysOnTop = true
+        
+        local healthFrame = Instance.new("Frame")
+        healthFrame.Parent = healthBar
+        healthFrame.Size = UDim2.new(1, 0, 1, 0)
+        healthFrame.BackgroundColor3 = Color3.new(0, 0, 0)
+        healthFrame.BackgroundTransparency = 0.5
+        
+        local healthFill = Instance.new("Frame")
+        healthFill.Parent = healthFrame
+        healthFill.Size = UDim2.new(1, 0, 1, 0)
+        healthFill.BackgroundColor3 = Color3.new(0, 1, 0)
+        healthFill.BackgroundTransparency = 0.3
+        
+        local updateHealth = game:GetService("RunService").RenderStepped:Connect(function()
+            if humanoid then
+                local healthPercent = humanoid.Health / humanoid.MaxHealth
+                healthFill.Size = UDim2.new(healthPercent, 0, 1, 0)
+                healthFill.BackgroundColor3 = Color3.new(1 - healthPercent, healthPercent, 0)
+            end
+        end)
+        
+        espData.HealthBar = healthBar
+        espData.HealthUpdate = updateHealth
+        
+    elseif espType == "NameOnly" then
+        local nameTag = Instance.new("BillboardGui")
+        nameTag.Parent = character
+        nameTag.Size = UDim2.new(0, 200, 0, 50)
+        nameTag.Adornee = character:FindFirstChild("Head") or character
+        nameTag.AlwaysOnTop = true
+        
+        local nameLabel = Instance.new("TextLabel")
+        nameLabel.Parent = nameTag
+        nameLabel.Size = UDim2.new(1, 0, 1, 0)
+        nameLabel.BackgroundTransparency = 1
+        nameLabel.Text = player.Name
+        nameLabel.TextColor3 = playerColor.Color
+        nameLabel.TextScaled = true
+        nameLabel.Font = Enum.Font.GothamBold
+        espData.NameTag = nameTag
+        
+    elseif espType == "AllInOne" then
+        local highlight = Instance.new("Highlight")
+        highlight.Parent = character
+        highlight.FillColor = playerColor.Color
+        highlight.FillTransparency = 0.2
+        highlight.OutlineColor = Color3.new(1, 1, 1)
+        highlight.OutlineTransparency = 0
+        highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+        espData.Highlight = highlight
+        
+        local box = Instance.new("BoxHandleAdornment")
+        box.Parent = character
+        box.Size = Vector3.new(4, 6, 2)
+        box.Adornee = character
+        box.AlwaysOnTop = true
+        box.ZIndex = 5
+        box.Color3 = playerColor.Color
+        box.Transparency = 0.3
+        espData.Box = box
+        
+        local nameTag = Instance.new("BillboardGui")
+        nameTag.Parent = character
+        nameTag.Size = UDim2.new(0, 200, 0, 50)
+        nameTag.Adornee = character:FindFirstChild("Head") or character
+        nameTag.AlwaysOnTop = true
+        
+        local nameLabel = Instance.new("TextLabel")
+        nameLabel.Parent = nameTag
+        nameLabel.Size = UDim2.new(1, 0, 1, 0)
+        nameLabel.BackgroundTransparency = 1
+        nameLabel.Text = player.Name
+        nameLabel.TextColor3 = Color3.new(1, 1, 1)
+        nameLabel.TextScaled = true
+        nameLabel.Font = Enum.Font.GothamBold
+        espData.NameTag = nameTag
+        
+        local distanceLabel = Instance.new("TextLabel")
+        distanceLabel.Parent = nameTag
+        distanceLabel.Size = UDim2.new(1, 0, 0, 20)
+        distanceLabel.Position = UDim2.new(0, 0, 1, 0)
+        distanceLabel.BackgroundTransparency = 1
+        distanceLabel.TextColor3 = Color3.new(1, 1, 1)
+        distanceLabel.TextScaled = true
+        distanceLabel.Font = Enum.Font.Gotham
+        espData.DistanceLabel = distanceLabel
+        
+        local updateDistance = game:GetService("RunService").RenderStepped:Connect(function()
+            if not ESPEnabled then return end
+            if not character or not character.PrimaryPart then return end
+            
+            local playerChar = game.Players.LocalPlayer.Character
+            if not playerChar or not playerChar.PrimaryPart then return end
+            
+            local distance = (character.PrimaryPart.Position - playerChar.PrimaryPart.Position).Magnitude
+            distanceLabel.Text = string.format("%.1f m", distance)
+        end)
+        espData.DistanceUpdate = updateDistance
+    end
+    
+    local espEntry = {
+        Player = player,
+        Data = espData,
+        Type = espType
+    }
+    table.insert(ESPObjects, espEntry)
+    AddHistory("ESP作成", player.Name .. " - " .. espType)
+    
+    return espEntry
+end
+
+-- ESP有効化
+local function EnableESP(espType)
+    ESPEnabled = true
+    SelectedESPType = espType or "Box"
+    
+    for _, player in pairs(game.Players:GetPlayers()) do
+        if player ~= game.Players.LocalPlayer then
+            CreateESP(player, SelectedESPType)
+        end
+    end
+    
+    local playerAddedConnection = game.Players.PlayerAdded:Connect(function(player)
+        if player ~= game.Players.LocalPlayer then
+            player.CharacterAdded:Connect(function()
+                if ESPEnabled then
+                    CreateESP(player, SelectedESPType)
+                end
+            end)
+        end
+    end)
+    table.insert(ESPConnections, playerAddedConnection)
+end
+
+-- ESP無効化
+local function DisableESP()
+    ESPEnabled = false
+    
+    for _, esp in pairs(ESPObjects) do
+        if esp.Data then
+            for _, obj in pairs(esp.Data) do
+                if obj and obj.Parent then
+                    obj:Destroy()
+                end
+            end
+        end
+    end
+    ESPObjects = {}
+    
+    for _, connection in pairs(ESPConnections) do
+        connection:Disconnect()
+    end
+    ESPConnections = {}
+end
+
+-- ESPタブ作成
+local ESPTab = Window:MakeTab({
+    Name = "ESP",
+    Icon = "rbxassetid://4483345998",
+    PremiumOnly = false
+})
+
+-- ESP有効化トグル
+local espToggle = ESPTab:AddToggle({
+    Name = "ESP有効化",
+    Default = false,
+    Callback = function(Value)
+        if Value then
+            EnableESP(SelectedESPType)
+        else
+            DisableESP()
+        end
+    end
+})
+
+-- 取り消しセクション
+local UndoTab = ESPTab:AddSection({
+    Name = "取り消し/リセット"
+})
+
+-- 取り消しボタン（最新の1つ）
+UndoTab:AddButton({
+    Name = "↩ 最後のESPを取り消す",
+    Callback = function()
+        UndoLastESP()
+    end
+})
+
+-- 全てのESPを削除ボタン
+UndoTab:AddButton({
+    Name = "🗑 全てのESPを一括削除",
+    Callback = function()
+        RemoveAllESP()
+    end
+})
+
+-- 特定のプレイヤーのESPを削除
+UndoTab:AddButton({
+    Name = "👤 プレイヤー指定で削除",
+    Callback = function()
+        local players = {}
+        for _, player in pairs(game.Players:GetPlayers()) do
+            if player ~= game.Players.LocalPlayer then
+                table.insert(players, player.Name)
+            end
+        end
+        
+        if #players == 0 then
+            OrionLib:MakeNotification({
+                Name = "エラー",
+                Content = "削除するプレイヤーがいません",
+                Image = "rbxassetid://4483345998",
+                Time = 3
+            })
+            return
+        end
+        
+        -- 簡易的な選択UI（OrionLibにはDropdownがあるのでそれを使用）
+        local selectionTab = Window:MakeTab({
+            Name = "プレイヤー選択",
+            Icon = "rbxassetid://4483345998",
+            PremiumOnly = true
+        })
+        
+        selectionTab:AddDropdown({
+            Name = "削除するプレイヤーを選択",
+            Default = players[1],
+            Options = players,
+            Callback = function(selected)
+                for _, player in pairs(game.Players:GetPlayers()) do
+                    if player.Name == selected then
+                        RemoveESPFromPlayer(player)
+                        break
+                    end
+                end
+                Window:RemoveTab(selectionTab)
+            end
+        })
+    end
+})
+
+-- ESPリセット（全ての設定を初期化）
+UndoTab:AddButton({
+    Name = "🔄 ESPを完全リセット",
+    Callback = function()
+        DisableESP()
+        ESPObjects = {}
+        ESPConnections = {}
+        ESPHistory = {}
+        espToggle:Set(false)
+        
+        OrionLib:MakeNotification({
+            Name = "リセット完了",
+            Content = "全てのESP設定がリセットされました",
+            Image = "rbxassetid://4483345998",
+            Time = 3
+        })
+    end
+})
+
+-- 履歴表示ボタン
+UndoTab:AddButton({
+    Name = "📜 操作履歴を表示",
+    Callback = function()
+        local historyText = "最近の操作履歴:\n"
+        for i, entry in pairs(ESPHistory) do
+            if i <= 10 then -- 最新10件
+                local timeStr = os.date("%H:%M:%S", entry.Time)
+                historyText = historyText .. string.format("%d. [%s] %s - %s\n", i, timeStr, entry.Action, entry.Details)
+            end
+        end
+        
+        if #ESPHistory == 0 then
+            historyText = "履歴がありません"
+        end
+        
+        OrionLib:MakeNotification({
+            Name = "操作履歴",
+            Content = historyText,
+            Image = "rbxassetid://4483345998",
+            Time = 5
+        })
+    end
+})
+
+-- ESP種類選択
+ESPTab:AddDropdown({
+    Name = "ESPの種類",
+    Default = "Box",
+    Options = {
+        "Box",
+        "Highlight", 
+        "Chams",
+        "Skeleton",
+        "Circle",
+        "Tracer",
+        "Glow",
+        "HealthBar",
+        "NameOnly",
+        "AllInOne"
+    },
+    Callback = function(Value)
+        SelectedESPType = Value
+        if ESPEnabled then
+            DisableESP()
+            EnableESP(SelectedESPType)
+            espToggle:Set(true)
+        end
+    end
+})
+
+-- ESP説明ボタン
+for key, data in pairs(ESPTypes) do
+    ESPTab:AddButton({
+        Name = data.Name .. " - " .. data.Description,
+        Callback = function()
+            OrionLib:MakeNotification({
+                Name = data.Name,
+                Content = data.Description,
+                Image = data.Icon,
+                Time = 3
+            })
+        end
+    })
+end
+
+OrionLib:Init()
+
+-- プレイヤーリスポーン対応
+game.Players.LocalPlayer.CharacterAdded:Connect(function()
+    if ESPEnabled then
+        DisableESP()
+        EnableESP(SelectedESPType)
+    end
+end)
