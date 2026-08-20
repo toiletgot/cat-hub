@@ -1,20 +1,7 @@
 --[[
-    kiki hub1.0.2
-    ・名称変更、IntroText「よろしく」
-    ・クレジット名「あく」
-    ・掴む機能 → グラフタブに追加（※グラフタブ自体を削除したため掴む機能は削除）
-    ・リスキル系 → リスキル系タブに追加
-    ・アンチ → アンチタブに追加
-    ・ラグサーバー → ラグタブに追加
-    ・全機能を統合
-    ・メイン能力の整列を安定化（綺麗に並ぶように修正）
-    ※ ESP、メイン能力、能力調整、グラフ、電車、合体モード(1〜8)を削除
-    ※ 設定入力をスライダー式に変更
-    ※ FOVと重力の反映を修正
-    ※ プレイヤーの背中に張り付く機能を追加（TPタブ）
-    ※ アンチタブを空にし、ESP/メイン/メイン調整/メイン合体モード/情報タブを新規追加（空）
-    ※ タブの順序：メイン能力(1)→メイン能力調整(2)→メイン合体モード(3)→情報(一番下)
+    kiki hub premium + zizi hub 統合版
 ]]
+
 local OrionLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/BlizTBr/scripts/main/Orion%20X"))()
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -45,33 +32,75 @@ local geroSettings = { wait = 0.1, dist = 3 }
 local isSuikomiStopped = false
 local maxObjects = 999
 
+-- zizi hub 用コンボ変数
+local comboMode1, comboMode2, comboMode3, comboMode4 = "None", "None", "None", "None"
+local comboMode5, comboMode6, comboMode7, comboMode8 = "None", "None", "None", "None"
+local targetPlayerName = player.Name 
+local timeCounters = {0, 0, 0, 0, 0, 0, 0, 0}
+local timeNormal = 0
+local scanCooldown = 0
+
 local settings = {
     speed = 0.03, width = 18, height = 5, depth = 0,
     invertDirection = false, density = 1.0,
     wingSize = 8, wingRange = 100, flapSpeed = 4, flapStrength = 1.5, wingSpread = 1.0,
     speedEnabled = false, jumpEnabled = false, customSpeed = 100, customJump = 150,
     flyEnabled = false, flySpeed = 50, infJump = false, fov = 70,
-    gravity = 196.2
+    gravity = 196.2,
+
+    -- コンボ設定 (1〜8)
+    comboActive1 = true, comboCount1 = 10, comboSpeed1 = 0.03, comboWidth1 = 18, comboHeight1 = 5, comboDensity1 = 1.0,
+    comboActive2 = true, comboCount2 = 10, comboSpeed2 = 0.03, comboWidth2 = 18, comboHeight2 = 5, comboDensity2 = 1.0,
+    comboActive3 = true, comboCount3 = 10, comboSpeed3 = 0.03, comboWidth3 = 18, comboHeight3 = 5, comboDensity3 = 1.0,
+    comboActive4 = true, comboCount4 = 10, comboSpeed4 = 0.03, comboWidth4 = 18, comboHeight4 = 5, comboDensity4 = 1.0,
+    comboActive5 = true, comboCount5 = 10, comboSpeed5 = 0.03, comboWidth5 = 18, comboHeight5 = 5, comboDensity5 = 1.0,
+    comboActive6 = true, comboCount6 = 10, comboSpeed6 = 0.03, comboWidth6 = 18, comboHeight6 = 5, comboDensity6 = 1.0,
+    comboActive7 = true, comboCount7 = 10, comboSpeed7 = 0.03, comboWidth7 = 18, comboHeight7 = 5, comboDensity7 = 1.0,
+    comboActive8 = true, comboCount8 = 10, comboSpeed8 = 0.03, comboWidth8 = 18, comboHeight8 = 5, comboDensity8 = 1.0,
 }
 
--- 掴み機能用変数
-local grabEnabled = false
-local chaosEnabled = false
-local slowUpEnabled = false
-local slowDownEnabled = false
-local grabRange = 1000 
-local posX, posY, posZ = 0, 0, 0 
+-- モード選択肢（zizi hub の新モード含む）
+local modeOptions = {
+    "None", "回転", "魔法陣", "幽霊", "神聖", "卍", "幾何学の輪", "羽", "ハート", "竜巻", "星", "電気", "ビーム", "土星", "魔法2", "魔法3", 
+    "四角形cm3", "丸cm3", "盾", "祭り", "時計", "太陽", "木", "冠", "雨", "マーソル", "うんち", "花", "星2", "ハート2", "数字", "島",
+    "水", "ひょうたん", "人（棒人間）", "丸（回転の逆のやつ）", "縦丸", "四角", "三角", "六角"
+}
+
+local function getModeInternalName(jpName)
+    local map = {
+        ["None"]="None", ["回転"]="Orbit", ["魔法陣"]="MagicCircle", 
+        ["幽霊"]="Ghost", ["神聖"]="Divine", ["卍"]="Manji", 
+        ["幾何学の輪"]="Geometry", ["羽"]="Wing", ["ハート"]="Heart", 
+        ["竜巻"]="Tornado", ["星"]="Star", ["電気"]="Lightning", 
+        ["ビーム"]="Beam", ["土星"]="Saturn", ["魔法2"]="Magic2", ["魔法3"]="Magic3",
+        ["四角形cm3"]="CubeArea", ["丸cm3"]="SphereArea", ["盾"]="Shield",
+        ["祭り"]="Matsuri", ["時計"]="Clock", ["太陽"]="Sun", ["木"]="Tree",
+        ["冠"]="Crown", ["雨"]="Rain",
+        ["マーソル"]="Cursor", ["うんち"]="Poop", ["花"]="Flower",
+        ["星2"]="Star2", ["ハート2"]="Heart2", ["数字"]="Number", ["島"]="Island",
+        ["水"]="Water", ["ひょうたん"]="Gourd", ["人（棒人間）"]="Stickman", 
+        ["丸（回転の逆のやつ）"]="ReverseOrbit",
+        ["縦丸"]="VerticalOrbit", ["四角"]="Square", ["三角"]="Triangle", ["六角"]="Hexagon"
+    }
+    return map[jpName] or "None"
+end
+
+local function getPlayerList()
+    local list = {player.Name}
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= player then table.insert(list, p.Name) end
+    end
+    return list
+end
 
 local flyBV = Instance.new("BodyVelocity")
 flyBV.MaxForce = Vector3.new(1,1,1) * math.huge
 local flyBG = Instance.new("BodyGyro")
 flyBG.MaxTorque = Vector3.new(1,1,1) * math.huge
 
--- 背中張り付き用変数
 local attachTarget = nil
 local attachOffset = Vector3.new(0, 0, -2.5)
 local attachEnabled = false
-local attachConnection = nil
 
 -- --- バイパス ---
 local mt = getrawmetatable(game)
@@ -85,15 +114,6 @@ mt.__index = newcclosure(function(t, k)
     return old_index(t, k)
 end)
 setreadonly(mt, true)
-
--- --- 便利関数 ---
-local function getPlayerList()
-    local list = {player.Name}
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= player then table.insert(list, p.Name) end
-    end
-    return list
-end
 
 local function clearObjects()
     for obj in pairs(hoveringObjects) do
@@ -114,37 +134,49 @@ local function clearObjects()
     hoveringObjects = {}; objectData = {}
 end
 
-local function isPlayerPart(part)
-    if not part or not part.Parent then return false end
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p.Character and part:IsDescendantOf(p.Character) then
-            return true
+local function unregisterObject(obj)
+    pcall(function()
+        if obj and obj.Parent then
+            local parts = obj:IsA("Model") and obj:GetDescendants() or {obj}
+            for _, p in ipairs(parts) do
+                if p:IsA("BasePart") then p.CanCollide = true end
+            end
+            local root = obj:IsA("Model") and obj.PrimaryPart or obj
+            if root then
+                if root:FindFirstChild("SyncForce") then root.SyncForce:Destroy() end
+                if root:FindFirstChild("SyncGyro") then root.SyncGyro:Destroy() end
+            end
         end
-    end
-    return false
+    end)
+    hoveringObjects[obj] = nil
+    objectData[obj] = nil
 end
 
-local function isSelectableObject(part)
+local function isSelectableObject(part, character)
     if not part:IsA("BasePart") or part.Anchored then return false end
-    if player.Character and part:IsDescendantOf(player.Character) then return false end
-    if isPlayerPart(part) then return false end
+    if character and part:IsDescendantOf(character) then return false end
+    if part.Parent:FindFirstChild("Humanoid") or (part.Parent.Parent and part.Parent.Parent:FindFirstChild("Humanoid")) then
+        return false
+    end
     local ignoreNames = {"Baseplate", "Terrain", "SpawnLocation", "Sky", "Map", "Wall", "Floor", "Grid"}
     if table.find(ignoreNames, part.Name) then return false end
     local isOwner = false
     pcall(function() if part:GetNetworkOwner() == player then isOwner = true end end)
-    if isOwner or part:FindFirstChild("creator") or part:GetAttribute("Creator") == player.UserId then 
+    if isOwner or part:FindFirstChild("creator") or part.Name == "Handle" or part:GetAttribute("Creator") == player.UserId then 
         return true 
     end
-    if part.Size.X > 30 or part.Size.Y > 30 or part.Size.Z > 30 then
-        return false
+    if part.Size.X < 30 and part.Size.Y < 30 and part.Size.Z < 30 then
+        return true
     end
-    return true
+    return false
 end
 
 local function registerPart(part)
     if isSuikomiStopped then return end 
-    if not part:IsA("BasePart") or part.Anchored then return end
-    if not isSelectableObject(part) then return end
+    local targetChar = player.Character
+    local targetPlayer = Players:FindFirstChild(targetPlayerName)
+    if targetPlayer and targetPlayer.Character then targetChar = targetPlayer.Character end
+    if targetChar and not isSelectableObject(part, targetChar) then return end
     local target = part.Parent:IsA("Model") and part.Parent or part
     if target:IsA("Model") and target:IsA("Workspace") then target = part end
     if hoveringObjects[target] then return end
@@ -155,8 +187,7 @@ local function registerPart(part)
         offsetZ = math.random(-5, 5),
         randX = math.random(-15, 15),
         randZ = math.random(-15, 15),
-        fallSpeed = math.random(15, 30),
-        id = tick() + math.random()
+        fallSpeed = math.random(15, 30)
     }
     local rootPart = part
     if target:IsA("Model") then
@@ -184,9 +215,17 @@ local function registerPart(part)
     pcall(function() rootPart:SetNetworkOwner(player) end)
 end
 
--- ========================================================================
---  座標計算関数
--- ========================================================================
+-- --- デジタル数字用データ ---
+local digitSegments = {
+    [0] = {1,1,1,0,1,1,1}, [1] = {0,0,1,0,0,1,0}, [2] = {1,0,1,1,1,0,1}, [3] = {1,0,1,1,0,1,1}, [4] = {0,1,1,1,0,1,0},
+    [5] = {1,1,0,1,0,1,1}, [6] = {1,1,0,1,1,1,1}, [7] = {1,1,1,0,0,1,0}, [8] = {1,1,1,1,1,1,1}, [9] = {1,1,1,1,0,1,1}
+}
+local segmentLines = {
+    {Vector3.new(-1,2,0), Vector3.new(1,2,0)}, {Vector3.new(-1,2,0), Vector3.new(-1,0,0)}, {Vector3.new(1,2,0), Vector3.new(1,0,0)},
+    {Vector3.new(-1,0,0), Vector3.new(1,0,0)}, {Vector3.new(-1,0,0), Vector3.new(-1,-2,0)}, {Vector3.new(1,0,0), Vector3.new(1,-2,0)},
+    {Vector3.new(-1,-2,0), Vector3.new(1,-2,0)}
+}
+
 local function calculatePosition(currentMode, idx, count, hrp, data, timeCounter, lookCFrame, flapWave, invertMult, useWidth, useHeight, useDensity)
     if currentMode == "None" then return nil, nil end
     local targetPos
@@ -196,7 +235,8 @@ local function calculatePosition(currentMode, idx, count, hrp, data, timeCounter
 
     if currentMode == "VerticalOrbit" then
         local angle = timeCounter + (idx * (math.pi * 2 / count) * useDensity)
-        targetPos = baseCenter + Vector3.new(0, math.sin(angle) * useWidth + useHeight, math.cos(angle) * useWidth)
+        local radius = useWidth
+        targetPos = baseCenter + Vector3.new(0, math.sin(angle) * radius + useHeight, math.cos(angle) * radius)
         rotCFrame = CFrame.lookAt(targetPos, baseCenter + Vector3.new(0, useHeight, 0)) * directionAngle
     elseif currentMode == "Square" then
         local angle = timeCounter + (idx * (math.pi * 2 / count) * useDensity)
@@ -293,8 +333,6 @@ local function calculatePosition(currentMode, idx, count, hrp, data, timeCounter
         targetPos = (lookCFrame + (lookCFrame.LookVector * settings.depth)):PointToWorldSpace(Vector3.new(x, y + useHeight, zDist))
         rotCFrame = lookCFrame * directionAngle
     elseif currentMode == "Number" then
-        local digitSegments = {[0]={1,1,1,0,1,1,1},[1]={0,0,1,0,0,1,0},[2]={1,0,1,1,1,0,1},[3]={1,0,1,1,0,1,1},[4]={0,1,1,1,0,1,0},[5]={1,1,0,1,0,1,1},[6]={1,1,0,1,1,1,1},[7]={1,1,1,0,0,1,0},[8]={1,1,1,1,1,1,1},[9]={1,1,1,1,0,1,1}}
-        local segmentLines = {{Vector3.new(-1,2,0),Vector3.new(1,2,0)},{Vector3.new(-1,2,0),Vector3.new(-1,0,0)},{Vector3.new(1,2,0),Vector3.new(1,0,0)},{Vector3.new(-1,0,0),Vector3.new(1,0,0)},{Vector3.new(-1,0,0),Vector3.new(-1,-2,0)},{Vector3.new(1,0,0),Vector3.new(1,-2,0)},{Vector3.new(-1,-2,0),Vector3.new(1,-2,0)}}
         local currentDigit = math.floor(tick()) % 10
         local activeSegments = digitSegments[currentDigit]
         local validLines = {}
@@ -551,28 +589,19 @@ local function calculatePosition(currentMode, idx, count, hrp, data, timeCounter
         local radius = useWidth
         targetPos = baseCenter + Vector3.new(math.cos(lA) * radius + math.cos(sA) * 5, useHeight, math.sin(lA) * radius + math.sin(sA) * 5)
         rotCFrame = CFrame.lookAt(targetPos, targetPos + Vector3.new(math.cos(lA), 0, math.sin(lA))) * directionAngle
-    elseif currentMode == "Spin" then
-        local sAngle = (timeCounter * 2) + (idx / count * math.pi * 2)
-        targetPos = baseCenter + Vector3.new(math.cos(sAngle) * useWidth, math.sin(timeCounter * 5 + idx) * (useWidth/2), math.sin(sAngle) * useWidth)
-        rotCFrame = CFrame.lookAt(targetPos, baseCenter) * directionAngle
     end
     return targetPos, rotCFrame
 end
 
 -- ========================================================================
---  メインループ（物理管理）
+--  FOV & 重力（毎フレーム）
 -- ========================================================================
-local frameCounter = 0
-
--- FOVと重力を根本的に適用（毎フレーム確実に）
 RunService.Heartbeat:Connect(function()
     camera.FieldOfView = settings.fov
-    
     if player.Character then
         local hum = player.Character:FindFirstChildOfClass("Humanoid")
         if hum then
             hum.Gravity = settings.gravity
-            -- 速度とジャンプ力も確実に
             if settings.speedEnabled then
                 hum.WalkSpeed = settings.customSpeed
             else
@@ -587,6 +616,9 @@ RunService.Heartbeat:Connect(function()
     end
 end)
 
+-- ========================================================================
+--  フライト＆無限ジャンプ
+-- ========================================================================
 RunService.Stepped:Connect(function()
     if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
         local hrp = player.Character.HumanoidRootPart
@@ -602,10 +634,7 @@ RunService.Stepped:Connect(function()
         else
             flyBV.Parent = nil
             flyBG.Parent = nil
-            if hum then
-                hum.PlatformStand = false
-                -- 既にHeartbeatで設定済みだが念のため
-            end
+            if hum then hum.PlatformStand = false end
         end
     end
 end)
@@ -617,103 +646,10 @@ UserInputService.JumpRequest:Connect(function()
     end
 end)
 
--- 掴み機能のメインループ
-local grabLoopRunning = false
-local grabThread = nil
-
-local function startGrabLoop()
-    if grabLoopRunning then return end
-    grabLoopRunning = true
-    grabThread = coroutine.create(function()
-        while grabLoopRunning do
-            if not player.Character then wait(0.1); break end
-            local hrp = player.Character:FindFirstChild("HumanoidRootPart")
-            if not hrp then wait(0.1); break end
-            
-            if grabEnabled then
-                for _, obj in pairs(Workspace:GetDescendants()) do
-                    if obj:IsA("BasePart") and not obj.Anchored and obj ~= hrp then
-                        local dist = (obj.Position - hrp.Position).Magnitude
-                        if dist < grabRange then
-                            if isSelectableObject(obj) then
-                                registerPart(obj)
-                            end
-                        end
-                    end
-                end
-            elseif chaosEnabled then
-                for _, obj in pairs(Workspace:GetDescendants()) do
-                    if obj:IsA("BasePart") and not obj.Anchored and obj ~= hrp then
-                        local dist = (obj.Position - hrp.Position).Magnitude
-                        if dist < grabRange then
-                            if isSelectableObject(obj) then
-                                registerPart(obj)
-                                -- カオスモード: ランダムに方向を変える
-                                if math.random() < 0.1 then
-                                    local bv = obj:FindFirstChild("SyncForce")
-                                    if bv then
-                                        bv.Velocity = Vector3.new(math.random(-100,100), math.random(-100,100), math.random(-100,100))
-                                    end
-                                end
-                            end
-                        end
-                    end
-                end
-            elseif slowUpEnabled then
-                for _, obj in pairs(Workspace:GetDescendants()) do
-                    if obj:IsA("BasePart") and not obj.Anchored and obj ~= hrp then
-                        local dist = (obj.Position - hrp.Position).Magnitude
-                        if dist < grabRange then
-                            if isSelectableObject(obj) then
-                                registerPart(obj)
-                                -- 遅く上昇
-                                local bv = obj:FindFirstChild("SyncForce")
-                                if bv then
-                                    bv.Velocity = Vector3.new(0, 5, 0)
-                                end
-                            end
-                        end
-                    end
-                end
-            elseif slowDownEnabled then
-                for _, obj in pairs(Workspace:GetDescendants()) do
-                    if obj:IsA("BasePart") and not obj.Anchored and obj ~= hrp then
-                        local dist = (obj.Position - hrp.Position).Magnitude
-                        if dist < grabRange then
-                            if isSelectableObject(obj) then
-                                registerPart(obj)
-                                -- 遅く下降
-                                local bv = obj:FindFirstChild("SyncForce")
-                                if bv then
-                                    bv.Velocity = Vector3.new(0, -5, 0)
-                                end
-                            end
-                        end
-                    end
-                end
-            end
-            wait(0.1)
-        end
-        grabLoopRunning = false
-        grabThread = nil
-    end)
-    coroutine.resume(grabThread)
-end
-
-local function stopGrabLoop()
-    grabLoopRunning = false
-    if grabThread then
-        coroutine.close(grabThread)
-        grabThread = nil
-    end
-end
-
-local timeCounter = 0
+-- ========================================================================
+--  背中張り付き処理
+-- ========================================================================
 RunService.Heartbeat:Connect(function()
-    timeCounter = timeCounter + settings.speed
-    frameCounter = frameCounter + 1
-
-    -- 背中張り付き処理
     if attachEnabled and attachTarget and attachTarget.Character then
         local targetHRP = attachTarget.Character:FindFirstChild("HumanoidRootPart")
         local myHRP = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
@@ -724,79 +660,120 @@ RunService.Heartbeat:Connect(function()
             attachEnabled = false
         end
     end
+end)
 
-    if not (grabEnabled or chaosEnabled or slowUpEnabled or slowDownEnabled) and frameCounter % 5 == 0 then
-        local targetUser = presentEnabled and Players:FindFirstChild(selectedGiftTarget) or (monoAllEnabled and nil or Players:FindFirstChild(selectedTargetName))
-        if targetUser and targetUser.Character then
-            for _, part in ipairs(targetUser.Character:GetDescendants()) do
-                if part:IsA("BasePart") then registerPart(part) end
-            end
-        end
-        if monoAllEnabled then
-            for _, p in ipairs(Players:GetPlayers()) do
-                if p ~= player and p.Character then
-                    for _, part in ipairs(p.Character:GetDescendants()) do
-                        if part:IsA("BasePart") then registerPart(part) end
+-- ========================================================================
+--  メイン物理ループ（コンボ対応＋上限超過防止）
+-- ========================================================================
+RunService.Heartbeat:Connect(function()
+    if mode == "None" and not presentEnabled and not monoAllEnabled then return end
+    
+    -- 現在の対象プレイヤー
+    local targetPlayer = Players:FindFirstChild(targetPlayerName) or player
+    local hrp = targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+
+    -- タイムカウンター更新
+    timeNormal = timeNormal + settings.speed
+    for i = 1, 8 do
+        timeCounters[i] = timeCounters[i] + settings["comboSpeed" .. i]
+    end
+
+    -- スキャン＆吸い込み
+    scanCooldown = scanCooldown + 0.05
+    if scanCooldown >= 0.1 then
+        scanCooldown = 0
+        if not isSuikomiStopped then
+            local foundParts = workspace:GetPartBoundsInRadius(hrp.Position, settings.wingRange)
+            for _, p in ipairs(foundParts) do
+                if isSelectableObject(p, targetPlayer.Character) then
+                    local target = p.Parent:IsA("Model") and p.Parent or p
+                    if target:IsA("Model") and target:IsA("Workspace") then target = p end
+                    if not hoveringObjects[target] then 
+                        registerPart(p) 
                     end
                 end
             end
         end
     end
 
+    -- 現在のオブジェクトリスト作成
     local currentObjects = {}
-    for obj in pairs(objectData) do 
-        table.insert(currentObjects, obj)
+    for o in pairs(hoveringObjects) do
+        local root = o:IsA("Model") and o.PrimaryPart or o
+        if o and o.Parent and root and root:FindFirstChild("SyncForce") then
+            table.insert(currentObjects, o)
+        else
+            hoveringObjects[o] = nil
+            objectData[o] = nil
+        end
     end
 
-    table.sort(currentObjects, function(a, b)
-        local dataA = objectData[a]
-        local dataB = objectData[b]
-        if dataA and dataB then
-            if dataA.id and dataB.id then
-                return dataA.id < dataB.id
-            elseif dataA.seed and dataB.seed then
-                return dataA.seed < dataB.seed
-            end
-        end
-        return tostring(a) < tostring(b)
-    end)
-
+    -- 上限を超えたら解除
     if #currentObjects > maxObjects then
         for i = maxObjects + 1, #currentObjects do
-            local obj = currentObjects[i]
-            if obj and obj.Parent then
-                pcall(function()
-                    local parts = obj:IsA("Model") and obj:GetDescendants() or {obj}
-                    for _, p in ipairs(parts) do if p:IsA("BasePart") then p.CanCollide = true end end
-                    local root = obj:IsA("Model") and obj.PrimaryPart or obj
-                    if root then
-                        if root:FindFirstChild("SyncForce") then root.SyncForce:Destroy() end
-                        if root:FindFirstChild("SyncGyro") then root.SyncGyro:Destroy() end
-                    end
-                end)
-                hoveringObjects[obj] = nil
-                objectData[obj] = nil
-            end
+            unregisterObject(currentObjects[i])
         end
-        local newList = {}
-        for i = 1, math.min(maxObjects, #currentObjects) do newList[i] = currentObjects[i] end
-        currentObjects = newList
+        local newTable = {}
+        for i = 1, maxObjects do table.insert(newTable, currentObjects[i]) end
+        currentObjects = newTable
     end
 
-    if #currentObjects == 0 then return end
+    local total = #currentObjects
+    if total == 0 then return end
+
+    local lookCFrame = hrp.CFrame
+    local flapWave = math.sin(tick() * settings.flapSpeed) * settings.flapStrength
+    local invertMult = settings.invertDirection and -1.0 or 1.0
+
+    -- 各コンボのアクティブ状態取得
+    local comboModes = {}
+    local comboCounts = {}
+    for i = 1, 8 do
+        comboModes[i] = settings["comboActive" .. i] and 
+            ({comboMode1, comboMode2, comboMode3, comboMode4, comboMode5, comboMode6, comboMode7, comboMode8})[i] or "None"
+        comboCounts[i] = settings["comboActive" .. i] and settings["comboCount" .. i] or 0
+    end
 
     for i, obj in ipairs(currentObjects) do
-        local rootPart = obj:IsA("Model") and obj.PrimaryPart or obj
-        if rootPart and rootPart.Parent and rootPart:FindFirstChild("SyncForce") then
-            local currentPos = rootPart.Position
-            local targetPos = nil
-            local rotCFrame = nil
-            local hrp = nil
+        local root = obj:IsA("Model") and obj.PrimaryPart or obj
+        if root and root:FindFirstChild("SyncForce") then
+            local data = objectData[obj]
+            local currentPos = root.Position
+            local targetPos, rotCFrame
 
-            local usePresent = presentEnabled
-            local useMono = monoAllEnabled
-
-            if useMono then
+            if mode == "Combined" then
+                local placed = false
+                local runningSum = 0
+                for cId = 1, 8 do
+                    local prevSum = runningSum
+                    runningSum = runningSum + comboCounts[cId]
+                    if i <= runningSum and comboModes[cId] ~= "None" then
+                        local idx = i - prevSum
+                        targetPos, rotCFrame = calculatePosition(
+                            comboModes[cId], idx, comboCounts[cId], hrp, data, timeCounters[cId],
+                            lookCFrame, flapWave, invertMult,
+                            settings["comboWidth" .. cId],
+                            settings["comboHeight" .. cId],
+                            settings["comboDensity" .. cId]
+                        )
+                        placed = true
+                        break
+                    end
+                end
+                if not placed then
+                    unregisterObject(obj)
+                    targetPos, rotCFrame = nil, nil
+                end
+            elseif presentEnabled then
+                local target = Players:FindFirstChild(selectedGiftTarget)
+                if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then
+                    local tHRP = target.Character.HumanoidRootPart
+                    local pAngle = (timeNormal * (presentSpeed/10)) + (i / total * math.pi * 2)
+                    targetPos = tHRP.Position + Vector3.new(math.cos(pAngle)*4, math.sin(timeNormal*2+i)*2, math.sin(pAngle)*4)
+                    root.SyncForce.Velocity = (targetPos - currentPos) * presentFollowSpeed
+                end
+            elseif monoAllEnabled then
                 local others = {}
                 for _, p in ipairs(Players:GetPlayers()) do
                     if p ~= player and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
@@ -804,333 +781,310 @@ RunService.Heartbeat:Connect(function()
                     end
                 end
                 if #others > 0 then
-                    local targetHRP = others[(i % #others) + 1]
-                    local pAngle = (timeCounter * monoAllSpeed) + (i * 0.5)
-                    targetPos = targetHRP.Position + Vector3.new(math.cos(pAngle)*5, math.sin(timeCounter*3+i)*2, math.sin(pAngle)*5)
-                    rootPart.SyncForce.Velocity = (targetPos - currentPos) * 35
-                end
-            elseif usePresent then
-                local target = Players:FindFirstChild(selectedGiftTarget)
-                if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then
-                    hrp = target.Character.HumanoidRootPart
-                    local pAngle = (timeCounter * (presentSpeed/10)) + (i / #currentObjects * math.pi * 2)
-                    targetPos = hrp.Position + Vector3.new(math.cos(pAngle)*4, math.sin(timeCounter*2+i)*2, math.sin(pAngle)*4)
-                    rootPart.SyncForce.Velocity = (targetPos - currentPos) * presentFollowSpeed
+                    local tHRP = others[(i % #others) + 1]
+                    local pAngle = (timeNormal * monoAllSpeed) + (i * 0.5)
+                    targetPos = tHRP.Position + Vector3.new(math.cos(pAngle)*5, math.sin(timeNormal*3+i)*2, math.sin(pAngle)*5)
+                    root.SyncForce.Velocity = (targetPos - currentPos) * 35
                 end
             else
-                local targetPlayer = Players:FindFirstChild(selectedTargetName) or player
-                if targetPlayer and targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart") then
-                    hrp = targetPlayer.Character.HumanoidRootPart
-                    local lookCFrame = hrp.CFrame
-                    local flapWave = math.sin(tick() * settings.flapSpeed) * settings.flapStrength
-                    local invertMult = settings.invertDirection and -1.0 or 1.0
-                    targetPos, rotCFrame = calculatePosition(mode, i, #currentObjects, hrp, objectData[obj], timeCounter, lookCFrame, flapWave, invertMult, settings.width, settings.height, settings.density)
-                end
+                targetPos, rotCFrame = calculatePosition(
+                    mode, i, total, hrp, data, timeNormal,
+                    lookCFrame, flapWave, invertMult,
+                    settings.width, settings.height, settings.density
+                )
             end
 
             if targetPos then
-                rootPart.SyncForce.Velocity = rootPart.SyncForce.Velocity:Lerp((targetPos - currentPos) * 30, 0.15)
+                root.SyncForce.Velocity = (targetPos - currentPos) * 25
             end
             if rotCFrame then
-                rootPart.SyncGyro.CFrame = rotCFrame
+                root.SyncGyro.CFrame = rotCFrame
             end
-            if math.random() > 0.98 then pcall(function() rootPart:SetNetworkOwner(player) end) end
+            if math.random() > 0.85 then
+                pcall(function() root:SetNetworkOwner(player) end)
+            end
         end
     end
 end)
 
-local function setupCharacter(char)
+-- キャラクター接触判定
+local function connectCharacter(char)
     char:WaitForChild("HumanoidRootPart")
-    for _, v in ipairs(char:GetDescendants()) do
+    for _, v in ipairs(char:GetChildren()) do
         if v:IsA("BasePart") then
             v.Touched:Connect(function(hit) 
-                local anyEnabled = (mode ~= "None" or presentEnabled or monoAllEnabled or grabEnabled or chaosEnabled or slowUpEnabled or slowDownEnabled)
-                if not anyEnabled then return end
-                registerPart(hit)
+                if mode ~= "None" or presentEnabled or monoAllEnabled then 
+                    registerPart(hit) 
+                end 
             end)
         end
     end
 end
-for _, p in ipairs(Players:GetPlayers()) do if p.Character then setupCharacter(p.Character) end p.CharacterAdded:Connect(setupCharacter) end
+player.CharacterAdded:Connect(connectCharacter)
+if player.Character then connectCharacter(player.Character) end
 
 -- ========================================================================
---  1. アンチ機能（Anti Gucci Train）- 削除済み（空）
+--  掴む機能 (Grab)
 -- ========================================================================
+local grabEnabled = false
+local grabTarget = nil
+local grabDistance = 5
+local grabHold = false
 
--- ========================================================================
---  2. ブロブマン関連
--- ========================================================================
-local blobman = nil
-local kickTarget = nil
-local spinAngle = 0
-local isSpinning = false
-
-local function findBlobman()
-    for _, v in ipairs(Workspace:GetChildren()) do
-        if v:IsA("Model") and (v.Name:lower():find("blobman") or v.Name:lower():find("creatureblobman")) then
-            blobman = v
-            return v
-        end
-    end
-    local folder = Workspace:FindFirstChild(player.Name .. "SpawnedInToys")
-    if folder then
-        for _, v in ipairs(folder:GetChildren()) do
-            if v:IsA("Model") and v.Name:lower():find("blobman") then
-                blobman = v
-                return v
+local function startGrab()
+    if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then return end
+    local hrp = player.Character.HumanoidRootPart
+    local found = workspace:GetPartBoundsInRadius(hrp.Position, grabDistance)
+    for _, part in ipairs(found) do
+        if part:IsA("BasePart") and not part.Anchored then
+            local target = part.Parent:IsA("Model") and part.Parent or part
+            if target:IsA("Model") and target:IsA("Workspace") then target = part end
+            if not hoveringObjects[target] then
+                registerPart(part)
+                grabTarget = target
+                grabHold = true
+                return
             end
         end
     end
-    return nil
 end
 
-local function spawnBlobman()
-    local existing = findBlobman()
-    if existing then return existing end
-    local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-    if not root then return nil end
-    local success, result = pcall(function()
-        return ReplicatedStorage.MenuToys.SpawnToyRemoteFunction:InvokeServer("CreatureBlobman", root.CFrame * CFrame.new(0,0,-5), Vector3.zero)
-    end)
-    if success then
-        task.wait(1.0)
-        local blob = findBlobman()
-        if blob then return blob end
+local function releaseGrab()
+    grabHold = false
+    if grabTarget then
+        unregisterObject(grabTarget)
+        grabTarget = nil
     end
-    local blobEvents = ReplicatedStorage:FindFirstChild("BlobEvents")
-    if blobEvents and blobEvents:FindFirstChild("CreateBlob") then
-        pcall(function() blobEvents.CreateBlob:FireServer() end)
-        task.wait(1.5)
-        local blob = findBlobman()
-        if blob then return blob end
-    end
-    return nil
 end
 
-local function rideBlobman()
-    if not blobman then
-        blobman = spawnBlobman()
-        if not blobman then return false end
-    end
-    local char = player.Character
-    if not char then return false end
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    if not hum then return false end
-    local seat = blobman:FindFirstChild("VehicleSeat")
-    if seat and seat:IsA("VehicleSeat") then
-        hum.Sit = true
-        hum.SeatPart = seat
-        seat:Sit(hum)
-        task.wait(0.2)
-        return true
-    end
-    return false
-end
-
-local function physicalKick(targetRoot, power, upForce)
-    if not targetRoot or not targetRoot.Parent then return false end
-    pcall(function()
-        targetRoot.AssemblyLinearVelocity = Vector3.zero
-        targetRoot.AssemblyAngularVelocity = Vector3.zero
-        targetRoot.CFrame = targetRoot.CFrame + Vector3.new(0, 25, 0)
-        task.wait(0.02)
-        local bv = Instance.new("BodyVelocity")
-        bv.MaxForce = Vector3.new(1e7, 1e7, 1e7)
-        local dir = Vector3.new(math.random(-1,1), 1, math.random(-1,1)).Unit
-        bv.Velocity = dir * (power or 200) + Vector3.new(0, upForce or 150, 0)
-        bv.Parent = targetRoot
-        task.delay(0.3, function() if bv then bv:Destroy() end end)
-        targetRoot.AssemblyLinearVelocity = Vector3.new(math.random(-50,50), upForce or 200, math.random(-50,50))
-    end)
-    return true
-end
-
-local function performKick(target)
-    if not target or not target.Character then return false end
-    local tRoot = target.Character:FindFirstChild("HumanoidRootPart")
-    if not tRoot then return false end
-    if not blobman or not blobman.Parent then
-        blobman = spawnBlobman()
-        task.wait(0.5)
-        rideBlobman()
-    end
-    local grabEvents = ReplicatedStorage:FindFirstChild("GrabEvents")
-    if grabEvents then
-        local setOwner = grabEvents:FindFirstChild("SetNetworkOwner")
-        local createLine = grabEvents:FindFirstChild("CreateGrabLine")
-        local destroyLine = grabEvents:FindFirstChild("DestroyGrabLine")
-        if setOwner and createLine and destroyLine then
-            pcall(function()
-                setOwner:FireServer(tRoot, tRoot.CFrame)
-                createLine:FireServer(tRoot, Vector3.zero, tRoot.Position, false)
-                task.wait(0.05)
-                destroyLine:FireServer(tRoot)
-                if blobman then
-                    local script = blobman:FindFirstChild("BlobmanSeatAndOwnerScript")
-                    if script then
-                        local grab = script:FindFirstChild("CreatureGrab")
-                        local drop = script:FindFirstChild("CreatureDrop")
-                        local detector = blobman:FindFirstChild("RightDetector")
-                        local weld = detector and detector:FindFirstChild("RightWeld")
-                        if grab and detector then grab:FireServer(detector, tRoot, weld) end
-                        task.wait(0.05)
-                        if drop then drop:FireServer() end
-                    end
-                end
-            end)
+-- 掴み続けるためのループ
+RunService.Heartbeat:Connect(function()
+    if grabEnabled and grabHold and grabTarget then
+        local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+        if hrp and grabTarget and grabTarget.Parent then
+            local root = grabTarget:IsA("Model") and grabTarget.PrimaryPart or grabTarget
+            if root and root:FindFirstChild("SyncForce") then
+                local targetPos = hrp.Position + hrp.CFrame.LookVector * grabDistance
+                root.SyncForce.Velocity = (targetPos - root.Position) * 50
+            end
+        else
+            releaseGrab()
         end
     end
-    physicalKick(tRoot, 250, 180)
-    return true
-end
-
-local function spinKickLoop()
-    if not kickTarget then return end
-    isSpinning = true
-    local savedPos = player.Character and player.Character:FindFirstChild("HumanoidRootPart") and player.Character.HumanoidRootPart.CFrame or CFrame.identity
-    local speed = _G.SpinSpeed or 15
-    while isSpinning do
-        if not blobman or not blobman.Parent then
-            blobman = spawnBlobman()
-            rideBlobman()
-            if not blobman then break end
-        end
-        if not kickTarget or not kickTarget.Character then break end
-        local tRoot = kickTarget.Character:FindFirstChild("HumanoidRootPart")
-        if not tRoot then break end
-        spinAngle = spinAngle + math.rad(speed * 2)
-        if spinAngle > math.pi * 2 then spinAngle = spinAngle - math.pi * 2 end
-        if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
-            local myRoot = player.Character.HumanoidRootPart
-            myRoot.CFrame = CFrame.new(savedPos.Position) * CFrame.Angles(0, spinAngle, 0)
-        end
-        local distance = 8
-        local targetPos = savedPos.Position + Vector3.new(math.sin(spinAngle)*distance, 0, math.cos(spinAngle)*distance)
-        tRoot.CFrame = CFrame.new(targetPos)
-        tRoot.AssemblyLinearVelocity = Vector3.zero
-        tRoot.AssemblyAngularVelocity = Vector3.zero
-        physicalKick(tRoot, 100, 50)
-        local grabEvents = ReplicatedStorage:FindFirstChild("GrabEvents")
-        if grabEvents and grabEvents:FindFirstChild("SetNetworkOwner") then
-            pcall(function() grabEvents.SetNetworkOwner:FireServer(tRoot, tRoot.CFrame) end)
-        end
-        RunService.Heartbeat:Wait()
-    end
-end
-
-local kickAllActive = false
-local kickAllTargets = {}
-local kickAllWhitelistFriends = false
-local kickAllPlayerStatus = {}
-
-Players.PlayerRemoving:Connect(function(plr)
-    if kickAllPlayerStatus[plr.UserId] == "Kicked" then
-        OrionLib:MakeNotification({Name = "キックしました", Content = plr.DisplayName, Image = "rbxassetid://3944680095", Time = 5})
-    end
-    kickAllPlayerStatus[plr.UserId] = nil
 end)
 
-local function kickAllFunction()
-    if kickAllActive then return end
-    kickAllActive = true
-    local allPlayers = {}
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= player then
-            local isFriend = false
-            if kickAllWhitelistFriends then
-                pcall(function() isFriend = player:IsFriendsWith(p.UserId) end)
-            end
-            if not isFriend then table.insert(allPlayers, p) end
-        end
-    end
-    if #allPlayers == 0 then
-        OrionLib:MakeNotification({Name = "対象なし", Content = "キックできるプレイヤーがいません", Time = 3})
-        kickAllActive = false
-        return
-    end
-    for _, p in ipairs(allPlayers) do kickAllPlayerStatus[p.UserId] = "Targeting" end
+-- ========================================================================
+--  UI構築（kiki hub タブ構成 + zizi hub 機能統合）
+-- ========================================================================
+local Window = OrionLib:MakeWindow({ Name = "kiki hub premium", HidePremium = false, IntroText = "よろしく 🐈" })
 
-    local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-    if root then
-        local spawnPos = root.CFrame * CFrame.new(0,0,-5)
-        ReplicatedStorage.MenuToys.SpawnToyRemoteFunction:InvokeServer("CreatureBlobman", spawnPos, Vector3.new(0,127,0))
-    end
-    task.wait(0.5)
-    local toyFolder = Workspace:FindFirstChild(player.Name .. "SpawnedInToys")
-    local blob = toyFolder and toyFolder:FindFirstChild("CreatureBlobman")
-    if not blob then kickAllActive = false; return end
-    local seat = blob:FindFirstChild("VehicleSeat")
-    if seat and player.Character then seat:Sit(player.Character:FindFirstChildOfClass("Humanoid")) end
-    task.wait(0.3)
-    local myRoot = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-    if not myRoot then kickAllActive = false; return end
+-- タブ定義
+local MainTab = Window:MakeTab({ Name = "メイン能力", Icon = "rbxassetid://4483345998" })
+local MainAdjustTab = Window:MakeTab({ Name = "メイン能力調整", Icon = "rbxassetid://4483345998" })
+local MainCombineTab = Window:MakeTab({ Name = "メイン合体モード", Icon = "rbxassetid://4483345998" })
+local GrabTab = Window:MakeTab({ Name = "掴む", Icon = "rbxassetid://4483345998" })
+local MiscTab = Window:MakeTab({ Name = "身体・設定", Icon = "rbxassetid://4483345998" })
+local PresentTab = Window:MakeTab({ Name = "プレゼント", Icon = "rbxassetid://4483345998" })
+local TrollTab = Window:MakeTab({ Name = "荒らし", Icon = "rbxassetid://4483345998" })
+local TPTab = Window:MakeTab({ Name = "TP", Icon = "rbxassetid://4483345998" })
+local AntiTab = Window:MakeTab({ Name = "アンチ", Icon = "rbxassetid://4483345998" })
+local ESPTab = Window:MakeTab({ Name = "ESP", Icon = "rbxassetid://4483345998" })
+local BlobTab = Window:MakeTab({ Name = "ブロブマン", Icon = "rbxassetid://4483345998" })
+local UFOTab = Window:MakeTab({ Name = "UFO", Icon = "rbxassetid://4483345998" })
+local BarrierTab = Window:MakeTab({ Name = "バリア破壊", Icon = "rbxassetid://4483345998" })
+local KillTab = Window:MakeTab({ Name = "リスキル系", Icon = "rbxassetid://4483345998" })
+local LagTab = Window:MakeTab({ Name = "ラグ", Icon = "rbxassetid://4483345998" })
+local AlaTab = Window:MakeTab({ Name = "アラ", Icon = "rbxassetid://4483345998" })
+local CreditTab = Window:MakeTab({ Name = "クレジット", Icon = "rbxassetid://4483345998" })
+local DiscordTab = Window:MakeTab({ Name = "Discord", Icon = "rbxassetid://4483345998" })
+local ScriptHubTab = Window:MakeTab({ Name = "スクリプト hub", Icon = "rbxassetid://4483345998" })
+local InfoTab = Window:MakeTab({ Name = "情報", Icon = "rbxassetid://4483345998" })
 
-    for _, target in ipairs(allPlayers) do
-        local tRoot = target.Character and target.Character:FindFirstChild("HumanoidRootPart")
-        if tRoot then
-            myRoot.CFrame = tRoot.CFrame
-            task.wait(0.02)
-            for i = 1, 5 do
-                pcall(function()
-                    blob.BlobmanSeatAndOwnerScript.CreatureGrab:FireServer(blob.LeftDetector, tRoot, blob.LeftDetector.LeftWeld)
-                    blob.BlobmanSeatAndOwnerScript.CreatureRelease:FireServer(blob.LeftDetector.LeftWeld)
-                end)
-                if i < 5 then task.wait(0.08) end
-            end
-        end
+-- ========== メイン能力タブ ==========
+MainTab:AddDropdown({
+    Name = "追従対象（プレイヤー名）",
+    Default = player.Name,
+    Options = getPlayerList(),
+    Callback = function(Value)
+        targetPlayerName = Value
+        selectedTargetName = Value
     end
-    myRoot.CFrame = CFrame.new(0, 100, 0)
-    task.wait(0.1)
-    for _, part in ipairs(blob:GetDescendants()) do if part:IsA("BasePart") then pcall(function() part.Anchored = true end) end end
-    task.wait(0.1)
-    local radius = 15
-    for i, target in ipairs(allPlayers) do
-        local tRoot = target.Character and target.Character:FindFirstChild("HumanoidRootPart")
-        if tRoot then
-            local angle = math.rad((i-1)*(360/#allPlayers))
-            tRoot.CFrame = CFrame.new(radius*math.cos(angle), 110, radius*math.sin(angle))
-        end
+})
+local targetDropdown = MainTab:AddDropdown({
+    Name = "モード選択",
+    Default = "None",
+    Options = modeOptions,
+    Callback = function(Value)
+        mode = getModeInternalName(Value)
     end
-    task.wait(0.1)
-    for _ = 1, 2 do
-        for _, target in ipairs(allPlayers) do
-            local tRoot = target.Character and target.Character:FindFirstChild("HumanoidRootPart")
-            if tRoot then
-                task.spawn(function()
-                    pcall(function()
-                        ReplicatedStorage.GrabEvents.SetNetworkOwner:FireServer(tRoot, CFrame.new(tRoot.Position))
-                        ReplicatedStorage.GrabEvents.DestroyGrabLine:FireServer(tRoot)
-                    end)
-                end)
-            end
-        end
-        task.wait(0.1)
+})
+MainTab:AddTextbox({
+    Name = "パーツの最大保持数",
+    Default = "999",
+    TextDisappear = false,
+    Callback = function(Text)
+        maxObjects = math.max(1, math.floor(tonumber(Text) or 999))
     end
-    task.wait(0.3)
-    for _, target in ipairs(allPlayers) do
-        local tRoot = target.Character and target.Character:FindFirstChild("HumanoidRootPart")
-        if tRoot then
-            task.spawn(function()
-                pcall(function()
-                    blob.BlobmanSeatAndOwnerScript.CreatureGrab:FireServer(blob.LeftDetector, tRoot, blob.LeftDetector.LeftWeld)
-                    blob.BlobmanSeatAndOwnerScript.CreatureGrab:FireServer(blob.RightDetector, tRoot, blob.RightDetector.RightWeld)
-                end)
-            end)
-        end
+})
+MainTab:AddToggle({
+    Name = "これ以上パーツを吸い込まない",
+    Default = false,
+    Callback = function(Value)
+        isSuikomiStopped = Value
     end
-    task.wait(0.1)
-    for _, target in ipairs(allPlayers) do
-        if target and target.Parent == Players then kickAllPlayerStatus[target.UserId] = "Kicked" end
-    end
-    myRoot.CFrame = CFrame.new(0, -50000, 0)
-    for _, part in ipairs(blob:GetDescendants()) do if part:IsA("BasePart") then pcall(function() part.Anchored = false end) end end
-    task.wait(1)
-    kickAllActive = false
+})
+MainTab:AddButton({ Name = "全パーツ解除", Callback = function() clearObjects() end })
+
+-- ========== メイン能力調整タブ（zizi hub 調整項目） ==========
+MainAdjustTab:AddToggle({ Name = "向きを外側にする (方向反転)", Default = false, Callback = function(V) settings.invertDirection = V end })
+MainAdjustTab:AddTextbox({ Name = "通常：回転速度", Default = "0.03", TextDisappear = false, Callback = function(T) settings.speed = tonumber(T) or 0.03 end })
+MainAdjustTab:AddTextbox({ Name = "通常：広がり", Default = "18", TextDisappear = false, Callback = function(T) settings.width = tonumber(T) or 18 end })
+MainAdjustTab:AddTextbox({ Name = "通常：高さ", Default = "5", TextDisappear = false, Callback = function(T) settings.height = tonumber(T) or 5 end })
+MainAdjustTab:AddTextbox({ Name = "通常：密度", Default = "1.0", TextDisappear = false, Callback = function(T) settings.density = tonumber(T) or 1.0 end })
+MainAdjustTab:AddTextbox({ Name = "通常：前後オフセット", Default = "0", TextDisappear = false, Callback = function(T) settings.depth = tonumber(T) or 0 end })
+
+-- コンボ1〜8の設定
+for i = 1, 8 do
+    MainAdjustTab:AddSection({ Name = "👑 コンボ" .. i .. "設定" })
+    MainAdjustTab:AddToggle({ Name = "コンボ" .. i .. "を有効にする", Default = true, Callback = function(v) settings["comboActive" .. i] = v end })
+    MainAdjustTab:AddTextbox({ Name = "コンボ" .. i .. "：回転速度", Default = "0.03", TextDisappear = false, Callback = function(T) settings["comboSpeed" .. i] = tonumber(T) or 0.03 end })
+    MainAdjustTab:AddTextbox({ Name = "コンボ" .. i .. "：広がり", Default = "18", TextDisappear = false, Callback = function(T) settings["comboWidth" .. i] = tonumber(T) or 18 end })
+    MainAdjustTab:AddTextbox({ Name = "コンボ" .. i .. "：高さ", Default = "5", TextDisappear = false, Callback = function(T) settings["comboHeight" .. i] = tonumber(T) or 5 end })
+    MainAdjustTab:AddTextbox({ Name = "コンボ" .. i .. "：密度", Default = "1.0", TextDisappear = false, Callback = function(T) settings["comboDensity" .. i] = tonumber(T) or 1.0 end })
 end
 
--- ========================================================================
---  3. UFO機能
--- ========================================================================
+MainAdjustTab:AddSection({ Name = "羽（ウイング）専用設定" })
+MainAdjustTab:AddTextbox({ Name = "羽の全体サイズ", Default = "8", TextDisappear = false, Callback = function(T) settings.wingSize = tonumber(T) or 8 end })
+MainAdjustTab:AddTextbox({ Name = "羽ばたき速度", Default = "4", TextDisappear = false, Callback = function(T) settings.flapSpeed = tonumber(T) or 4 end })
+MainAdjustTab:AddTextbox({ Name = "羽ばたきの大きさ", Default = "1.5", TextDisappear = false, Callback = function(T) settings.flapStrength = tonumber(T) or 1.5 end })
+MainAdjustTab:AddTextbox({ Name = "翼の角度・広がり", Default = "1.0", TextDisappear = false, Callback = function(T) settings.wingSpread = tonumber(T) or 1.0 end })
+MainAdjustTab:AddTextbox({ Name = "物を吸い込む範囲", Default = "100", TextDisappear = false, Callback = function(T) settings.wingRange = tonumber(T) or 100 end })
+
+-- ========== メイン合体モードタブ ==========
+MainCombineTab:AddSection({ Name = "1〜8つのモードを個別に有効化して本数指定" })
+for i = 1, 8 do
+    local modeVar = {comboMode1, comboMode2, comboMode3, comboMode4, comboMode5, comboMode6, comboMode7, comboMode8}
+    MainCombineTab:AddToggle({ Name = "コンボ" .. i .. "を有効化", Default = true, Callback = function(v) 
+        settings["comboActive" .. i] = v
+        if v and modeVar[i] ~= "None" then mode = "Combined" end
+    end})
+    MainCombineTab:AddDropdown({ Name = "コンボ" .. i .. "選択", Default = "None", Options = modeOptions, Callback = function(v)
+        if i == 1 then comboMode1 = getModeInternalName(v)
+        elseif i == 2 then comboMode2 = getModeInternalName(v)
+        elseif i == 3 then comboMode3 = getModeInternalName(v)
+        elseif i == 4 then comboMode4 = getModeInternalName(v)
+        elseif i == 5 then comboMode5 = getModeInternalName(v)
+        elseif i == 6 then comboMode6 = getModeInternalName(v)
+        elseif i == 7 then comboMode7 = getModeInternalName(v)
+        elseif i == 8 then comboMode8 = getModeInternalName(v)
+        end
+        if getModeInternalName(v) ~= "None" and settings["comboActive" .. i] then mode = "Combined" end
+    end})
+    MainCombineTab:AddTextbox({ Name = "コンボ" .. i .. "のパーツ割り当て本数", Default = "10", TextDisappear = false, Callback = function(t)
+        settings["comboCount" .. i] = math.max(0, math.floor(tonumber(t) or 10))
+    end})
+    if i < 8 then MainCombineTab:AddSection({ Name = "------------------------------------" }) end
+end
+MainCombineTab:AddSection({ Name = "------------------------------------" })
+MainCombineTab:AddButton({ Name = "合体モード解除 (通常に戻す)", Callback = function() 
+    mode = "None"
+    comboMode1, comboMode2, comboMode3, comboMode4 = "None", "None", "None", "None"
+    comboMode5, comboMode6, comboMode7, comboMode8 = "None", "None", "None", "None"
+end})
+
+-- ========== 掴むタブ ==========
+GrabTab:AddSection({ Name = "掴む (Grab)" })
+GrabTab:AddSlider({ Name = "掴む距離", Min = 1, Max = 20, Default = 5, Increment = 1, Callback = function(V) grabDistance = V end })
+GrabTab:AddToggle({ Name = "掴む (ONで近くの物を掴む)", Default = false, Callback = function(V)
+    grabEnabled = V
+    if V then
+        startGrab()
+    else
+        releaseGrab()
+    end
+end})
+
+-- ========== 身体・設定タブ ==========
+-- （空）
+
+-- ========== プレゼントタブ ==========
+local giftDropdown = PresentTab:AddDropdown({ Name = "贈る相手を選択", Default = player.Name, Options = getPlayerList(), Callback = function(V) selectedGiftTarget = V end })
+PresentTab:AddButton({ Name = "リスト更新", Callback = function() giftDropdown:Refresh(getPlayerList(), true) end })
+PresentTab:AddSlider({ Name = "荒ぶる速度", Min = 5, Max = 100, Default = 25, Increment = 1, Callback = function(V) presentSpeed = V end })
+PresentTab:AddSlider({ Name = "追いかける速度", Min = 5, Max = 100, Default = 30, Increment = 1, Callback = function(V) presentFollowSpeed = V end })
+PresentTab:AddToggle({ Name = "プレゼント開始", Default = false, Callback = function(V) 
+    presentEnabled = V
+    if V then mode = "None"; monoAllEnabled = false end
+end})
+
+-- ========== 荒らしタブ ==========
+TrollTab:AddToggle({ Name = "ものおーる (自分以外全員)", Default = false, Callback = function(V) 
+    monoAllEnabled = V
+    if V then mode = "None"; presentEnabled = false end
+end})
+TrollTab:AddSlider({ Name = "ものおーる速度", Min = 1, Max = 30, Default = 10, Increment = 1, Callback = function(V) monoAllSpeed = V end })
+TrollTab:AddToggle({ Name = "げろおーる (実行)", Default = false, Callback = function(V)
+    geroAllEnabled = V
+    if V then
+        task.spawn(function()
+            while geroAllEnabled do
+                for _, p in ipairs(Players:GetPlayers()) do
+                    if not geroAllEnabled then break end
+                    if p ~= player and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                        if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+                            player.Character.HumanoidRootPart.CFrame = p.Character.HumanoidRootPart.CFrame * CFrame.new(0,0,geroSettings.dist)
+                        end
+                    end
+                    task.wait(geroSettings.wait)
+                end
+                task.wait()
+            end
+        end)
+    end
+end})
+TrollTab:AddSlider({ Name = "げろおーる速度", Min = 0.01, Max = 1, Default = 0.1, Increment = 0.01, Callback = function(V) geroSettings.wait = V end })
+TrollTab:AddSlider({ Name = "げろおーる距離", Min = -20, Max = 20, Default = 3, Increment = 1, Callback = function(V) geroSettings.dist = V end })
+
+-- ========== TPタブ ==========
+TPTab:AddTextbox({ Name = "座標入力", Default = "0, 50, 0", TextDisappear = false, Callback = function(V) tpCoordinates = V end })
+TPTab:AddButton({ Name = "座標へ移動実行", Callback = function()
+    local coords = string.split(tpCoordinates, ",")
+    if #coords == 3 then
+        local x,y,z = tonumber(coords[1]), tonumber(coords[2]), tonumber(coords[3])
+        if x and y and z and player.Character then player.Character.HumanoidRootPart.CFrame = CFrame.new(x,y,z) end
+    end
+end})
+local playerDropdownTP = TPTab:AddDropdown({ Name = "プレイヤーを選択", Options = getPlayerList(), Callback = function(V) selectedTargetName = V end })
+TPTab:AddButton({ Name = "リスト更新", Callback = function() playerDropdownTP:Refresh(getPlayerList(), true) end })
+TPTab:AddButton({ Name = "選択プレイヤーへ移動", Callback = function()
+    local target = Players:FindFirstChild(selectedTargetName)
+    if target and target.Character then player.Character.HumanoidRootPart.CFrame = target.Character.HumanoidRootPart.CFrame * CFrame.new(0,0,3) end
+end})
+
+-- 背中張り付き
+TPTab:AddSection({ Name = "プレイヤーに張り付く" })
+local attachDropdown = TPTab:AddDropdown({ Name = "張り付くプレイヤー", Options = getPlayerList(), Callback = function(V) attachTarget = Players:FindFirstChild(V) end})
+TPTab:AddButton({ Name = "リスト更新", Callback = function() attachDropdown:Refresh(getPlayerList(), true) end })
+TPTab:AddSlider({ Name = "オフセット(Z前後)", Min = -5, Max = 5, Default = -2.5, Increment = 0.1, Callback = function(V) attachOffset = Vector3.new(0, 0, V) end })
+TPTab:AddToggle({ Name = "背中に張り付く", Default = false, Callback = function(V)
+    attachEnabled = V
+    if V and not attachTarget then
+        OrionLib:MakeNotification({Name = "エラー", Content = "プレイヤーを選択してください", Time = 3})
+        attachEnabled = false
+    end
+end})
+TPTab:AddButton({ Name = "張り付き解除", Callback = function() attachEnabled = false; attachTarget = nil end})
+
+-- ========== アンチタブ ==========
+-- （空）
+
+-- ========== ESPタブ ==========
+-- （空）
+
+-- ========== ブロブマンタブ ==========
+-- （空）
+
+-- ========== UFOタブ ==========
 local ufoHitboxes = {}
 local ufoSpinEnabled = false
 local ufoFollowEnabled = false
@@ -1139,45 +1093,12 @@ local ufoRadius = 15
 local ufoHeight = 5
 local ufoAngle = 0
 
-local function spawnShurikens(count)
-    local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-    if not root then return end
-    local spawnCFrame = root.CFrame * CFrame.new(0, 3, 0)
-    for i = 1, count do
-        pcall(function()
-            ReplicatedStorage.MenuToys.SpawnToyRemoteFunction:InvokeServer("NinjaShuriken", spawnCFrame, Vector3.zero)
-        end)
-        task.wait(0.05)
-    end
-end
-
 local function ufoSteal(ufoName)
     local ufo = Workspace.Map.AlwaysHereTweenedObjects[ufoName].Object.ObjectModel.Body
     if not ufo then return end
-    spawnShurikens(10)
-    task.wait(1)
-    local folder = Workspace:FindFirstChild(player.Name .. "SpawnedInToys")
-    for i = 1, 10 do
-        local shur = folder and folder:FindFirstChild("NinjaShuriken")
-        if shur then
-            shur.Name = i
-            pcall(function() ReplicatedStorage.PlayerEvents.StickyPartEvent:FireServer(shur.StickyPart, ufo, CFrame.Angles(0,0,0)) end)
-        end
-    end
-    for i = 1, 100 do
-        local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-        if root then
-            root.CFrame = ufo.CFrame
-            pcall(function() ReplicatedStorage.GrabEvents.SetNetworkOwner:FireServer(ufo, ufo.CFrame) end)
-        end
-        task.wait()
-    end
-    local obj = Workspace.Map.AlwaysHereTweenedObjects[ufoName].Object
-    local body = obj.ObjectModel.Body
-    local attach = body:FindFirstChild("ObjectModelAttachment")
-    if attach then attach:Destroy() end
-    obj.FollowThisPart.AlignPosition.Attachment0 = nil
-    obj.FollowThisPart.AlignOrientation.Attachment0 = nil
+    pcall(function()
+        ReplicatedStorage.GrabEvents.SetNetworkOwner:FireServer(ufo, ufo.CFrame)
+    end)
 end
 
 local function getUfoHitboxes()
@@ -1190,12 +1111,42 @@ local function getUfoHitboxes()
     end
 end
 
--- ========================================================================
---  4. バリア破壊
--- ========================================================================
-local barrierRunning = false
-local barrierNoTPRunning = false
+UFOTab:AddButton({ Name = "UFO1 (OuterUFO) 奪取", Callback = function() ufoSteal("OuterUFO") end })
+UFOTab:AddButton({ Name = "UFO2 (InnerUFO) 奪取", Callback = function() ufoSteal("InnerUFO") end })
+UFOTab:AddButton({ Name = "Train 奪取", Callback = function() ufoSteal("Train") end })
+UFOTab:AddSection({ Name = "ヒットボックス制御" })
+UFOTab:AddButton({ Name = "ヒットボックス取得", Callback = function() getUfoHitboxes() end })
+UFOTab:AddToggle({ Name = "ヒットボックス回転", Default = false, Callback = function(V) ufoSpinEnabled = V; if V then ufoFollowEnabled = false end end})
+UFOTab:AddToggle({ Name = "ヒットボックス追従", Default = false, Callback = function(V) ufoFollowEnabled = V; if V then ufoSpinEnabled = false end end})
+UFOTab:AddSlider({ Name = "回転速度", Min = 1, Max = 20, Default = 6, Increment = 1, Callback = function(V) ufoSpinSpeed = V end })
+UFOTab:AddSlider({ Name = "半径", Min = 5, Max = 30, Default = 15, Increment = 1, Callback = function(V) ufoRadius = V end })
+UFOTab:AddSlider({ Name = "高さ", Min = -5, Max = 20, Default = 5, Increment = 1, Callback = function(V) ufoHeight = V end })
 
+RunService.RenderStepped:Connect(function(dt)
+    local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+    if ufoSpinEnabled and #ufoHitboxes > 0 then
+        ufoAngle = ufoAngle + dt * ufoSpinSpeed
+        local count = #ufoHitboxes
+        for i, hitbox in ipairs(ufoHitboxes) do
+            if hitbox and hitbox.Parent then
+                local offset = (i / count) * 2 * math.pi
+                local x = math.sin(ufoAngle + offset) * ufoRadius
+                local z = math.cos(ufoAngle + offset) * ufoRadius
+                hitbox.CFrame = CFrame.new(hrp.Position + Vector3.new(x, ufoHeight, z))
+            end
+        end
+    elseif ufoFollowEnabled and #ufoHitboxes > 0 then
+        for _, hitbox in ipairs(ufoHitboxes) do
+            if hitbox and hitbox.Parent then
+                hitbox.CFrame = CFrame.new(hrp.Position + Vector3.new(0, ufoHeight + 3, 0))
+            end
+        end
+    end
+end)
+
+-- ========== バリア破壊タブ ==========
+local barrierRunning = false
 local function executeBarrierBreak()
     if barrierRunning then return false end
     barrierRunning = true
@@ -1249,484 +1200,6 @@ local function executeBarrierBreak()
     return success
 end
 
-local function executeBarrierBreakNoTP()
-    if barrierNoTPRunning then return false end
-    barrierNoTPRunning = true
-    local success, err = pcall(function()
-        local plotItems = Workspace:FindFirstChild("PlotItems")
-        if plotItems and plotItems:FindFirstChild("PlayersInPlots") and plotItems.PlayersInPlots:FindFirstChild(player.Name) then
-            OrionLib:MakeNotification({Name = "エラー", Content = "家の外で実行してください", Time = 3})
-            return false
-        end
-        if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then return false end
-        local hum = player.Character:FindFirstChildOfClass("Humanoid")
-        if not hum then return false end
-        hum.WalkSpeed = 0
-        if not ReplicatedStorage:FindFirstChild("MenuToys") then hum.WalkSpeed = 16; return false end
-        ReplicatedStorage.MenuToys.SpawnToyRemoteFunction:InvokeServer("InstrumentWoodwindOcarina", CFrame.new(184.148834, -5.54824972, 498.136749), Vector3.new(0,34,0))
-        task.wait(0.4)
-        local folder = Workspace:FindFirstChild(player.Name .. "SpawnedInToys")
-        local ocarina = folder and folder:FindFirstChild("InstrumentWoodwindOcarina")
-        if not ocarina or not ocarina:FindFirstChild("HoldPart") then hum.WalkSpeed = 16; return false end
-        ocarina.HoldPart.HoldItemRemoteFunction:InvokeServer(ocarina, Workspace[player.Name])
-        task.wait(0.2)
-        ocarina.HoldPart.DropItemRemoteFunction:InvokeServer(ocarina, CFrame.new(304.06, 25.77, 488.54), Vector3.new(0,70.486,0))
-        task.wait(0.1)
-        if folder and folder:FindFirstChild("InstrumentWoodwindOcarina") then
-            ReplicatedStorage.MenuToys.DestroyToy:FireServer(folder.InstrumentWoodwindOcarina)
-        end
-        task.wait(1.5)
-        ReplicatedStorage.MenuToys.SpawnToyRemoteFunction:InvokeServer("Campfire", CFrame.new(257.638672, -5.57392979, 450.103638), Vector3.new(0,161.972,0))
-        task.wait(1)
-        local folder2 = Workspace:FindFirstChild(player.Name .. "SpawnedInToys")
-        if folder2 and folder2:FindFirstChild("Campfire") then
-            hum.WalkSpeed = 16
-            OrionLib:MakeNotification({Name = "成功", Content = "Barrier破壊に成功！", Time = 3})
-            return true
-        end
-        hum.WalkSpeed = 16
-        return false
-    end)
-    if not success then
-        local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
-        if hum then hum.WalkSpeed = 16 end
-        OrionLib:MakeNotification({Name = "エラー", Content = tostring(err), Time = 3})
-    end
-    barrierNoTPRunning = false
-    return success
-end
-
--- ========================================================================
---  5. ラインラグ・ネットスパム
--- ========================================================================
-local lineLagThread = nil
-local lineLagRunning = false
-
-local function startLineLag()
-    if lineLagRunning then return end
-    lineLagRunning = true
-    lineLagThread = coroutine.create(function()
-        local grabEvents = ReplicatedStorage:FindFirstChild("GrabEvents")
-        if not grabEvents then return end
-        local createLine = grabEvents:FindFirstChild("CreateGrabLine")
-        if not createLine then return end
-        while lineLagRunning do
-            local spawnLoc = Workspace:FindFirstChild("SpawnLocation") or Workspace:FindFirstChild("Spawn") or (player.Character and player.Character:FindFirstChild("HumanoidRootPart"))
-            if spawnLoc then
-                local rx, rz = math.random(-1e9, 1e9), math.random(-1e9, 1e9)
-                local dirs = {CFrame.new(rx,0,rz), CFrame.new(-rx,0,-rz), CFrame.new(rx,0,-rz), CFrame.new(-rx,0,rz)}
-                for _, pos in ipairs(dirs) do pcall(function() createLine:FireServer(spawnLoc, pos) end) end
-            end
-            task.wait()
-        end
-    end)
-    coroutine.resume(lineLagThread)
-end
-
-local function stopLineLag()
-    lineLagRunning = false
-    if lineLagThread then coroutine.close(lineLagThread); lineLagThread = nil end
-end
-
-local netSpamRunning = false
-local netSpamTask = nil
-
-local function startNetSpam()
-    if netSpamRunning then return end
-    netSpamRunning = true
-    netSpamTask = task.spawn(function()
-        while netSpamRunning do
-            for _, p in ipairs(Players:GetPlayers()) do
-                if p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
-                    local hrp = p.Character.HumanoidRootPart
-                    pcall(function()
-                        local ge = ReplicatedStorage:FindFirstChild("GrabEvents")
-                        if ge and ge:FindFirstChild("SetNetworkOwner") then ge.SetNetworkOwner:FireServer(hrp, hrp.CFrame) end
-                    end)
-                end
-            end
-            task.wait(0.05)
-        end
-    end)
-end
-
-local function stopNetSpam()
-    netSpamRunning = false
-    if netSpamTask then task.cancel(netSpamTask); netSpamTask = nil end
-end
-
-local function destroyServer()
-    task.spawn(function()
-        startLineLag()
-        task.wait(1)
-        local players = {}
-        for _, p in ipairs(Players:GetPlayers()) do
-            if p ~= player and p.Character then
-                local hrp = p.Character:FindFirstChild("HumanoidRootPart")
-                if hrp then table.insert(players, {plr=p, hrp=hrp}) end
-            end
-        end
-        local height = 35
-        local radius = 40
-        for idx, data in ipairs(players) do
-            local angle = ((idx-1) / math.max(#players,1)) * math.pi * 2
-            local x, z = math.cos(angle)*radius, math.sin(angle)*radius
-            data.hrp.CFrame = CFrame.new(x, height, z)
-            data.hrp.AssemblyLinearVelocity = Vector3.zero
-            local bp = Instance.new("BodyPosition")
-            bp.MaxForce = Vector3.new(1e9,1e9,1e9); bp.P = 40000000; bp.Position = Vector3.new(x,height,z)
-            bp.Parent = data.hrp
-            task.delay(2, function() pcall(function() bp:Destroy() end) end)
-        end
-        task.wait(2)
-    end)
-end
-
--- ========================================================================
---  6. UI構築（OrionLib）
--- ========================================================================
-local Window = OrionLib:MakeWindow({ Name = "kiki hub1.0.2", HidePremium = false, IntroText = "よろしく 🐈" })
-
--- -------- 6-1. メイン能力タブ（新規・空 / 1番目） --------
-local MainTab = Window:MakeTab({ Name = "メイン能力", Icon = "rbxassetid://4483345998" })
-MainTab:AddLabel("メイン能力機能は現在空です")
-MainTab:AddLabel("後で機能を追加してください")
-
--- -------- 6-2. メイン能力調整タブ（新規・空 / 2番目） --------
-local MainAdjustTab = Window:MakeTab({ Name = "メイン能力調整", Icon = "rbxassetid://4483345998" })
-MainAdjustTab:AddLabel("メイン能力調整機能は現在空です")
-MainAdjustTab:AddLabel("後で機能を追加してください")
-
--- -------- 6-3. メイン合体モードタブ（新規・空 / 3番目） --------
-local MainCombineTab = Window:MakeTab({ Name = "メイン合体モード", Icon = "rbxassetid://4483345998" })
-MainCombineTab:AddLabel("メイン合体モード機能は現在空です")
-MainCombineTab:AddLabel("後で機能を追加してください")
-
--- -------- 6-4. 身体・設定タブ --------
-local MiscTab = Window:MakeTab({ Name = "身体・設定", Icon = "rbxassetid://4483345998" })
-MiscTab:AddToggle({ Name = "Fly (飛行)", Default = false, Callback = function(V) settings.flyEnabled = V end })
-MiscTab:AddSlider({ Name = "Fly速度", Min = 10, Max = 300, Default = 50, Increment = 1, Callback = function(V) settings.flySpeed = V end })
-MiscTab:AddToggle({ Name = "高速移動有効", Default = false, Callback = function(V) settings.speedEnabled = V end })
-MiscTab:AddSlider({ Name = "速度設定", Min = 16, Max = 500, Default = 100, Increment = 1, Callback = function(V) settings.customSpeed = V end })
-MiscTab:AddToggle({ Name = "ジャンプ有効", Default = false, Callback = function(V) settings.jumpEnabled = V end })
-MiscTab:AddSlider({ Name = "ジャンプ設定", Min = 50, Max = 500, Default = 150, Increment = 1, Callback = function(V) settings.customJump = V end })
-MiscTab:AddToggle({ Name = "無限ジャンプ", Default = false, Callback = function(V) settings.infJump = V end })
-MiscTab:AddSlider({ Name = "視野角 FOV", Min = 30, Max = 120, Default = 70, Increment = 1, Callback = function(V) settings.fov = V end })
-MiscTab:AddSlider({ Name = "重力", Min = 0, Max = 500, Default = 196, Increment = 1, Callback = function(V) settings.gravity = V end })
-
--- -------- 6-5. プレゼントタブ --------
-local PresentTab = Window:MakeTab({ Name = "プレゼント", Icon = "rbxassetid://4483345998" })
-local giftDropdown = PresentTab:AddDropdown({ Name = "贈る相手を選択", Default = player.Name, Options = getPlayerList(), Callback = function(V) selectedGiftTarget = V end })
-PresentTab:AddButton({ Name = "リスト更新", Callback = function() giftDropdown:Refresh(getPlayerList(), true) end })
-PresentTab:AddSlider({ Name = "荒ぶる速度", Min = 5, Max = 100, Default = 25, Increment = 1, Callback = function(V) presentSpeed = V end })
-PresentTab:AddSlider({ Name = "追いかける速度", Min = 5, Max = 100, Default = 30, Increment = 1, Callback = function(V) presentFollowSpeed = V end })
-PresentTab:AddToggle({ Name = "プレゼント開始", Default = false, Callback = function(V) presentEnabled = V; if V then mode = "None"; monoAllEnabled = false end end })
-
--- -------- 6-6. 荒らしタブ --------
-local TrollTab = Window:MakeTab({ Name = "荒らし", Icon = "rbxassetid://4483345998" })
-TrollTab:AddToggle({ Name = "ものおーる (自分以外全員)", Default = false, Callback = function(V) monoAllEnabled = V; if V then mode = "None"; presentEnabled = false end end })
-TrollTab:AddSlider({ Name = "ものおーる速度", Min = 1, Max = 30, Default = 10, Increment = 1, Callback = function(V) monoAllSpeed = V end })
-TrollTab:AddToggle({ Name = "げろおーる (実行)", Default = false, Callback = function(V)
-    geroAllEnabled = V
-    if V then
-        task.spawn(function()
-            while geroAllEnabled do
-                for _, p in ipairs(Players:GetPlayers()) do
-                    if not geroAllEnabled then break end
-                    if p ~= player and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
-                        if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
-                            player.Character.HumanoidRootPart.CFrame = p.Character.HumanoidRootPart.CFrame * CFrame.new(0,0,geroSettings.dist)
-                        end
-                    end
-                    task.wait(geroSettings.wait)
-                end
-                task.wait()
-            end
-        end)
-    end
-end})
-TrollTab:AddSlider({ Name = "げろおーる速度", Min = 0.01, Max = 1, Default = 0.1, Increment = 0.01, Callback = function(V) geroSettings.wait = V end })
-TrollTab:AddSlider({ Name = "げろおーる距離", Min = -20, Max = 20, Default = 3, Increment = 1, Callback = function(V) geroSettings.dist = V end })
-
--- -------- 6-7. TPタブ --------
-local TPTab = Window:MakeTab({ Name = "TP", Icon = "rbxassetid://4483345998" })
-TPTab:AddTextbox({ Name = "座標入力", Default = "0, 50, 0", TextDisappear = false, Callback = function(V) tpCoordinates = V end })
-TPTab:AddButton({ Name = "座標へ移動実行", Callback = function()
-    local coords = string.split(tpCoordinates, ",")
-    if #coords == 3 then
-        local x,y,z = tonumber(coords[1]), tonumber(coords[2]), tonumber(coords[3])
-        if x and y and z and player.Character then player.Character.HumanoidRootPart.CFrame = CFrame.new(x,y,z) end
-    end
-end})
-local playerDropdownTP = TPTab:AddDropdown({ Name = "プレイヤーを選択", Options = getPlayerList(), Callback = function(V) selectedTargetName = V end })
-TPTab:AddButton({ Name = "リスト更新", Callback = function() playerDropdownTP:Refresh(getPlayerList(), true) end })
-TPTab:AddButton({ Name = "選択プレイヤーへ移動", Callback = function()
-    local target = Players:FindFirstChild(selectedTargetName)
-    if target and target.Character then player.Character.HumanoidRootPart.CFrame = target.Character.HumanoidRootPart.CFrame * CFrame.new(0,0,3) end
-end})
-
--- 背中張り付き機能
-TPTab:AddSection({ Name = "プレイヤーに張り付く" })
-local attachDropdown = TPTab:AddDropdown({ Name = "張り付くプレイヤー", Options = getPlayerList(), Callback = function(V)
-    attachTarget = Players:FindFirstChild(V)
-end})
-TPTab:AddButton({ Name = "リスト更新", Callback = function() attachDropdown:Refresh(getPlayerList(), true) end })
-TPTab:AddSlider({ Name = "オフセット(Z前後)", Min = -5, Max = 5, Default = -2.5, Increment = 0.1, Callback = function(V) attachOffset = Vector3.new(0, 0, V) end })
-TPTab:AddToggle({ Name = "背中に張り付く", Default = false, Callback = function(V)
-    attachEnabled = V
-    if V and not attachTarget then
-        OrionLib:MakeNotification({Name = "エラー", Content = "プレイヤーを選択してください", Time = 3})
-        attachEnabled = false
-    end
-end})
-TPTab:AddButton({ Name = "張り付き解除", Callback = function()
-    attachEnabled = false
-    attachTarget = nil
-end})
-
--- -------- 6-8. アンチタブ（空） --------
-local AntiTab = Window:MakeTab({ Name = "アンチ", Icon = "rbxassetid://4483345998" })
-AntiTab:AddLabel("アンチ機能は現在空です")
-AntiTab:AddLabel("後で機能を追加してください")
-
--- -------- 6-9. ESPタブ（新規・空） --------
-local ESPTab = Window:MakeTab({ Name = "ESP", Icon = "rbxassetid://4483345998" })
-ESPTab:AddLabel("ESP機能は現在空です")
-ESPTab:AddLabel("後で機能を追加してください")
-
--- -------- 6-10. 楽しみタブ（新規追加） --------
-local FunTab = Window:MakeTab({ Name = "楽しみ", Icon = "rbxassetid://4483345998" })
-FunTab:AddLabel("🚀 楽しみ機能 🚀")
-FunTab:AddButton({ Name = "🎡 回転台", Callback = function()
-    if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
-        local hrp = player.Character.HumanoidRootPart
-        local spinBV = Instance.new("BodyVelocity")
-        spinBV.MaxForce = Vector3.new(1e6, 0, 1e6)
-        spinBV.Velocity = Vector3.new(0, 0, 0)
-        spinBV.Parent = hrp
-        local spinBG = Instance.new("BodyGyro")
-        spinBG.MaxTorque = Vector3.new(1e9, 1e9, 1e9)
-        spinBG.Parent = hrp
-        
-        local spinAngle = 0
-        local spinConnection
-        spinConnection = RunService.Heartbeat:Connect(function(dt)
-            spinAngle = spinAngle + dt * 5
-            spinBG.CFrame = CFrame.Angles(0, spinAngle, 0)
-            hrp.CFrame = hrp.CFrame * CFrame.Angles(0, dt * 5, 0)
-        end)
-        
-        OrionLib:MakeNotification({Name = "回転開始", Content = "5秒後に停止します", Time = 3})
-        task.wait(5)
-        spinConnection:Disconnect()
-        spinBV:Destroy()
-        spinBG:Destroy()
-        OrionLib:MakeNotification({Name = "停止", Content = "回転を停止しました", Time = 2})
-    end
-end})
-FunTab:AddButton({ Name = "🎈 浮遊", Callback = function()
-    if player.Character then
-        local hum = player.Character:FindFirstChildOfClass("Humanoid")
-        if hum then
-            local origGrav = hum.Gravity
-            hum.Gravity = 0
-            OrionLib:MakeNotification({Name = "浮遊開始", Content = "クリックでジャンプして浮遊", Time = 3})
-            task.wait(5)
-            hum.Gravity = origGrav
-            OrionLib:MakeNotification({Name = "終了", Content = "浮遊を終了しました", Time = 2})
-        end
-    end
-end})
-FunTab:AddButton({ Name = "🎆 花火 (パーティクル)", Callback = function()
-    if player.Character then
-        local hrp = player.Character:FindFirstChild("HumanoidRootPart")
-        if hrp then
-            for i = 1, 20 do
-                local p = Instance.new("Part")
-                p.Size = Vector3.new(0.5, 0.5, 0.5)
-                p.Anchored = true
-                p.CanCollide = false
-                p.Material = Enum.Material.Neon
-                p.BrickColor = BrickColor.random()
-                p.Position = hrp.Position + Vector3.new(math.random(-10,10), math.random(0,5), math.random(-10,10))
-                p.Parent = Workspace
-                
-                local trail = Instance.new("Trail")
-                trail.Parent = p
-                trail.Lifetime = 1
-                trail.Color = ColorSequence.new(Color3.fromRGB(math.random(0,255), math.random(0,255), math.random(0,255)))
-                
-                local bv = Instance.new("BodyVelocity")
-                bv.MaxForce = Vector3.new(1e6, 1e6, 1e6)
-                bv.Velocity = Vector3.new(math.random(-50,50), math.random(30,80), math.random(-50,50))
-                bv.Parent = p
-                
-                Debris:AddItem(p, 2)
-                task.wait(0.05)
-            end
-        end
-    end
-end})
-FunTab:AddButton({ Name = "🌀 重力反転", Callback = function()
-    if player.Character then
-        local hum = player.Character:FindFirstChildOfClass("Humanoid")
-        if hum then
-            local origGrav = hum.Gravity
-            hum.Gravity = -origGrav
-            OrionLib:MakeNotification({Name = "重力反転", Content = "3秒後に元に戻ります", Time = 2})
-            task.wait(3)
-            hum.Gravity = origGrav
-        end
-    end
-end})
-FunTab:AddButton({ Name = "💫 星の雨", Callback = function()
-    if player.Character then
-        local hrp = player.Character:FindFirstChild("HumanoidRootPart")
-        if hrp then
-            for i = 1, 30 do
-                local star = Instance.new("Part")
-                star.Size = Vector3.new(0.3, 0.3, 0.3)
-                star.Shape = Enum.PartType.Ball
-                star.Anchored = false
-                star.CanCollide = false
-                star.Material = Enum.Material.Neon
-                star.BrickColor = BrickColor.new("Really yellow")
-                star.Position = hrp.Position + Vector3.new(math.random(-20,20), math.random(10,30), math.random(-20,20))
-                star.Parent = Workspace
-                
-                local bv = Instance.new("BodyVelocity")
-                bv.MaxForce = Vector3.new(1e6, 1e6, 1e6)
-                bv.Velocity = Vector3.new(0, -math.random(20,50), 0)
-                bv.Parent = star
-                
-                Debris:AddItem(star, 2)
-                task.wait(0.03)
-            end
-        end
-    end
-end})
-
--- -------- 6-11. 掴みタブ（新規追加） --------
-local GrabTab = Window:MakeTab({ Name = "掴み", Icon = "rbxassetid://4483345998" })
-GrabTab:AddLabel("🔧 オブジェクト掴み機能")
-GrabTab:AddLabel("範囲内のオブジェクトを制御します")
-
-GrabTab:AddSlider({ Name = "掴み範囲", Min = 10, Max = 5000, Default = 1000, Increment = 10, Callback = function(V) grabRange = V end })
-
-GrabTab:AddToggle({ Name = "掴む (範囲内のオブジェクトを収集)", Default = false, Callback = function(V)
-    grabEnabled = V
-    if V then
-        chaosEnabled = false
-        slowUpEnabled = false
-        slowDownEnabled = false
-        startGrabLoop()
-    else
-        stopGrabLoop()
-    end
-end})
-
-GrabTab:AddToggle({ Name = "カオス (ランダムに飛ばす)", Default = false, Callback = function(V)
-    chaosEnabled = V
-    if V then
-        grabEnabled = false
-        slowUpEnabled = false
-        slowDownEnabled = false
-        startGrabLoop()
-    else
-        stopGrabLoop()
-    end
-end})
-
-GrabTab:AddToggle({ Name = "スローアップ (ゆっくり上昇)", Default = false, Callback = function(V)
-    slowUpEnabled = V
-    if V then
-        grabEnabled = false
-        chaosEnabled = false
-        slowDownEnabled = false
-        startGrabLoop()
-    else
-        stopGrabLoop()
-    end
-end})
-
-GrabTab:AddToggle({ Name = "スローダウン (ゆっくり下降)", Default = false, Callback = function(V)
-    slowDownEnabled = V
-    if V then
-        grabEnabled = false
-        chaosEnabled = false
-        slowUpEnabled = false
-        startGrabLoop()
-    else
-        stopGrabLoop()
-    end
-end})
-
-GrabTab:AddButton({ Name = "🔄 全オブジェクト解放", Callback = function()
-    grabEnabled = false
-    chaosEnabled = false
-    slowUpEnabled = false
-    slowDownEnabled = false
-    stopGrabLoop()
-    clearObjects()
-    OrionLib:MakeNotification({Name = "解放", Content = "全てのオブジェクトを解放しました", Time = 2})
-end})
-
-GrabTab:AddButton({ Name = "📊 オブジェクト数表示", Callback = function()
-    local count = 0
-    for _ in pairs(objectData) do count = count + 1 end
-    OrionLib:MakeNotification({Name = "オブジェクト数", Content = tostring(count) .. " 個", Time = 3})
-end})
-
-GrabTab:AddSlider({ Name = "最大オブジェクト数", Min = 10, Max = 2000, Default = 999, Increment = 1, Callback = function(V) maxObjects = V end })
-
--- -------- 6-12. ブロブマンタブ --------
-local BlobTab = Window:MakeTab({ Name = "ブロブマン", Icon = "rbxassetid://4483345998" })
-BlobTab:AddLabel("ブロブマン機能は現在空です")
-BlobTab:AddLabel("後で機能を追加してください")
-
--- -------- 6-13. UFOタブ --------
-local UFOTab = Window:MakeTab({ Name = "UFO", Icon = "rbxassetid://4483345998" })
-UFOTab:AddButton({ Name = "UFO1 (OuterUFO) 奪取", Callback = function() ufoSteal("OuterUFO") end })
-UFOTab:AddButton({ Name = "UFO2 (InnerUFO) 奪取", Callback = function() ufoSteal("InnerUFO") end })
-UFOTab:AddButton({ Name = "Train 奪取", Callback = function() ufoSteal("Train") end })
-UFOTab:AddSection({ Name = "ヒットボックス制御" })
-UFOTab:AddButton({ Name = "ヒットボックス取得", Callback = function() getUfoHitboxes() end })
-UFOTab:AddToggle({ Name = "ヒットボックス回転", Default = false, Callback = function(V)
-    ufoSpinEnabled = V
-    if V then ufoFollowEnabled = false end
-end})
-UFOTab:AddToggle({ Name = "ヒットボックス追従", Default = false, Callback = function(V)
-    ufoFollowEnabled = V
-    if V then ufoSpinEnabled = false end
-end})
-UFOTab:AddSlider({ Name = "回転速度", Min = 1, Max = 20, Default = 6, Increment = 1, Callback = function(V) ufoSpinSpeed = V end })
-UFOTab:AddSlider({ Name = "半径", Min = 5, Max = 30, Default = 15, Increment = 1, Callback = function(V) ufoRadius = V end })
-UFOTab:AddSlider({ Name = "高さ", Min = -5, Max = 20, Default = 5, Increment = 1, Callback = function(V) ufoHeight = V end })
-RunService.RenderStepped:Connect(function(dt)
-    local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-    if not hrp then return end
-    if ufoSpinEnabled and #ufoHitboxes > 0 then
-        ufoAngle = ufoAngle + dt * ufoSpinSpeed
-        local count = #ufoHitboxes
-        for i, hitbox in ipairs(ufoHitboxes) do
-            if hitbox and hitbox.Parent then
-                local offset = (i / count) * 2 * math.pi
-                local x = math.sin(ufoAngle + offset) * ufoRadius
-                local z = math.cos(ufoAngle + offset) * ufoRadius
-                hitbox.CFrame = CFrame.new(hrp.Position + Vector3.new(x, ufoHeight, z))
-            end
-        end
-    elseif ufoFollowEnabled and #ufoHitboxes > 0 then
-        for _, hitbox in ipairs(ufoHitboxes) do
-            if hitbox and hitbox.Parent then
-                hitbox.CFrame = CFrame.new(hrp.Position + Vector3.new(0, ufoHeight + 3, 0))
-            end
-        end
-    end
-end)
-
--- -------- 6-14. バリア破壊タブ --------
-local BarrierTab = Window:MakeTab({ Name = "バリア破壊", Icon = "rbxassetid://4483345998" })
 BarrierTab:AddButton({ Name = "Break Barrier (1回実行)", Callback = function() executeBarrierBreak() end })
 BarrierTab:AddSection({ Name = "自動実行" })
 local autoBarrierToggle
@@ -1741,82 +1214,11 @@ autoBarrierToggle = BarrierTab:AddToggle({ Name = "Auto Barrier破壊", Default 
         end)
     end
 end})
-BarrierTab:AddSection({ Name = "NoTP版 (Beta)" })
-BarrierTab:AddButton({ Name = "Break Barrier NoTP (1回実行)", Callback = function() executeBarrierBreakNoTP() end })
-local autoBarrierNoTPToggle
-autoBarrierNoTPToggle = BarrierTab:AddToggle({ Name = "Auto Barrier破壊 NoTP", Default = false, Callback = function(V)
-    if V then
-        task.spawn(function()
-            while V do
-                local result = executeBarrierBreakNoTP()
-                if result then if autoBarrierNoTPToggle then autoBarrierNoTPToggle:Set(false) end; break end
-                task.wait(1.5)
-            end
-        end)
-    end
-end})
 
--- -------- 6-15. リスキル系タブ --------
-local KillTab = Window:MakeTab({ Name = "リスキル系", Icon = "rbxassetid://4483345998" })
-KillTab:AddLabel("---- プレイヤーをキル ----")
+-- ========== リスキル系タブ ==========
+-- （空）
 
-local loopkillRunning = false
-local loopkillThread
-
-local function killPlayer(plr)
-    if plr and plr.Character then
-        pcall(function()
-            local root = plr.Character:FindFirstChild("HumanoidRootPart")
-            if root then
-                root.CFrame = root.CFrame * CFrame.new(0, -50, 0)
-                root.AssemblyLinearVelocity = Vector3.new(0, -100, 0)
-                task.wait(0.1)
-                plr.Character:BreakJoints()
-            end
-        end)
-    end
-end
-
-KillTab:AddDropdown({ Name = "対象プレイヤー", Options = getPlayerList(), Callback = function(V) selectedTargetName = V end })
-KillTab:AddButton({ Name = "対象を1回キル", Callback = function()
-    local target = Players:FindFirstChild(selectedTargetName)
-    if target then killPlayer(target) end
-end})
-KillTab:AddToggle({ Name = "指定プレイヤーを連続キル", Default = false, Callback = function(V)
-    loopkillRunning = V
-    if V then
-        loopkillThread = coroutine.create(function()
-            while loopkillRunning do
-                local target = Players:FindFirstChild(selectedTargetName)
-                if target then killPlayer(target) end
-                wait()
-            end
-        end)
-        coroutine.resume(loopkillThread)
-    else
-        if loopkillThread then coroutine.close(loopkillThread); loopkillThread = nil end
-    end
-end})
-KillTab:AddToggle({ Name = "全員（自分以外）を連続キル", Default = false, Callback = function(V)
-    loopkillRunning = V
-    if V then
-        loopkillThread = coroutine.create(function()
-            while loopkillRunning do
-                for _, target in pairs(Players:GetPlayers()) do
-                    if target ~= player then killPlayer(target) end
-                end
-                wait()
-            end
-        end)
-        coroutine.resume(loopkillThread)
-    else
-        if loopkillThread then coroutine.close(loopkillThread); loopkillThread = nil end
-    end
-end})
-
--- -------- 6-16. ラグタブ --------
-local LagTab = Window:MakeTab({ Name = "ラグ", Icon = "rbxassetid://4483345998" })
-LagTab:AddLabel("---- ライン連射（サーバーラグ） ----")
+-- ========== ラグタブ ==========
 local lineSpamRunning = false
 local lineSpamThread
 local lineCount = 100
@@ -1951,18 +1353,15 @@ LagTab:AddButton({ Name = "サーバークラッシュ（200kライン）", Call
     end)
 end})
 
--- -------- 6-17. アラタブ（ネットワークスパム） --------
-local AlaTab = Window:MakeTab({ Name = "アラ", Icon = "rbxassetid://4483345998" })
-AlaTab:AddToggle({ Name = "ネットワークスパム", Default = false, Callback = function(V) if V then startNetSpam() else stopNetSpam() end end })
+-- ========== アラタブ ==========
+-- （空）
 
--- -------- 6-18. クレジットタブ --------
-local CreditTab = Window:MakeTab({ Name = "クレジット", Icon = "rbxassetid://4483345998" })
-CreditTab:AddLabel("kiki hub1.0.2 完全統合版")
+-- ========== クレジットタブ ==========
+CreditTab:AddLabel("kiki hub premium")
 CreditTab:AddLabel("キャットコミュニティー🐈")
 CreditTab:AddLabel("作：うんちブリリリリリュw / 拡散：自由な犬+あく")
 
--- -------- 6-19. Discordタブ --------
-local DiscordTab = Window:MakeTab({ Name = "Discord", Icon = "rbxassetid://4483345998" })
+-- ========== Discordタブ ==========
 DiscordTab:AddLabel("新サーバー (メイン)")
 DiscordTab:AddButton({ Name = "新サーバーリンクをコピー", Callback = function()
     pcall(function() setclipboard("https://discord.gg/G2m8RRDgz") end)
@@ -1972,8 +1371,7 @@ DiscordTab:AddButton({ Name = "旧サーバーリンクをコピー", Callback =
     pcall(function() setclipboard("https://discord.gg/wZpmpCryX") end)
 end})
 
--- -------- 6-20. スクリプト hub タブ --------
-local ScriptHubTab = Window:MakeTab({ Name = "スクリプト hub", Icon = "rbxassetid://4483345998" })
+-- ========== スクリプト hub タブ ==========
 ScriptHubTab:AddLabel("外部スクリプトを読み込みます (実行には注意)")
 ScriptHubTab:AddButton({ Name = "スクリプト hub を実行", Callback = function()
     pcall(function()
@@ -1981,10 +1379,8 @@ ScriptHubTab:AddButton({ Name = "スクリプト hub を実行", Callback = func
     end)
 end})
 
--- -------- 6-21. 情報タブ（新規・空 / 一番下） --------
-local InfoTab = Window:MakeTab({ Name = "情報", Icon = "rbxassetid://4483345998" })
+-- ========== 情報タブ ==========
 InfoTab:AddLabel("情報機能は現在空です")
-InfoTab:AddLabel("後で機能を追加してください")
 
 -- ========================================================================
 --  初期化
