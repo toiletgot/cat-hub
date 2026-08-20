@@ -1,0 +1,497 @@
+-- ============================================
+-- Open Lib (Orion) を使った Loop Kill GUI
+-- ============================================
+
+-- Orion Lib をロード
+local OrionLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/BlizTBr/scripts/main/Orion%20X"))()
+
+-- ウィンドウ作成
+local Window = OrionLib:MakeWindow({
+    Name = "Loop Kill",
+    HidePremium = true,
+    SaveConfig = true,
+    ConfigFolder = "LoopKillConfig",
+    IntroEnabled = false,
+    KeyToOpenWindow = "M",
+})
+
+-- ============================================
+-- タブ作成
+-- ============================================
+local MainTab = Window:MakeTab({
+    Name = "Main",
+    Icon = "rbxassetid://7733964640",
+    PremiumOnly = false,
+})
+
+local SettingsTab = Window:MakeTab({
+    Name = "Settings",
+    Icon = "rbxassetid://7734053495",
+    PremiumOnly = false,
+})
+
+-- ============================================
+-- 変数
+-- ============================================
+local LoopPlayers = {}
+local IsLoopRunning = false
+local LoopThread = nil
+
+-- Remote Events
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local LocalPlayer = Players.LocalPlayer
+
+local DestroyGrabLine = ReplicatedStorage:WaitForChild("GrabEvents"):WaitForChild("DestroyGrabLine")
+local SetNetworkOwner = ReplicatedStorage:WaitForChild("GrabEvents"):WaitForChild("SetNetworkOwner")
+
+-- ============================================
+-- 関数
+-- ============================================
+
+function IsValidTarget(player)
+    if not player or player == LocalPlayer then return false end
+    if not player:IsA("Player") then return false end
+    if not player.Character then return false end
+    local root = player.Character:FindFirstChild("HumanoidRootPart")
+    local hum = player.Character:FindFirstChildOfClass("Humanoid")
+    if not root or not hum then return false end
+    if hum.Health <= 0 then return false end
+    return true
+end
+
+function GetPlayerCharacter()
+    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+        return LocalPlayer.Character
+    end
+    return nil
+end
+
+function TeleportPlayer(cframe)
+    local char = GetPlayerCharacter()
+    if char then
+        char.HumanoidRootPart.CFrame = cframe
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if hum then hum.Sit = false end
+    end
+end
+
+function GetPlayerCFrame()
+    local char = GetPlayerCharacter()
+    if char then return char.HumanoidRootPart.CFrame end
+    return nil
+end
+
+function GetLookAtCFrame(targetPos)
+    local char = GetPlayerCharacter()
+    if not char then return CFrame.new() end
+    local origin = char.HumanoidRootPart.Position
+    local dir = (targetPos - origin).Unit
+    local right = dir:Cross(Vector3.new(0, 1, 0))
+    local up = right:Cross(dir)
+    return CFrame.fromMatrix(origin, right, up)
+end
+
+function SNOWship(part)
+    if not part then return false end
+    if part:FindFirstChild("PartOwner") and part.PartOwner.Value == LocalPlayer.Name then
+        return true
+    end
+    local dist = LocalPlayer:DistanceFromCharacter(part.Position)
+    if dist <= 30 then
+        SetNetworkOwner:FireServer(part, GetLookAtCFrame(part.Position))
+        return true
+    end
+    return false
+end
+
+function CreateSkyVelocity(part)
+    if not part:FindFirstChild("SkyVelocity") then
+        local bv = Instance.new("BodyVelocity", part)
+        bv.Name = "SkyVelocity"
+        bv.Velocity = Vector3.new(0, 100000000000000, 0)
+        bv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+    end
+end
+
+local NoclipConnection = nil
+function EnableNoclip()
+    if NoclipConnection then return end
+    NoclipConnection = RunService.Stepped:Connect(function()
+        if LocalPlayer.Character then
+            for _, child in pairs(LocalPlayer.Character:GetChildren()) do
+                if child:IsA("BasePart") and child.CanCollide then
+                    child.CanCollide = false
+                end
+            end
+        end
+        task.wait(0.21)
+    end)
+end
+
+function DisableNoclip()
+    if NoclipConnection then
+        NoclipConnection:Disconnect()
+        NoclipConnection = nil
+    end
+end
+
+-- ============================================
+-- ループキルメイン
+-- ============================================
+
+function StartLoopKill()
+    if IsLoopRunning then
+        OrionLib:MakeNotification({
+            Name = "Error",
+            Content = "既に起動しています",
+            Image = "rbxassetid://4483345998",
+            Time = 3,
+        })
+        return
+    end
+    
+    if #LoopPlayers == 0 then
+        OrionLib:MakeNotification({
+            Name = "Error",
+            Content = "プレイヤーが選択されていません",
+            Image = "rbxassetid://4483345998",
+            Time = 3,
+        })
+        return
+    end
+    
+    IsLoopRunning = true
+    OrionLib:MakeNotification({
+        Name = "Loop Kill",
+        Content = "🔴 開始！ 対象: " .. #LoopPlayers .. "人",
+        Image = "rbxassetid://7733964640",
+        Time = 3,
+    })
+    
+    LoopThread = task.spawn(function()
+        local savedCFrame = nil
+        
+        while IsLoopRunning do
+            savedCFrame = GetPlayerCFrame()
+            
+            for _, playerName in ipairs(LoopPlayers) do
+                local target = Players:FindFirstChild(playerName)
+                
+                if target and IsValidTarget(target) then
+                    local rootPart = target.Character:FindFirstChild("HumanoidRootPart")
+                    local head = target.Character:FindFirstChild("Head")
+                    local humanoid = target.Character:FindFirstChildOfClass("Humanoid")
+                    
+                    if rootPart and head and humanoid then
+                        for attempt = 1, 50 do
+                            if not IsLoopRunning then break end
+                            
+                            EnableNoclip()
+                            SNOWship(rootPart)
+                            
+                            if not IsValidTarget(target) or 
+                               rootPart.AssemblyLinearVelocity.Magnitude > 500 then
+                                DestroyGrabLine:FireServer(rootPart)
+                                CreateSkyVelocity(rootPart)
+                                break
+                            end
+                            
+                            task.wait(0.05)
+                            
+                            if rootPart.Position.Y <= -12 then
+                                TeleportPlayer(CFrame.new(rootPart.Position + Vector3.new(0, 5, -15)))
+                            else
+                                TeleportPlayer(CFrame.new(rootPart.Position + Vector3.new(0, -10, -10)))
+                            end
+                            
+                            humanoid.BreakJointsOnDeath = false
+                            humanoid:ChangeState(Enum.HumanoidStateType.Dead)
+                            humanoid.Jump = true
+                            humanoid.Sit = false
+                        end
+                    end
+                end
+            end
+            
+            if savedCFrame then
+                TeleportPlayer(savedCFrame)
+            end
+            task.wait(0.2)
+        end
+        
+        DisableNoclip()
+        if savedCFrame then
+            TeleportPlayer(savedCFrame)
+        end
+    end)
+end
+
+function StopLoopKill()
+    if not IsLoopRunning then
+        OrionLib:MakeNotification({
+            Name = "Error",
+            Content = "起動していません",
+            Image = "rbxassetid://4483345998",
+            Time = 3,
+        })
+        return
+    end
+    
+    IsLoopRunning = false
+    if LoopThread then
+        task.cancel(LoopThread)
+        LoopThread = nil
+    end
+    
+    OrionLib:MakeNotification({
+        Name = "Loop Kill",
+        Content = "🟢 停止しました",
+        Image = "rbxassetid://7733964640",
+        Time = 3,
+    })
+end
+
+-- ============================================
+-- プレイヤーリスト更新
+-- ============================================
+
+function UpdatePlayerList(dropdown)
+    local playerNames = {}
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            table.insert(playerNames, player.Name .. " (" .. player.DisplayName .. ")")
+        end
+    end
+    table.sort(playerNames, function(a, b) return a:lower() < b:lower() end)
+    dropdown:Refresh(playerNames, true)
+end
+
+-- ============================================
+-- GUI セクション
+-- ============================================
+
+-- プレイヤー選択セクション
+local PlayerSection = MainTab:AddSection({
+    Name = "Players"
+})
+
+-- プレイヤー追加用ドロップダウン
+local PlayerDropdown = nil
+PlayerDropdown = MainTab:AddDropdown({
+    Name = "Select Player",
+    Default = "",
+    Options = {},
+    Callback = function(value)
+        if value and value ~= "" then
+            local name = string.split(value, " ")[1]
+            if not table.find(LoopPlayers, name) then
+                table.insert(LoopPlayers, name)
+                OrionLib:MakeNotification({
+                    Name = "Added",
+                    Content = "✅ " .. name .. " を追加しました",
+                    Image = "rbxassetid://7733964640",
+                    Time = 2,
+                })
+                UpdateLoopList()
+            else
+                OrionLib:MakeNotification({
+                    Name = "Error",
+                    Content = "⚠️ " .. name .. " は既にリストにいます",
+                    Image = "rbxassetid://4483345998",
+                    Time = 2,
+                })
+            end
+        end
+    end
+})
+
+-- ループリスト表示用
+local LoopListDropdown = nil
+LoopListDropdown = MainTab:AddDropdown({
+    Name = "Players in Loop",
+    Default = "",
+    Options = {},
+    Callback = function(value)
+        -- 削除用に選択を保存
+        _G.SelectedLoopPlayer = value
+    end
+})
+
+function UpdateLoopList()
+    local names = {}
+    for _, name in ipairs(LoopPlayers) do
+        table.insert(names, name)
+    end
+    table.sort(names, function(a, b) return a:lower() < b:lower() end)
+    LoopListDropdown:Refresh(names, true)
+end
+
+-- 追加ボタン
+MainTab:AddButton({
+    Name = "Add Selected Player",
+    Callback = function()
+        local value = PlayerDropdown:GetValue()
+        if value and value ~= "" then
+            local name = string.split(value, " ")[1]
+            if not table.find(LoopPlayers, name) then
+                table.insert(LoopPlayers, name)
+                OrionLib:MakeNotification({
+                    Name = "Added",
+                    Content = "✅ " .. name .. " を追加しました",
+                    Image = "rbxassetid://7733964640",
+                    Time = 2,
+                })
+                UpdateLoopList()
+            end
+        end
+    end
+})
+
+-- 削除ボタン
+MainTab:AddButton({
+    Name = "Remove Selected Player",
+    Callback = function()
+        local value = _G.SelectedLoopPlayer
+        if value and value ~= "" then
+            for i, name in ipairs(LoopPlayers) do
+                if name == value then
+                    table.remove(LoopPlayers, i)
+                    OrionLib:MakeNotification({
+                        Name = "Removed",
+                        Content = "❌ " .. value .. " を削除しました",
+                        Image = "rbxassetid://4483345998",
+                        Time = 2,
+                    })
+                    UpdateLoopList()
+                    break
+                end
+            end
+        end
+    end
+})
+
+-- 全追加ボタン
+MainTab:AddButton({
+    Name = "Add All Players",
+    Callback = function()
+        LoopPlayers = {}
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer then
+                table.insert(LoopPlayers, player.Name)
+            end
+        end
+        OrionLib:MakeNotification({
+            Name = "Added All",
+            Content = "✅ " .. #LoopPlayers .. "人のプレイヤーを追加しました",
+            Image = "rbxassetid://7733964640",
+            Time = 2,
+        })
+        UpdateLoopList()
+    end
+})
+
+-- クリアボタン
+MainTab:AddButton({
+    Name = "Clear List",
+    Callback = function()
+        LoopPlayers = {}
+        UpdateLoopList()
+        OrionLib:MakeNotification({
+            Name = "Cleared",
+            Content = "リストをクリアしました",
+            Image = "rbxassetid://4483345998",
+            Time = 2,
+        })
+    end
+})
+
+-- ============================================
+-- コントロールセクション
+-- ============================================
+
+local ControlSection = MainTab:AddSection({
+    Name = "Controls"
+})
+
+-- 開始ボタン
+MainTab:AddButton({
+    Name = "▶ Start Loop Kill",
+    Callback = function()
+        StartLoopKill()
+    end
+})
+
+-- 停止ボタン
+MainTab:AddButton({
+    Name = "⏹ Stop Loop Kill",
+    Callback = function()
+        StopLoopKill()
+    end
+})
+
+-- トグル
+MainTab:AddToggle({
+    Name = "Loop Kill Toggle",
+    Default = false,
+    Callback = function(value)
+        if value then
+            StartLoopKill()
+        else
+            StopLoopKill()
+        end
+    end,
+    Save = true,
+    Flag = "LoopKillToggle",
+})
+
+-- ============================================
+-- 設定タブ
+-- ============================================
+
+local SettingsSection = SettingsTab:AddSection({
+    Name = "Settings"
+})
+
+SettingsTab:AddSlider({
+    Name = "Kill Attempts",
+    Min = 10,
+    Max = 100,
+    Default = 50,
+    Color = Color3.fromRGB(255, 255, 255),
+    Increment = 1,
+    ValueName = "attempts",
+    Callback = function(value)
+        _G.LoopKillAttempts = value
+    end,
+    Save = true,
+    Flag = "KillAttempts",
+})
+
+-- プレイヤーリスト更新ボタン
+SettingsTab:AddButton({
+    Name = "Refresh Player List",
+    Callback = function()
+        UpdatePlayerList(PlayerDropdown)
+        OrionLib:MakeNotification({
+            Name = "Refreshed",
+            Content = "プレイヤーリストを更新しました",
+            Image = "rbxassetid://7733964640",
+            Time = 2,
+        })
+    end
+})
+
+-- ============================================
+-- 初期化
+-- ============================================
+
+-- プレイヤーリストを初期更新
+task.wait(1)
+UpdatePlayerList(PlayerDropdown)
+UpdateLoopList()
+
+print("✅ Loop Kill GUI が起動しました！")
+print("📌 Mキーで開く / 閉じる")
