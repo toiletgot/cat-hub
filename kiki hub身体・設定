@@ -1,0 +1,199 @@
+--[[
+    kiki hub - 身体・設定タブ + 重力調整 単体版
+]]
+
+local OrionLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/BlizTBr/scripts/main/Orion%20X"))()
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local player = Players.LocalPlayer
+local camera = workspace.CurrentCamera
+
+-- --- 設定変数 ---
+local settings = {
+    flyEnabled = false,
+    flySpeed = 50,
+    speedEnabled = false,
+    customSpeed = 100,
+    jumpEnabled = false,
+    customJump = 150,
+    infJump = false,
+    fov = 70,
+    gravityEnabled = false,
+    customGravity = 196.2  -- デフォルトのRoblox重力
+}
+
+-- --- Fly用物理オブジェクト ---
+local flyBV = Instance.new("BodyVelocity")
+flyBV.MaxForce = Vector3.new(1,1,1) * math.huge
+local flyBG = Instance.new("BodyGyro")
+flyBG.MaxTorque = Vector3.new(1,1,1) * math.huge
+
+-- --- 重力保存用 ---
+local originalGravity = workspace.Gravity
+
+-- --- バイパス処理 ---
+local mt = getrawmetatable(game)
+local old_index = mt.__index
+setreadonly(mt, false)
+mt.__index = newcclosure(function(t, k)
+    if not checkcaller() and t:IsA("Humanoid") then
+        if k == "WalkSpeed" then return 16 end
+        if k == "JumpPower" then return 50 end
+    end
+    return old_index(t, k)
+end)
+setreadonly(mt, true)
+
+-- --- UI構築 ---
+local Window = OrionLib:MakeWindow({ 
+    Name = "kiki hub - 身体・設定", 
+    HidePremium = false, 
+    IntroText = "身体・設定 + 重力調整" 
+})
+
+local MainTab = Window:MakeTab({ 
+    Name = "身体・設定", 
+    Icon = "rbxassetid://4483345998" 
+})
+
+-- --------------------------------
+-- 重力調整 (新規追加)
+-- --------------------------------
+MainTab:AddToggle({ 
+    Name = "重力変更", 
+    Default = false, 
+    Callback = function(V) 
+        settings.gravityEnabled = V
+        if V then
+            workspace.Gravity = settings.customGravity
+        else
+            workspace.Gravity = originalGravity
+        end
+    end 
+})
+
+MainTab:AddSlider({ 
+    Name = "重力値", 
+    Min = -500, 
+    Max = 500, 
+    Default = 196.2, 
+    Increment = 0.1, 
+    Callback = function(V) 
+        settings.customGravity = V
+        if settings.gravityEnabled then
+            workspace.Gravity = V
+        end
+    end 
+})
+
+-- --------------------------------
+-- 既存の機能
+-- --------------------------------
+MainTab:AddToggle({ 
+    Name = "Fly (飛行)", 
+    Default = false, 
+    Callback = function(V) settings.flyEnabled = V end 
+})
+
+MainTab:AddSlider({ 
+    Name = "Fly速度", 
+    Min = 10, 
+    Max = 300, 
+    Default = 50, 
+    Increment = 1, 
+    Callback = function(V) settings.flySpeed = V end 
+})
+
+MainTab:AddToggle({ 
+    Name = "高速移動有効", 
+    Default = false, 
+    Callback = function(V) settings.speedEnabled = V end 
+})
+
+MainTab:AddSlider({ 
+    Name = "速度設定", 
+    Min = 16, 
+    Max = 500, 
+    Default = 100, 
+    Increment = 1, 
+    Callback = function(V) settings.customSpeed = V end 
+})
+
+MainTab:AddToggle({ 
+    Name = "ジャンプ有効", 
+    Default = false, 
+    Callback = function(V) settings.jumpEnabled = V end 
+})
+
+MainTab:AddSlider({ 
+    Name = "ジャンプ設定", 
+    Min = 50, 
+    Max = 500, 
+    Default = 150, 
+    Increment = 1, 
+    Callback = function(V) settings.customJump = V end 
+})
+
+MainTab:AddToggle({ 
+    Name = "無限ジャンプ", 
+    Default = false, 
+    Callback = function(V) settings.infJump = V end 
+})
+
+MainTab:AddSlider({ 
+    Name = "視野角 (FOV)", 
+    Min = 30, 
+    Max = 120, 
+    Default = 70, 
+    Increment = 1, 
+    Callback = function(V) settings.fov = V end 
+})
+
+-- --- 重力リセットボタン ---
+MainTab:AddButton({ 
+    Name = "重力をデフォルトに戻す (196.2)", 
+    Callback = function()
+        workspace.Gravity = 196.2
+        settings.customGravity = 196.2
+        settings.gravityEnabled = false
+    end 
+})
+
+-- --- メインループ ---
+RunService.Stepped:Connect(function()
+    if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+        local hrp = player.Character.HumanoidRootPart
+        local hum = player.Character:FindFirstChildOfClass("Humanoid")
+        
+        -- Fly処理
+        if settings.flyEnabled then
+            flyBV.Parent = hrp
+            flyBG.Parent = hrp
+            flyBG.CFrame = camera.CFrame
+            flyBV.Velocity = hum.MoveDirection.Magnitude > 0 and camera.CFrame.LookVector * settings.flySpeed or Vector3.new(0, 0.1, 0)
+            if hum then hum.PlatformStand = true end
+        else
+            flyBV.Parent = nil
+            flyBG.Parent = nil
+            if hum then
+                hum.PlatformStand = false
+                hum.WalkSpeed = settings.speedEnabled and settings.customSpeed or 16
+                hum.JumpPower = settings.jumpEnabled and settings.customJump or 50
+            end
+        end
+    end
+    
+    -- FOV
+    camera.FieldOfView = settings.fov
+end)
+
+-- --- 無限ジャンプ ---
+UserInputService.JumpRequest:Connect(function()
+    if settings.infJump and player.Character then
+        local hum = player.Character:FindFirstChildOfClass("Humanoid")
+        if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end
+    end
+end)
+
+OrionLib:Init()
