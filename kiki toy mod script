@@ -1,0 +1,950 @@
+--[[
+    toy mod script kiki hub - 最終章コンボ拡張＆新モード追加版（超過パーツ吸い込み完全ブロック版）
+    ・コンボ数を 1 から 10 まで拡張（すべて個別調整可能）
+    ・メイン＆コンボに新モード「縦丸」「四角」「三角」「六角」「時空の裂け目」「渦巻き」「球体」を追加
+    ・設定した上限本数を超えたパーツは、近づいても一切吸い込まれなくなります。
+    ・X軸・Y軸調整機能を追加（コンボにも対応）
+    ・羽モードをコンボにも追加
+]]
+
+local OrionLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/BlizTBr/scripts/main/Orion X"))()
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local player = Players.LocalPlayer
+
+-- --- 内部変数 ---
+local mode = "None"
+local comboMode1, comboMode2, comboMode3, comboMode4 = "None", "None", "None", "None"
+local comboMode5, comboMode6, comboMode7, comboMode8 = "None", "None", "None", "None"
+local comboMode9, comboMode10 = "None", "None"
+local targetPlayerName = player.Name 
+
+local hoveringObjects = {} 
+local objectData = {}
+local scanCooldown = 0
+local isSuikomiStopped = false 
+
+local settings = {
+    speed = 0.03,
+    width = 18,
+    height = 5,
+    depth = 0, 
+    invertDirection = false, 
+    density = 1.0, 
+    xAxis = 1.0,
+    yAxis = 1.0,
+    
+    wingSize = 8,
+    wingRange = 100, 
+    flapSpeed = 4,
+    flapStrength = 1.5,
+    wingSpread = 1.0,
+
+    comboActive1 = true, comboCount1 = 10, comboSpeed1 = 0.03, comboWidth1 = 18, comboHeight1 = 5, comboDensity1 = 1.0, comboXAxis1 = 1.0, comboYAxis1 = 1.0,
+    comboActive2 = true, comboCount2 = 10, comboSpeed2 = 0.03, comboWidth2 = 18, comboHeight2 = 5, comboDensity2 = 1.0, comboXAxis2 = 1.0, comboYAxis2 = 1.0,
+    comboActive3 = true, comboCount3 = 10, comboSpeed3 = 0.03, comboWidth3 = 18, comboHeight3 = 5, comboDensity3 = 1.0, comboXAxis3 = 1.0, comboYAxis3 = 1.0,
+    comboActive4 = true, comboCount4 = 10, comboSpeed4 = 0.03, comboWidth4 = 18, comboHeight4 = 5, comboDensity4 = 1.0, comboXAxis4 = 1.0, comboYAxis4 = 1.0,
+    comboActive5 = true, comboCount5 = 10, comboSpeed5 = 0.03, comboWidth5 = 18, comboHeight5 = 5, comboDensity5 = 1.0, comboXAxis5 = 1.0, comboYAxis5 = 1.0,
+    comboActive6 = true, comboCount6 = 10, comboSpeed6 = 0.03, comboWidth6 = 18, comboHeight6 = 5, comboDensity6 = 1.0, comboXAxis6 = 1.0, comboYAxis6 = 1.0,
+    comboActive7 = true, comboCount7 = 10, comboSpeed7 = 0.03, comboWidth7 = 18, comboHeight7 = 5, comboDensity7 = 1.0, comboXAxis7 = 1.0, comboYAxis7 = 1.0,
+    comboActive8 = true, comboCount8 = 10, comboSpeed8 = 0.03, comboWidth8 = 18, comboHeight8 = 5, comboDensity8 = 1.0, comboXAxis8 = 1.0, comboYAxis8 = 1.0,
+    comboActive9 = true, comboCount9 = 10, comboSpeed9 = 0.03, comboWidth9 = 18, comboHeight9 = 5, comboDensity9 = 1.0, comboXAxis9 = 1.0, comboYAxis9 = 1.0,
+    comboActive10 = true, comboCount10 = 10, comboSpeed10 = 0.03, comboWidth10 = 18, comboHeight10 = 5, comboDensity10 = 1.0, comboXAxis10 = 1.0, comboYAxis10 = 1.0,
+
+    maxObjects = 999
+}
+
+-- --- アビリティバイパス ---
+local mt = getrawmetatable(game)
+local old_index = mt.__index
+setreadonly(mt, false)
+mt.__index = newcclosure(function(t, k)
+    if not checkcaller() and t:IsA("Humanoid") then
+        if k == "WalkSpeed" then return 16 end
+        if k == "JumpPower" then return 50 end
+    end
+    return old_index(t, k)
+end)
+setreadonly(mt, true)
+
+-- --- オブジェクトフィルター ---
+local function isSelectableObject(part, character)
+    if not part:IsA("BasePart") or part.Anchored then return false end
+    if character and part:IsDescendantOf(character) then return false end
+    
+    if part.Parent:FindFirstChild("Humanoid") or (part.Parent.Parent and part.Parent.Parent:FindFirstChild("Humanoid")) then
+        return false
+    end
+
+    local ignoreNames = {"Baseplate", "Terrain", "SpawnLocation", "Sky", "Map", "Wall", "Floor", "Grid"}
+    if table.find(ignoreNames, part.Name) then return false end
+
+    local isOwner = false
+    pcall(function() if part:GetNetworkOwner() == player then isOwner = true end end)
+    if isOwner or part:FindFirstChild("creator") or part.Name == "Handle" or part:GetAttribute("Creator") == player.UserId then 
+        return true 
+    end
+
+    if part.Size.X < 30 and part.Size.Y < 30 and part.Size.Z < 30 then
+        return true
+    end
+
+    return false
+end
+
+-- --- 物理・モデル管理関数 ---
+local function clearObjects()
+    for obj in pairs(hoveringObjects) do
+        pcall(function()
+            if obj and obj.Parent then
+                local parts = obj:IsA("Model") and obj:GetDescendants() or {obj}
+                for _, p in ipairs(parts) do
+                    if p:IsA("BasePart") then p.CanCollide = true end
+                end
+                
+                local root = obj:IsA("Model") and obj.PrimaryPart or obj
+                if root then
+                    if root:FindFirstChild("SyncForce") then root.SyncForce:Destroy() end
+                    if root:FindFirstChild("SyncGyro") then root.SyncGyro:Destroy() end
+                end
+            end
+        end)
+    end
+    hoveringObjects = {}; objectData = {}
+end
+
+local function unregisterObject(obj)
+    pcall(function()
+        if obj and obj.Parent then
+            local parts = obj:IsA("Model") and obj:GetDescendants() or {obj}
+            for _, p in ipairs(parts) do
+                if p:IsA("BasePart") then p.CanCollide = true end
+            end
+            local root = obj:IsA("Model") and obj.PrimaryPart or obj
+            if root then
+                if root:FindFirstChild("SyncForce") then root.SyncForce:Destroy() end
+                if root:FindFirstChild("SyncGyro") then root.SyncGyro:Destroy() end
+            end
+        end
+    end)
+    hoveringObjects[obj] = nil
+    objectData[obj] = nil
+end
+
+local function registerPart(part)
+    if isSuikomiStopped then return end 
+    
+    local targetChar = player.Character
+    local targetPlayer = Players:FindFirstChild(targetPlayerName)
+    if targetPlayer and targetPlayer.Character then targetChar = targetPlayer.Character end
+    
+    if targetChar and not isSelectableObject(part, targetChar) then return end
+    
+    local target = part.Parent:IsA("Model") and part.Parent or part
+    if target:IsA("Model") and target:IsA("Workspace") then target = part end
+    
+    if hoveringObjects[target] then return end 
+
+    hoveringObjects[target] = true
+    objectData[target] = { 
+        seed = math.random() * 100, 
+        phase = math.random() * math.pi * 2, 
+        offsetZ = math.random(-5, 5),
+        randX = math.random(-15, 15),
+        randZ = math.random(-15, 15),
+        fallSpeed = math.random(15, 30)
+    }
+    
+    local rootPart = part
+    if target:IsA("Model") then
+        if not target.PrimaryPart then target.PrimaryPart = part end
+        rootPart = target.PrimaryPart
+        
+        for _, p in ipairs(target:GetDescendants()) do
+            if p:IsA("BasePart") then
+                p.CanCollide = false
+                p.Anchored = false 
+                if p ~= rootPart and not p:FindFirstChildOfClass("WeldConstraint") then
+                    local weld = Instance.new("WeldConstraint")
+                    weld.Part0 = rootPart
+                    weld.Part1 = p
+                    weld.Parent = p
+                end
+            end
+        end
+    else
+        part.CanCollide = false
+    end
+    
+    local bv = Instance.new("BodyVelocity")
+    bv.Name = "SyncForce"; bv.MaxForce = Vector3.new(1,1,1)*1e7; bv.Velocity = Vector3.zero; bv.Parent = rootPart
+    local bg = Instance.new("BodyGyro")
+    bg.Name = "SyncGyro"; bg.MaxTorque = Vector3.new(1,1,1)*1e7; bg.Parent = rootPart
+    
+    pcall(function() rootPart:SetNetworkOwner(player) end)
+end
+
+-- --- モード変換用マップ ---
+local modeOptions = {
+    "None", "回転", "魔法陣", "幽霊", "神聖", "卍", "幾何学の輪", "羽", "ハート", "竜巻", "星", "電気", "ビーム", "土星", "魔法2", "魔法3", 
+    "四角形cm3", "丸cm3", "盾", "祭り", "時計", "太陽", "木", "冠", "雨", "マーソル", "うんち", "花", "星2", "ハート2", "数字", "島",
+    "水", "ひょうたん", "人（棒人間）", "丸（回転の逆のやつ）", "縦丸", "四角", "三角", "六角", "時空の裂け目", "渦巻き", "球体"
+}
+
+local function getModeInternalName(jpName)
+    local map = {
+        ["None"]="None", ["回転"]="Orbit", ["魔法陣"]="MagicCircle", 
+        ["幽霊"]="Ghost", ["神聖"]="Divine", ["卍"]="Manji", 
+        ["幾何学の輪"]="Geometry", ["羽"]="Wing", ["ハート"]="Heart", 
+        ["竜巻"]="Tornado", ["星"]="Star", ["電気"]="Lightning", 
+        ["ビーム"]="Beam", ["土星"]="Saturn", ["魔法2"]="Magic2", ["魔法3"]="Magic3",
+        ["四角形cm3"]="CubeArea", ["丸cm3"]="SphereArea", ["盾"]="Shield",
+        ["祭り"]="Matsuri", ["時計"]="Clock", ["太陽"]="Sun", ["木"]="Tree",
+        ["冠"]="Crown", ["雨"]="Rain",
+        ["マーソル"]="Cursor", ["うんち"]="Poop", ["花"]="Flower",
+        ["星2"]="Star2", ["ハート2"]="Heart2", ["数字"]="Number", ["島"]="Island",
+        ["水"]="Water", ["ひょうたん"]="Gourd", ["人（棒人間）"]="Stickman", ["丸（回転の逆のやつ）"]="ReverseOrbit",
+        ["縦丸"]="VerticalOrbit", ["四角"]="Square", ["三角"]="Triangle", ["六角"]="Hexagon",
+        ["時空の裂け目"]="SpaceTimeRift", ["渦巻き"]="Spiral", ["球体"]="Sphere"
+    }
+    return map[jpName] or "None"
+end
+
+local function getPlayerNames()
+    local names = {}
+    for _, p in ipairs(Players:GetPlayers()) do
+        table.insert(names, p.Name)
+    end
+    return names
+end
+
+-- --- UI構築 (toy mod script kiki hub) ---
+local Window = OrionLib:MakeWindow({ Name = "toy mod script kiki hub", HidePremium = false, IntroText = "toy mod script kiki hub" })
+
+local MainTab = Window:MakeTab({ Name = "メイン能力", Icon = "rbxassetid://4483345998" })
+local CombineTab = Window:MakeTab({ Name = "モード合体！", Icon = "rbxassetid://4483345998" })
+local AdjustTab = Window:MakeTab({ Name = "能力調整", Icon = "rbxassetid://4483345998" })
+local CreditTab = Window:MakeTab({ Name = "クレジット", Icon = "rbxassetid://4483345998" })
+
+-- 【メイン能力】
+local TargetDropdown = MainTab:AddDropdown({
+    Name = "追従対象（プレイヤー名）",
+    Default = player.Name,
+    Options = getPlayerNames(),
+    Callback = function(Value)
+        targetPlayerName = Value
+    end
+})
+
+Players.PlayerAdded:Connect(function() TargetDropdown:Refresh(getPlayerNames(), true) end)
+Players.PlayerRemoving:Connect(function() TargetDropdown:Refresh(getPlayerNames(), true) end)
+
+MainTab:AddDropdown({
+    Name = "モード選択",
+    Default = "None",
+    Options = modeOptions,
+    Callback = function(Value)
+        mode = getModeInternalName(Value)
+    end
+})
+
+MainTab:AddTextbox({
+    Name = "パーツの最大保持数",
+    Default = "999",
+    TextDisappear = false,
+    Callback = function(Text)
+        settings.maxObjects = math.max(1, math.floor(tonumber(Text) or 999))
+    end
+})
+
+MainTab:AddToggle({
+    Name = "これ以上パーツを吸い込まない",
+    Default = false,
+    Callback = function(Value)
+        isSuikomiStopped = Value
+    end
+})
+
+MainTab:AddButton({ Name = "全パーツ解除", Callback = function() clearObjects() end })
+
+-- 【モード合体！】
+CombineTab:AddSection({ Name = "1〜10つのモードを個別に有効化して本数指定" })
+
+for i = 1, 10 do
+    local comboModeVar = "comboMode" .. i
+    local comboCountVar = "comboCount" .. i
+    local comboActiveVar = "comboActive" .. i
+    
+    CombineTab:AddToggle({ Name = "コンボ" .. i .. "を有効化", Default = true, Callback = function(v) 
+        settings[comboActiveVar] = v; 
+        if v and _G[comboModeVar] ~= "None" then mode = "Combined" end 
+    end })
+    CombineTab:AddDropdown({ Name = "コンボ" .. i .. "選択", Default = "None", Options = modeOptions, Callback = function(v) 
+        _G[comboModeVar] = getModeInternalName(v); 
+        if _G[comboModeVar] ~= "None" and settings[comboActiveVar] then mode = "Combined" end 
+    end })
+    CombineTab:AddTextbox({ Name = "コンボ" .. i .. "のパーツ割り当て本数", Default = "10", TextDisappear = false, Callback = function(t) 
+        settings[comboCountVar] = math.max(0, math.floor(tonumber(t) or 10)) 
+    end })
+    if i < 10 then CombineTab:AddSection({ Name = "------------------------------------" }) end
+end
+
+CombineTab:AddSection({ Name = "------------------------------------" })
+CombineTab:AddButton({ Name = "合体モード解除 (通常に戻す)", Callback = function() 
+    mode = "None"; 
+    for i = 1, 10 do _G["comboMode" .. i] = "None" end
+end })
+
+-- 【調整タブ】
+AdjustTab:AddToggle({ Name = "向きを外側にする (方向反転)", Default = false, Callback = function(V) settings.invertDirection = V end })
+AdjustTab:AddTextbox({ Name = "通常：回転速度", Default = "0.03", TextDisappear = false, Callback = function(T) settings.speed = tonumber(T) or 0.03 end })
+AdjustTab:AddTextbox({ Name = "通常：広がり", Default = "18", TextDisappear = false, Callback = function(T) settings.width = tonumber(T) or 18 end })
+AdjustTab:AddTextbox({ Name = "通常：高さ", Default = "5", TextDisappear = false, Callback = function(T) settings.height = tonumber(T) or 5 end })
+AdjustTab:AddTextbox({ Name = "通常：密度 (間隔が大きいほどバラけます)", Default = "1.0", TextDisappear = false, Callback = function(T) settings.density = tonumber(T) or 1.0 end })
+AdjustTab:AddTextbox({ Name = "通常：前後オフセット (正=前 / 負=後)", Default = "0", TextDisappear = false, Callback = function(T) settings.depth = tonumber(T) or 0 end })
+AdjustTab:AddTextbox({ Name = "X軸 (横の広がり倍率)", Default = "1.0", TextDisappear = false, Callback = function(T) settings.xAxis = tonumber(T) or 1.0 end })
+AdjustTab:AddTextbox({ Name = "Y軸 (縦の広がり倍率)", Default = "1.0", TextDisappear = false, Callback = function(T) settings.yAxis = tonumber(T) or 1.0 end })
+
+-- コンボごとの詳細設定 (1~10)
+for i = 1, 10 do
+    AdjustTab:AddSection({ Name = "👑 コンボ" .. i .. "設定" })
+    AdjustTab:AddToggle({ Name = "コンボ" .. i .. "を有効にする", Default = true, Callback = function(v) settings["comboActive" .. i] = v end })
+    AdjustTab:AddTextbox({ Name = "コンボ" .. i .. "：回転速度", Default = "0.03", TextDisappear = false, Callback = function(T) settings["comboSpeed" .. i] = tonumber(T) or 0.03 end })
+    AdjustTab:AddTextbox({ Name = "コンボ" .. i .. "：広がり", Default = "18", TextDisappear = false, Callback = function(T) settings["comboWidth" .. i] = tonumber(T) or 18 end })
+    AdjustTab:AddTextbox({ Name = "コンボ" .. i .. "：高さ", Default = "5", TextDisappear = false, Callback = function(T) settings["comboHeight" .. i] = tonumber(T) or 5 end })
+    AdjustTab:AddTextbox({ Name = "コンボ" .. i .. "：密度", Default = "1.0", TextDisappear = false, Callback = function(T) settings["comboDensity" .. i] = tonumber(T) or 1.0 end })
+    AdjustTab:AddTextbox({ Name = "コンボ" .. i .. "：X軸", Default = "1.0", TextDisappear = false, Callback = function(T) settings["comboXAxis" .. i] = tonumber(T) or 1.0 end })
+    AdjustTab:AddTextbox({ Name = "コンボ" .. i .. "：Y軸", Default = "1.0", TextDisappear = false, Callback = function(T) settings["comboYAxis" .. i] = tonumber(T) or 1.0 end })
+end
+
+AdjustTab:AddSection({ Name = "全体設定" })
+AdjustTab:AddTextbox({ Name = "物を吸い込む範囲", Default = "100", TextDisappear = false, Callback = function(T) settings.wingRange = tonumber(T) or 100 end })
+
+AdjustTab:AddSection({ Name = "羽（ウイング）専用設定" })
+AdjustTab:AddTextbox({ Name = "羽の全体サイズ", Default = "8", TextDisappear = false, Callback = function(T) settings.wingSize = tonumber(T) or 8 end })
+AdjustTab:AddTextbox({ Name = "羽ばたき速度", Default = "4", TextDisappear = false, Callback = function(T) settings.flapSpeed = tonumber(T) or 4 end })
+AdjustTab:AddTextbox({ Name = "羽ばたきの大きさ", Default = "1.5", TextDisappear = false, Callback = function(T) settings.flapStrength = tonumber(T) or 1.5 end })
+AdjustTab:AddTextbox({ Name = "翼の角度・広がり", Default = "1.0", TextDisappear = false, Callback = function(T) settings.wingSpread = tonumber(T) or 1.0 end })
+
+-- 【クレジットタブ】
+CreditTab:AddLabel("うんこ")
+CreditTab:AddLabel("うんこ")
+CreditTab:AddLabel("うんこ")
+CreditTab:AddLabel("うんこ")
+CreditTab:AddLabel("うんこ")
+CreditTab:AddSection({ Name = "ーーー クレジット ーーー" })
+CreditTab:AddLabel("【作った人】 うんこ")
+CreditTab:AddLabel("【拡散してくれた人】 うんこ")
+CreditTab:AddLabel("【拡散してくれた人】 うんこ")
+
+-- キャラクター接触判定
+local function connectCharacter(char)
+    char:WaitForChild("HumanoidRootPart")
+    for _, v in ipairs(char:GetChildren()) do
+        if v:IsA("BasePart") then
+            v.Touched:Connect(function(hit) 
+                if mode ~= "None" and mode ~= "Wing" then 
+                    registerPart(hit) 
+                end 
+            end)
+        end
+    end
+end
+player.CharacterAdded:Connect(connectCharacter)
+if player.Character then connectCharacter(player.Character) end
+
+-- デジタル数字用データ
+local digitSegments = {
+    [0] = {1,1,1,0,1,1,1}, [1] = {0,0,1,0,0,1,0}, [2] = {1,0,1,1,1,0,1}, [3] = {1,0,1,1,0,1,1}, [4] = {0,1,1,1,0,1,0},
+    [5] = {1,1,0,1,0,1,1}, [6] = {1,1,0,1,1,1,1}, [7] = {1,1,1,0,0,1,0}, [8] = {1,1,1,1,1,1,1}, [9] = {1,1,1,1,0,1,1}
+}
+local segmentLines = {
+    {Vector3.new(-1,2,0), Vector3.new(1,2,0)}, {Vector3.new(-1,2,0), Vector3.new(-1,0,0)}, {Vector3.new(1,2,0), Vector3.new(1,0,0)},
+    {Vector3.new(-1,0,0), Vector3.new(1,0,0)}, {Vector3.new(-1,0,0), Vector3.new(-1,-2,0)}, {Vector3.new(1,0,0), Vector3.new(1,-2,0)},
+    {Vector3.new(-1,-2,0), Vector3.new(1,-2,0)}
+}
+
+-- 座標・回転計算関数
+local function calculatePosition(currentMode, idx, count, hrp, data, timeCounter, lookCFrame, flapWave, invertMult, currentPos, useWidth, useHeight, useDensity, useXAxis, useYAxis)
+    if currentMode == "None" then return nil, nil end
+    local targetPos
+    local rotCFrame = nil
+    
+    local baseCenter = hrp.Position + (lookCFrame.LookVector * settings.depth)
+    local directionAngle = settings.invertDirection and CFrame.Angles(0, math.pi, 0) or CFrame.identity
+
+    -- X軸・Y軸の適用（各モードで調整）
+    local function applyAxis(vec)
+        return Vector3.new(vec.X * (useXAxis or 1.0), vec.Y * (useYAxis or 1.0), vec.Z)
+    end
+
+    if currentMode == "SpaceTimeRift" then
+        -- 時空の裂け目：歪んだ空間のような動き
+        local angle = timeCounter * 0.8 + (idx / count) * math.pi * 2 * useDensity
+        local distortion = math.sin(timeCounter * 0.5 + idx * 0.3) * 0.5 + 0.5
+        local radius = useWidth * (0.3 + distortion * 0.7)
+        local yOffset = useHeight + math.sin(timeCounter * 2 + idx * 0.5) * 3
+        local waveX = math.sin(timeCounter * 0.7 + idx * 1.2) * 2
+        local waveZ = math.cos(timeCounter * 0.9 + idx * 0.8) * 2
+        
+        local pos = Vector3.new(
+            math.cos(angle + math.sin(timeCounter * 0.3 + idx) * 0.5) * radius + waveX,
+            yOffset + math.sin(timeCounter * 1.5 + idx * 0.7) * 1.5,
+            math.sin(angle + math.cos(timeCounter * 0.4 + idx * 0.6) * 0.5) * radius + waveZ
+        )
+        targetPos = baseCenter + applyAxis(pos)
+        rotCFrame = CFrame.Angles(math.sin(timeCounter + idx) * 0.1, angle, math.cos(timeCounter * 0.5 + idx) * 0.1) * directionAngle
+
+    elseif currentMode == "Spiral" then
+        -- 渦巻き：らせん状に広がる
+        local angle = timeCounter * 2 + (idx / count) * math.pi * 6 * useDensity
+        local progress = idx / count
+        local radius = useWidth * progress * 0.8
+        local yOffset = useHeight + (progress - 0.5) * useHeight * 1.5
+        targetPos = baseCenter + applyAxis(Vector3.new(math.cos(angle) * radius, yOffset, math.sin(angle) * radius))
+        rotCFrame = CFrame.lookAt(targetPos, baseCenter + Vector3.new(0, yOffset, 0)) * directionAngle
+
+    elseif currentMode == "Sphere" then
+        -- 球体：3D球体を形成（より滑らか）
+        local phi = math.acos(1 - 2 * ((idx - 1) / count))
+        local theta = math.pi * (1 + 5^0.5) * idx + timeCounter * 0.3
+        local radius = useWidth * 0.5
+        local x = math.cos(theta) * math.sin(phi) * radius
+        local y = math.cos(phi) * radius + useHeight
+        local z = math.sin(theta) * math.sin(phi) * radius
+        targetPos = baseCenter + applyAxis(Vector3.new(x, y, z))
+        rotCFrame = CFrame.lookAt(targetPos, baseCenter + Vector3.new(0, useHeight, 0)) * directionAngle
+
+    elseif currentMode == "VerticalOrbit" then
+        local angle = timeCounter + (idx * (math.pi * 2 / count) * useDensity)
+        local radius = useWidth
+        targetPos = baseCenter + applyAxis(Vector3.new(0, math.sin(angle) * radius + useHeight, math.cos(angle) * radius))
+        rotCFrame = CFrame.lookAt(targetPos, baseCenter + Vector3.new(0, useHeight, 0)) * directionAngle
+
+    elseif currentMode == "Square" then
+        local angle = timeCounter + (idx * (math.pi * 2 / count) * useDensity)
+        local rawX, rawZ = math.cos(angle), math.sin(angle)
+        local maxVal = math.max(math.abs(rawX), math.abs(rawZ))
+        local radius = useWidth / maxVal
+        targetPos = baseCenter + applyAxis(Vector3.new(rawX * radius, useHeight, rawZ * radius))
+        rotCFrame = CFrame.lookAt(targetPos, baseCenter) * directionAngle
+
+    elseif currentMode == "Triangle" then
+        local angle = timeCounter + (idx * (math.pi * 2 / count) * useDensity)
+        local deg = (angle % (math.pi * 2)) / (math.pi * 2) * 3
+        local side = math.floor(deg)
+        local f = deg - side
+        local p1, p2
+        if side == 0 then
+            p1 = Vector3.new(0, 0, 1) p2 = Vector3.new(math.sqrt(3)/2, 0, -0.5)
+        elseif side == 1 then
+            p1 = Vector3.new(math.sqrt(3)/2, 0, -0.5) p2 = Vector3.new(-math.sqrt(3)/2, 0, -0.5)
+        else
+            p1 = Vector3.new(-math.sqrt(3)/2, 0, -0.5) p2 = Vector3.new(0, 0, 1)
+        end
+        local p = p1:Lerp(p2, f) * useWidth
+        targetPos = baseCenter + applyAxis(Vector3.new(p.X, useHeight, p.Z))
+        rotCFrame = CFrame.lookAt(targetPos, baseCenter) * directionAngle
+
+    elseif currentMode == "Hexagon" then
+        local angle = timeCounter + (idx * (math.pi * 2 / count) * useDensity)
+        local deg = (angle % (math.pi * 2)) / (math.pi * 2) * 6
+        local side = math.floor(deg)
+        local f = deg - side
+        local r = useWidth
+        local p1Angle = side * (math.pi / 3)
+        local p2Angle = (side + 1) * (math.pi / 3)
+        local p1 = Vector3.new(math.cos(p1Angle), 0, math.sin(p1Angle)) * r
+        local p2 = Vector3.new(math.cos(p2Angle), 0, math.sin(p2Angle)) * r
+        local p = p1:Lerp(p2, f)
+        targetPos = baseCenter + applyAxis(Vector3.new(p.X, useHeight, p.Z))
+        rotCFrame = CFrame.lookAt(targetPos, baseCenter) * directionAngle
+
+    elseif currentMode == "Water" then
+        local angle = (idx / count) * math.pi * 2 + timeCounter
+        local waveY = math.sin(timeCounter * 3 + idx * 0.5) * 1.5 + math.cos(timeCounter * 2 + idx) * 0.5
+        local radius = useWidth * 0.7 + math.sin(timeCounter + idx) * 1.0
+        targetPos = baseCenter + applyAxis(Vector3.new(math.cos(angle) * radius, useHeight + waveY, math.sin(angle) * radius))
+        rotCFrame = CFrame.lookAt(targetPos, baseCenter + Vector3.new(0, waveY, 0)) * directionAngle
+
+    elseif currentMode == "Gourd" then
+        local ratio = idx / count
+        local angle = ratio * math.pi * 2 * 3 + timeCounter
+        local heightLocal = (ratio - 0.5) * (useHeight * 2.5) * useDensity
+        local gourdRadius = math.abs(math.sin(ratio * math.pi)) * (useWidth * 0.4) * useDensity
+        if ratio > 0.5 then gourdRadius = gourdRadius * 0.7 end
+        targetPos = baseCenter + applyAxis(Vector3.new(math.cos(angle) * gourdRadius, useHeight + heightLocal, math.sin(angle) * gourdRadius))
+        rotCFrame = CFrame.Angles(0, angle, 0) * directionAngle
+
+    elseif currentMode == "Stickman" then
+        local headCut = math.floor(count * 0.2)
+        local bodyCut = math.floor(count * 0.5)
+        local armCut = math.floor(count * 0.75)
+        local localVec = Vector3.zero
+        
+        local ds = useDensity 
+        if idx <= headCut then
+            local angle = (idx / headCut) * math.pi * 2 + timeCounter
+            localVec = Vector3.new(math.cos(angle) * 2 * ds, (6 + math.sin(angle) * 2) * ds, 0)
+        elseif idx <= bodyCut then
+            local progress = (idx - headCut) / (bodyCut - headCut)
+            localVec = Vector3.new(0, (4 - (progress * 5)) * ds, 0)
+        elseif idx <= armCut then
+            local progress = (idx - bodyCut) / (armCut - bodyCut)
+            localVec = Vector3.new((progress - 0.5) * 6 * ds, (2.5 + math.sin(timeCounter)*0.5) * ds, 0)
+        else
+            local progress = (idx - armCut) / (count - armCut)
+            local side = (idx % 2 == 0) and 1 or -1
+            localVec = Vector3.new(side * (progress * 3) * ds, (-1 - (progress * 4)) * ds, 0)
+        end
+        targetPos = (lookCFrame + (lookCFrame.LookVector * settings.depth)):PointToWorldSpace(applyAxis(localVec + Vector3.new(0, useHeight, -5)))
+        rotCFrame = lookCFrame * directionAngle
+
+    elseif currentMode == "ReverseOrbit" then
+        local angle = -timeCounter - (idx * (math.pi * 2 / count) * useDensity)
+        local radius = useWidth * invertMult
+        targetPos = baseCenter + applyAxis(Vector3.new(math.cos(angle) * radius, useHeight, math.sin(angle) * radius))
+        rotCFrame = CFrame.lookAt(targetPos, baseCenter) * directionAngle
+
+    elseif currentMode == "Island" then
+        local goldenRatio = (1 + 5^0.5) / 2
+        local theta = idx * math.pi * 2 * goldenRatio * useDensity + timeCounter
+        local r = math.sqrt(idx / count) * (useWidth * 0.45)
+        local floatY = math.sin(timeCounter * 1.5 + idx * 0.1) * 0.2
+        targetPos = baseCenter + applyAxis(Vector3.new(math.cos(theta) * r, -3.2 + floatY, math.sin(theta) * r))
+        rotCFrame = lookCFrame * CFrame.Angles(0, theta, 0) * directionAngle
+
+    elseif currentMode == "Star2" then
+        local angle = (idx / count) * math.pi * 2 + (timeCounter * 1.5)
+        local starAngle = (angle * 5) % (math.pi * 2)
+        local r = useWidth * 0.6 * (1 / (2 - math.cos(starAngle)))
+        targetPos = baseCenter + applyAxis(Vector3.new(math.cos(angle) * r, useHeight + math.sin(timeCounter * 2 + idx) * 0.4, math.sin(angle) * r))
+        rotCFrame = CFrame.Angles(0, angle, 0) * directionAngle
+
+    elseif currentMode == "Heart2" then
+        local angle = (idx / count) * math.pi * 2
+        local pulse = 1 + math.sin(timeCounter * 4) * 0.1
+        local size = useWidth * 0.5 * pulse
+        local x = 16 * math.pow(math.sin(angle), 3)
+        local y = 13 * math.cos(angle) - 5 * math.cos(2*angle) - 2 * math.cos(3*angle) - math.cos(4*angle)
+        x = (x / 16) * size; y = (y / 16) * size
+        local zDist = -5 - (math.sin(idx + timeCounter) * 0.5)
+        targetPos = (lookCFrame + (lookCFrame.LookVector * settings.depth)):PointToWorldSpace(applyAxis(Vector3.new(x, y + useHeight, zDist)))
+        rotCFrame = lookCFrame * directionAngle
+
+    elseif currentMode == "Number" then
+        local currentDigit = math.floor(tick()) % 10
+        local activeSegments = digitSegments[currentDigit]
+        local validLines = {}
+        for sId, active in ipairs(activeSegments) do if active == 1 then table.insert(validLines, segmentLines[sId]) end end
+        local lineCount = #validLines
+        if lineCount > 0 then
+            local pPerLine = math.ceil(count / lineCount)
+            local lineIdx = math.floor((idx - 1) / pPerLine) + 1
+            if lineIdx > lineCount then lineIdx = lineCount end
+            local localIdx = (idx - 1) % pPerLine
+            local ratio = pPerLine > 1 and (localIdx / (pPerLine - 1)) or 0.5
+            local line = validLines[lineIdx]
+            local localVec = line[1]:Lerp(line[2], ratio) * (useWidth * 0.25)
+            localVec = applyAxis(Vector3.new(localVec.X, localVec.Y + useHeight + 3, -6))
+            targetPos = (lookCFrame + (lookCFrame.LookVector * settings.depth)):PointToWorldSpace(localVec)
+            rotCFrame = lookCFrame * directionAngle
+        else
+            targetPos = baseCenter + applyAxis(Vector3.new(0, useHeight, 0))
+        end
+
+    elseif currentMode == "Cursor" then
+        local progress = (idx / count)
+        local arrowLength = useWidth * 0.5
+        local yOffset = useHeight + 8
+        if progress < 0.4 then
+            local segt = progress / 0.4
+            local fwd = -arrowLength * 0.3 + (segt * arrowLength * 0.6)
+            targetPos = baseCenter + applyAxis(Vector3.new(0, yOffset, 0)) + (lookCFrame.LookVector * fwd)
+        else
+            local segt = (progress - 0.4) / 0.6
+            local side = (idx % 2 == 0) and 1 or -1
+            local fwd = arrowLength * 0.3 - (segt * arrowLength * 0.5)
+            local right = side * (segt * arrowLength * 0.4)
+            targetPos = baseCenter + applyAxis(Vector3.new(0, yOffset, 0)) + (lookCFrame.LookVector * fwd) + (lookCFrame.RightVector * right)
+        end
+        rotCFrame = lookCFrame * CFrame.Angles(0, math.pi, 0) * directionAngle
+
+    elseif currentMode == "Poop" then
+        local angle = (idx * 0.5 * useDensity) + (timeCounter * 2)
+        local heightProgress = (idx / count) 
+        local radius = useWidth * 0.4 * (1 - heightProgress * 0.9)
+        local yOffset = (useHeight - 3) + (heightProgress * 6)
+        targetPos = baseCenter + applyAxis(Vector3.new(math.cos(angle) * radius, yOffset, math.sin(angle) * radius))
+        rotCFrame = CFrame.lookAt(targetPos, baseCenter + Vector3.new(0, yOffset, 0)) * directionAngle
+
+    elseif currentMode == "Flower" then
+        local petalCount = 5
+        if idx <= math.floor(count * 0.15) then
+            local angle = (idx / count) * math.pi * 2 + timeCounter
+            targetPos = baseCenter + applyAxis(Vector3.new(math.cos(angle) * 1.5, useHeight + math.sin(timeCounter * 3 + idx) * 0.5, math.sin(angle) * 1.5))
+        else
+            local angle = (idx / count) * math.pi * 2 + (timeCounter * 0.5)
+            local r = useWidth * 0.5 * math.abs(math.cos(petalCount * angle * 0.5))
+            targetPos = baseCenter + applyAxis(Vector3.new(math.cos(angle) * r, useHeight, math.sin(angle) * r))
+        end
+        rotCFrame = CFrame.Angles(0, timeCounter, 0) * directionAngle
+
+    elseif currentMode == "Magic3" then
+        local layer = idx % 3
+        local perLayer = math.ceil(count / 3)
+        local layerIdx = math.floor((idx - 1) / perLayer)
+        local layerSpeed = (layerIdx == 0) and 1.5 or ((layerIdx == 1) and -2.2 or 0.8)
+        local angle = (idx / perLayer) * math.pi * 2 + (timeCounter * layerSpeed)
+        local pulse = math.sin(timeCounter * 4 + layerIdx * 2) * 1.2
+        local radius = (useWidth * (0.3 + (layerIdx * 0.3))) + pulse
+        local floatY = math.cos(timeCounter * 2 + layerIdx) * 0.8
+        local yOffset = useHeight + (layerIdx * 4) - 4 + floatY
+        targetPos = baseCenter + applyAxis(Vector3.new(math.cos(angle) * radius, yOffset, math.sin(angle) * radius))
+        rotCFrame = CFrame.lookAt(targetPos, baseCenter + Vector3.new(0, yOffset, 0)) * CFrame.Angles(math.rad(10), angle, 0) * directionAngle
+
+    elseif currentMode == "CubeArea" then
+        local size = (useWidth * 0.4)
+        local sides = 6
+        local perSide = math.ceil(count / sides)
+        local sideIdx = math.floor((idx - 1) / perSide) + 1
+        local localIdx = (idx - 1) % perSide
+        local t = perSide > 1 and (localIdx / (perSide - 1) * 2 - 1) or 0
+        local u = math.sin(localIdx * 1.5) 
+        local x, y, z = 0, useHeight, 0
+        if sideIdx == 1 then x = size; y = y + t * size; z = u * size
+        elseif sideIdx == 2 then x = -size; y = y + t * size; z = u * size
+        elseif sideIdx == 3 then x = t * size; y = y + size; z = u * size
+        elseif sideIdx == 4 then x = t * size; y = y - size; z = u * size
+        elseif sideIdx == 5 then x = t * size; y = y + u * size; z = size
+        else x = t * size; y = y + u * size; z = -size end
+        targetPos = baseCenter + applyAxis(Vector3.new(x, y - useHeight, z))
+        rotCFrame = CFrame.lookAt(targetPos, baseCenter + Vector3.new(0, y - useHeight, 0)) * directionAngle
+
+    elseif currentMode == "SphereArea" then
+        local radius = (useWidth * 0.5)
+        local phi = math.acos(1 - 2 * (idx / count))
+        local theta = math.pi * (1 + 5^0.5) * idx + (timeCounter * 0.5)
+        local x = math.cos(theta) * math.sin(phi) * radius
+        local y = math.sin(phi) * math.sin(theta) * radius + useHeight
+        local z = math.cos(phi) * radius
+        targetPos = baseCenter + applyAxis(Vector3.new(x, y - useHeight, z))
+        rotCFrame = CFrame.lookAt(targetPos, baseCenter + Vector3.new(0, y - useHeight, 0)) * directionAngle
+
+    elseif currentMode == "Shield" then
+        local size = useWidth * 0.4
+        local columns = math.ceil(math.sqrt(count))
+        local row = math.floor((idx - 1) / columns)
+        local col = (idx - 1) % columns
+        local x = (col - (columns / 2)) * (size / columns) * 2
+        local y = (row - (columns / 2)) * (size / columns) * 2 + useHeight
+        local localOffset = applyAxis(Vector3.new(x, y, -4))
+        targetPos = (lookCFrame + (lookCFrame.LookVector * settings.depth)):PointToWorldSpace(localOffset)
+        rotCFrame = lookCFrame * directionAngle
+
+    elseif currentMode == "Matsuri" then
+        local layer = idx % 3
+        local perLayer = math.ceil(count / 3)
+        local angle = (idx / perLayer) * math.pi * 2 + (timeCounter * 2)
+        local radius = (useWidth * 0.6) + (layer * 3)
+        local yOffset = useHeight + (layer * 2.5) + math.sin(timeCounter * 3 + idx) * 0.5
+        targetPos = baseCenter + applyAxis(Vector3.new(math.cos(angle) * radius, yOffset, math.sin(angle) * radius))
+        rotCFrame = CFrame.lookAt(targetPos, baseCenter + Vector3.new(0, yOffset, 0)) * directionAngle
+
+    elseif currentMode == "Clock" then
+        local radius = useWidth * 0.5
+        if idx % 3 == 0 then 
+            local t = (idx / count) * (useWidth * 0.4)
+            local angle = timeCounter * 0.5
+            targetPos = baseCenter + applyAxis(Vector3.new(math.cos(angle) * t, useHeight, math.sin(angle) * t))
+        elseif idx % 3 == 1 then 
+            local t = (idx / count) * (useWidth * 0.25)
+            local angle = timeCounter * 0.05
+            targetPos = baseCenter + applyAxis(Vector3.new(math.cos(angle) * t, useHeight, math.sin(angle) * t))
+        else 
+            local angle = (idx / count) * math.pi * 2
+            targetPos = baseCenter + applyAxis(Vector3.new(math.cos(angle) * radius, useHeight, math.sin(angle) * radius))
+        end
+        rotCFrame = CFrame.Angles(math.rad(90), 0, 0) * directionAngle
+
+    elseif currentMode == "Sun" then
+        local radius = useWidth * 0.4
+        if idx <= math.floor(count * 0.4) then 
+            local phi = math.acos(1 - 2 * (idx / count))
+            local theta = math.pi * (1 + 5^0.5) * idx + timeCounter
+            targetPos = baseCenter + applyAxis(Vector3.new(math.cos(theta)*math.sin(phi)*radius, useHeight + math.sin(phi)*math.cos(theta)*radius, math.cos(phi)*radius))
+        else 
+            local angle = (idx / count) * math.pi * 2 + timeCounter
+            local heatWave = radius + math.sin(timeCounter * 10 + idx) * 3.5
+            local yHeat = useHeight + math.cos(timeCounter * 8 + idx) * 2
+            targetPos = baseCenter + applyAxis(Vector3.new(math.cos(angle) * heatWave, yHeat, math.sin(angle) * heatWave))
+        end
+        rotCFrame = CFrame.Angles(math.random(), math.random(), math.random()) * directionAngle
+
+    elseif currentMode == "Tree" then
+        local progress = (idx / count)
+        local yOffset = useHeight - 2 + (progress * useHeight * 2.5)
+        local radius = useWidth * 0.5 * (1 - (progress * 0.8)) 
+        local angle = (idx * 1.2 * useDensity) + timeCounter
+        if progress < 0.15 then radius = 1 end 
+        targetPos = baseCenter + applyAxis(Vector3.new(math.cos(angle) * radius, yOffset, math.sin(angle) * radius))
+        rotCFrame = CFrame.lookAt(targetPos, baseCenter + Vector3.new(0, yOffset, 0)) * directionAngle
+
+    elseif currentMode == "Crown" then
+        local angle = (idx / count) * math.pi * 2 + timeCounter
+        local radius = useWidth * 0.2
+        local yBase = useHeight + 1.0
+        local peak = math.abs(math.sin((idx / count) * math.pi * 5)) * (useHeight * 0.4)
+        targetPos = baseCenter + applyAxis(Vector3.new(math.cos(angle) * radius, yBase + peak, math.sin(angle) * radius))
+        rotCFrame = CFrame.lookAt(targetPos, baseCenter + Vector3.new(0, yBase, 0)) * CFrame.Angles(math.rad(15), 0, 0) * directionAngle
+
+    elseif currentMode == "Rain" then
+        local topY = useHeight + 18
+        local bottomY = useHeight - 8
+        local rx = data and data.randX or 0
+        local rz = data and data.randZ or 0
+        local fallSpd = data and data.fallSpeed or 20
+        local currentY = topY - (((timeCounter * fallSpd + (idx * 1.5)) % (topY - bottomY)))
+        targetPos = baseCenter + applyAxis(Vector3.new(rx, currentY, rz))
+        rotCFrame = CFrame.Angles(math.rad(180), 0, 0) * directionAngle
+
+    elseif currentMode == "Wing" then
+        local side = (idx % 2 == 0) and 1 or -1
+        local wingIndex = math.ceil(idx / 2)
+        local maxWingObjects = math.ceil(count / 2)
+        local t = wingIndex / maxWingObjects
+        local spacingFactor = math.clamp(1 / math.log10(maxWingObjects + 3), 0.4, 1.0)
+        local xOffset = (1.8 + (t * settings.wingSize * settings.wingSpread)) * side
+        local yOffset = 1.0 + (t * (settings.wingSize * 0.4) * spacingFactor) + (flapWave * t * spacingFactor)
+        local zOffset = 1.0 + (t * 0.6)
+        targetPos = (lookCFrame + (lookCFrame.LookVector * settings.depth)):PointToWorldSpace(applyAxis(Vector3.new(xOffset, yOffset, zOffset)))
+        rotCFrame = CFrame.lookAt(targetPos, targetPos + (lookCFrame.RightVector * side * 5 + lookCFrame.UpVector * flapWave), lookCFrame.UpVector) * directionAngle
+        
+    elseif currentMode == "Heart" then
+        local angle = (idx / count) * math.pi * 2 + (timeCounter * 0.5)
+        local size = useWidth * 0.6
+        local x = 16 * math.pow(math.sin(angle), 3)
+        local y = 13 * math.cos(angle) - 5 * math.cos(2*angle) - 2 * math.cos(3*angle) - math.cos(4*angle)
+        x = (x / 16) * size; y = (y / 16) * size
+        targetPos = (lookCFrame + (lookCFrame.LookVector * settings.depth)):PointToWorldSpace(applyAxis(Vector3.new(x, y + useHeight, 3)))
+        rotCFrame = lookCFrame * directionAngle
+
+    elseif currentMode == "Tornado" then
+        local angle = (timeCounter * 3) + (idx * (math.pi * 2 / math.min(count, 8)) * useDensity)
+        local heightPercent = (idx / count)
+        local radius = (3 + (heightPercent * useWidth))
+        local yOffset = (heightPercent * useHeight * 4) - (useHeight * 1.5)
+        targetPos = baseCenter + applyAxis(Vector3.new(math.cos(angle) * radius, yOffset, math.sin(angle) * radius))
+        rotCFrame = CFrame.lookAt(targetPos, baseCenter + Vector3.new(0, yOffset, 0)) * directionAngle
+
+    elseif currentMode == "Star" then
+        local angle = (timeCounter * 2) + (idx / count * math.pi * 2 * useDensity)
+        local r = useWidth * (2 / (3 - math.cos(5 * angle)))
+        targetPos = baseCenter + applyAxis(Vector3.new(math.cos(angle) * r, useHeight, math.sin(angle) * r))
+        rotCFrame = CFrame.Angles(0, angle, 0) * directionAngle
+
+    elseif currentMode == "Lightning" then
+        local angle = (timeCounter * 5) + (idx / count * math.pi * 2)
+        local zig = math.sin(idx * 50) * 3
+        local radius = (useWidth + zig)
+        targetPos = baseCenter + applyAxis(Vector3.new(math.cos(angle) * radius, useHeight + (math.cos(idx*20)*2), math.sin(angle) * radius))
+        rotCFrame = CFrame.Angles(math.random(), math.random(), math.random()) * directionAngle
+
+    elseif currentMode == "Beam" then
+        local beamIndex = (idx % 6)
+        local step = math.floor(idx / 6)
+        local angle = (beamIndex * (math.pi * 2 / 6)) + (timeCounter * 0.2)
+        local distance = 4 + (step * 3.5)
+        targetPos = baseCenter + applyAxis(Vector3.new(math.cos(angle) * distance, useHeight, math.sin(angle) * distance))
+        rotCFrame = CFrame.lookAt(targetPos, baseCenter + Vector3.new(0, useHeight, 0)) * directionAngle
+
+    elseif currentMode == "Saturn" then
+        local size = useWidth
+        if idx % 3 == 0 then
+            local t = idx / count * math.pi * 2
+            targetPos = baseCenter + applyAxis(Vector3.new(math.cos(t)*3, useHeight + math.sin(timeCounter+idx)*2, math.sin(t)*3))
+        else
+            local angle = timeCounter + (idx * (math.pi * 2 / count) * useDensity)
+            local ringCFrame = hrp.CFrame * CFrame.Angles(math.rad(15), 0, math.rad(15))
+            targetPos = baseCenter + ringCFrame:VectorToWorldSpace(applyAxis(Vector3.new(math.cos(angle)*size, 0, math.sin(angle)*size)))
+        end
+        rotCFrame = CFrame.lookAt(targetPos, baseCenter) * directionAngle
+
+    elseif currentMode == "Magic2" then
+        local angle = (timeCounter * 2) + (idx / count * math.pi * 2 * useDensity)
+        local radius = (idx % 2 == 0 and useWidth or useWidth * 0.6)
+        targetPos = baseCenter + applyAxis(Vector3.new(math.cos(angle)*radius, useHeight, math.sin(angle)*radius))
+        rotCFrame = hrp.CFrame * CFrame.Angles(0, angle * (idx % 2 == 0 and 1 or -1), 0) * directionAngle
+
+    elseif currentMode == "MagicCircle" then
+        local angle = (timeCounter * 2) + (idx / count * math.pi * 2 * useDensity)
+        local s = (useWidth / 2)
+        local x = math.sign(math.cos(angle)) * math.pow(math.abs(math.cos(angle)), 0.2) * s
+        local z = math.sign(math.sin(angle)) * math.pow(math.abs(math.sin(angle)), 0.2) * s
+        targetPos = baseCenter + Vector3.new(0, useHeight, 0) + (CFrame.Angles(math.rad(11.5), 0, math.rad(11.5)) * applyAxis(Vector3.new(x, 0, z)))
+        rotCFrame = hrp.CFrame * CFrame.Angles(math.rad(11.5), angle, math.rad(11.5)) * directionAngle
+    elseif currentMode == "Orbit" then
+        local angle = timeCounter + (idx * (math.pi * 2 / count) * useDensity)
+        local radius = useWidth
+        targetPos = baseCenter + applyAxis(Vector3.new(math.cos(angle) * radius, useHeight, math.sin(angle) * radius))
+        rotCFrame = CFrame.lookAt(targetPos, baseCenter) * directionAngle
+    elseif currentMode == "Ghost" then
+        local t = timeCounter + (data and data.seed or 0)
+        local radius = useWidth
+        targetPos = baseCenter + applyAxis(Vector3.new(math.sin(t * 0.7) * radius * useDensity, math.cos(t * 0.5) * (radius * 0.5) + useHeight, math.sin(t * 0.3) * radius * useDensity))
+        rotCFrame = targetPos and CFrame.Angles(0.05, 0.05, 0.05) * directionAngle or CFrame.identity
+    elseif currentMode == "Manji" then
+        local b = (idx - 1) % 4
+        local a = (b * math.pi / 2) + (timeCounter * 1.5)
+        local sIdx = math.floor((idx - 1) / 4)
+        local r = math.min(1, sIdx / (math.max(1, count/4) * 0.6 + 0.1))
+        local radius = (r * useWidth) * useDensity
+        targetPos = baseCenter + applyAxis(Vector3.new(math.cos(a) * radius, useHeight, math.sin(a) * radius))
+        rotCFrame = CFrame.lookAt(Vector3.zero, Vector3.new(math.cos(a), 0, math.sin(a))) * directionAngle
+    elseif currentMode == "Divine" then
+        local a = (idx / count) * math.pi * 2 * useDensity + (timeCounter * 0.5)
+        local radius = useWidth
+        targetPos = baseCenter + applyAxis(Vector3.new(math.cos(a) * radius, useHeight + math.sin(timeCounter + idx) * 0.5, math.sin(a) * radius))
+        rotCFrame = CFrame.lookAt(targetPos, baseCenter + Vector3.new(0, 10, 0)) * directionAngle
+    elseif currentMode == "Geometry" then
+        local n = 12 
+        local sA = timeCounter * 1.5 + (data and data.phase or 0)
+        local lA = ((idx - 1) % n / n) * math.pi * 2 * useDensity + (timeCounter * 0.2)
+        local radius = useWidth
+        targetPos = baseCenter + applyAxis(Vector3.new(math.cos(lA) * radius + math.cos(sA) * 5, useHeight, math.sin(lA) * radius + math.sin(sA) * 5))
+        rotCFrame = CFrame.lookAt(targetPos, targetPos + Vector3.new(math.cos(lA), 0, math.sin(lA))) * directionAngle
+    end
+
+    return targetPos, rotCFrame
+end
+
+-- 各タイムカウンター (1~10 + 通常)
+local timeCounters = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+local timeNormal = 0
+
+RunService.Heartbeat:Connect(function()
+    if mode == "None" then return end
+    
+    local targetPlayer = Players:FindFirstChild(targetPlayerName) or player
+    local hrp = targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+    
+    timeNormal = timeNormal + settings.speed
+    for i = 1, 10 do
+        timeCounters[i] = timeCounters[i] + settings["comboSpeed" .. i]
+    end
+
+    -- 現在吸い込まれている（追従中）のオブジェクト数をカウント
+    local currentCount = 0
+    for o in pairs(hoveringObjects) do
+        if o and o.Parent then currentCount = currentCount + 1 end
+    end
+
+    -- 合体モード時の合計割り当て上限数を計算
+    local comboLimit = 0
+    if mode == "Combined" then
+        for i = 1, 10 do
+            if settings["comboActive" .. i] and _G["comboMode" .. i] ~= "None" then
+                comboLimit = comboLimit + settings["comboCount" .. i]
+            end
+        end
+    else
+        comboLimit = settings.maxObjects
+    end
+
+    scanCooldown = scanCooldown + RunService.Heartbeat:Wait()
+    if scanCooldown >= 0.1 then
+        scanCooldown = 0
+        -- 【新ロジック】現在のパーツ数が設定本数上限を超えていない場合のみ、新しいパーツを吸い込む
+        if not isSuikomiStopped and currentCount < comboLimit then
+            local foundParts = workspace:GetPartBoundsInRadius(hrp.Position, settings.wingRange)
+            for _, p in ipairs(foundParts) do
+                -- 吸い込む前に再チェック（ループ内での溢れ防止）
+                if currentCount >= comboLimit then break end
+                
+                if isSelectableObject(p, targetPlayer.Character) then
+                    local target = p.Parent:IsA("Model") and p.Parent or p
+                    if target:IsA("Model") and target:IsA("Workspace") then target = p end
+                    if not hoveringObjects[target] then 
+                        registerPart(p) 
+                        currentCount = currentCount + 1
+                    end
+                end
+            end
+        end
+    end
+
+    local currentObjects = {}
+    for o in pairs(hoveringObjects) do
+        local root = o:IsA("Model") and o.PrimaryPart or o
+        if o and o.Parent and root and root:FindFirstChild("SyncForce") then
+            table.insert(currentObjects, o)
+            local parts = o:IsA("Model") and o:GetDescendants() or {o}
+            for _, p in ipairs(parts) do if p:IsA("BasePart") then p.CanCollide = false end end
+        else
+            hoveringObjects[o] = nil
+            objectData[o] = nil
+        end
+    end
+
+    -- 念のための安全ブレーキ（万が一上限を超えていた場合は登録を即時解除）
+    if #currentObjects > comboLimit then
+        for i = comboLimit + 1, #currentObjects do unregisterObject(currentObjects[i]) end
+        local newTable = {}
+        for i = 1, comboLimit do table.insert(newTable, currentObjects[i]) end
+        currentObjects = newTable
+    end
+
+    local total = #currentObjects
+    if total == 0 then return end
+
+    local lookCFrame = hrp.CFrame
+    local flapWave = math.sin(tick() * settings.flapSpeed) * settings.flapStrength
+    local invertMult = settings.invertDirection and -1.0 or 1.0
+
+    -- 各コンボのアクティブ状態取得
+    local comboModes = {}
+    local comboCounts = {}
+    for i = 1, 10 do
+        comboModes[i] = settings["comboActive" .. i] and _G["comboMode" .. i] or "None"
+        comboCounts[i] = settings["comboActive" .. i] and settings["comboCount" .. i] or 0
+    end
+
+    for i, obj in ipairs(currentObjects) do
+        local root = obj:IsA("Model") and obj.PrimaryPart or obj
+        if root and root:FindFirstChild("SyncForce") then
+            local data = objectData[obj]
+            local currentPos = root.Position
+            local targetPos, rotCFrame
+
+            if mode == "Combined" then
+                local placed = false
+                local runningSum = 0
+                
+                for cId = 1, 10 do
+                    local prevSum = runningSum
+                    runningSum = runningSum + comboCounts[cId]
+                    if i <= runningSum and comboModes[cId] ~= "None" then
+                        local idx = i - prevSum
+                        targetPos, rotCFrame = calculatePosition(comboModes[cId], idx, comboCounts[cId], hrp, data, timeCounters[cId], lookCFrame, flapWave, invertMult, currentPos, settings["comboWidth" .. cId], settings["comboHeight" .. cId], settings["comboDensity" .. cId], settings["comboXAxis" .. cId], settings["comboYAxis" .. cId])
+                        placed = true
+                        break
+                    end
+                end
+                
+                if not placed then
+                    unregisterObject(obj)
+                    targetPos, rotCFrame = nil, nil
+                end
+            else
+                targetPos, rotCFrame = calculatePosition(mode, i, total, hrp, data, timeNormal, lookCFrame, flapWave, invertMult, currentPos, settings.width, settings.height, settings.density, settings.xAxis, settings.yAxis)
+            end
+            
+            if targetPos then root.SyncForce.Velocity = (targetPos - currentPos) * 25 end
+            if rotCFrame then root.SyncGyro.CFrame = rotCFrame end
+            if math.random() > 0.85 then pcall(function() root:SetNetworkOwner(player) end) end
+        end
+    end
+end)
+
+OrionLib:Init()
