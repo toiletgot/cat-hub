@@ -7,7 +7,27 @@
     ・羽モードをコンボにも追加
 ]]
 
-local OrionLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/BlizTBr/scripts/main/Orion X"))()
+-- エラーハンドリングを追加
+local function safeCall(func, ...)
+    local success, result = pcall(func, ...)
+    if not success then
+        warn("エラーが発生しました:", result)
+        return nil
+    end
+    return result
+end
+
+-- Orion Lib 読み込み（エラーハンドリング付き）
+local OrionLib
+safeCall(function()
+    OrionLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/BlizTBr/scripts/main/Orion X"))()
+end)
+
+if not OrionLib then
+    warn("Orion Lib の読み込みに失敗しました")
+    return
+end
+
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local player = Players.LocalPlayer
@@ -24,6 +44,7 @@ local objectData = {}
 local scanCooldown = 0
 local isSuikomiStopped = false 
 
+-- 設定のデフォルト値を整理
 local settings = {
     speed = 0.03,
     width = 18,
@@ -40,95 +61,110 @@ local settings = {
     flapStrength = 1.5,
     wingSpread = 1.0,
 
-    comboActive1 = true, comboCount1 = 10, comboSpeed1 = 0.03, comboWidth1 = 18, comboHeight1 = 5, comboDensity1 = 1.0, comboXAxis1 = 1.0, comboYAxis1 = 1.0,
-    comboActive2 = true, comboCount2 = 10, comboSpeed2 = 0.03, comboWidth2 = 18, comboHeight2 = 5, comboDensity2 = 1.0, comboXAxis2 = 1.0, comboYAxis2 = 1.0,
-    comboActive3 = true, comboCount3 = 10, comboSpeed3 = 0.03, comboWidth3 = 18, comboHeight3 = 5, comboDensity3 = 1.0, comboXAxis3 = 1.0, comboYAxis3 = 1.0,
-    comboActive4 = true, comboCount4 = 10, comboSpeed4 = 0.03, comboWidth4 = 18, comboHeight4 = 5, comboDensity4 = 1.0, comboXAxis4 = 1.0, comboYAxis4 = 1.0,
-    comboActive5 = true, comboCount5 = 10, comboSpeed5 = 0.03, comboWidth5 = 18, comboHeight5 = 5, comboDensity5 = 1.0, comboXAxis5 = 1.0, comboYAxis5 = 1.0,
-    comboActive6 = true, comboCount6 = 10, comboSpeed6 = 0.03, comboWidth6 = 18, comboHeight6 = 5, comboDensity6 = 1.0, comboXAxis6 = 1.0, comboYAxis6 = 1.0,
-    comboActive7 = true, comboCount7 = 10, comboSpeed7 = 0.03, comboWidth7 = 18, comboHeight7 = 5, comboDensity7 = 1.0, comboXAxis7 = 1.0, comboYAxis7 = 1.0,
-    comboActive8 = true, comboCount8 = 10, comboSpeed8 = 0.03, comboWidth8 = 18, comboHeight8 = 5, comboDensity8 = 1.0, comboXAxis8 = 1.0, comboYAxis8 = 1.0,
-    comboActive9 = true, comboCount9 = 10, comboSpeed9 = 0.03, comboWidth9 = 18, comboHeight9 = 5, comboDensity9 = 1.0, comboXAxis9 = 1.0, comboYAxis9 = 1.0,
-    comboActive10 = true, comboCount10 = 10, comboSpeed10 = 0.03, comboWidth10 = 18, comboHeight10 = 5, comboDensity10 = 1.0, comboXAxis10 = 1.0, comboYAxis10 = 1.0,
-
     maxObjects = 999
 }
 
--- --- アビリティバイパス ---
-local mt = getrawmetatable(game)
-local old_index = mt.__index
-setreadonly(mt, false)
-mt.__index = newcclosure(function(t, k)
-    if not checkcaller() and t:IsA("Humanoid") then
-        if k == "WalkSpeed" then return 16 end
-        if k == "JumpPower" then return 50 end
+-- コンボ設定を動的に初期化（コードの重複を削減）
+local function initComboSettings(count)
+    for i = 1, count do
+        settings["comboActive" .. i] = true
+        settings["comboCount" .. i] = 10
+        settings["comboSpeed" .. i] = 0.03
+        settings["comboWidth" .. i] = 18
+        settings["comboHeight" .. i] = 5
+        settings["comboDensity" .. i] = 1.0
+        settings["comboXAxis" .. i] = 1.0
+        settings["comboYAxis" .. i] = 1.0
     end
-    return old_index(t, k)
-end)
-setreadonly(mt, true)
+end
+initComboSettings(10)
 
--- --- オブジェクトフィルター ---
+-- --- アビリティバイパス（エラーハンドリング付き）---
+safeCall(function()
+    local mt = getrawmetatable(game)
+    if mt then
+        local old_index = mt.__index
+        setreadonly(mt, false)
+        mt.__index = newcclosure(function(t, k)
+            if not checkcaller() and t:IsA("Humanoid") then
+                if k == "WalkSpeed" then return 16 end
+                if k == "JumpPower" then return 50 end
+            end
+            return old_index(t, k)
+        end)
+        setreadonly(mt, true)
+    end
+end)
+
+-- --- オブジェクトフィルター（最適化）---
+local IGNORE_NAMES = {
+    "Baseplate", "Terrain", "SpawnLocation", "Sky", "Map", "Wall", "Floor", "Grid"
+}
+
 local function isSelectableObject(part, character)
     if not part:IsA("BasePart") or part.Anchored then return false end
     if character and part:IsDescendantOf(character) then return false end
     
-    if part.Parent:FindFirstChild("Humanoid") or (part.Parent.Parent and part.Parent.Parent:FindFirstChild("Humanoid")) then
+    -- 親のチェックを最適化
+    local parent = part.Parent
+    if parent:FindFirstChild("Humanoid") or (parent.Parent and parent.Parent:FindFirstChild("Humanoid")) then
         return false
     end
 
-    local ignoreNames = {"Baseplate", "Terrain", "SpawnLocation", "Sky", "Map", "Wall", "Floor", "Grid"}
-    if table.find(ignoreNames, part.Name) then return false end
+    if IGNORE_NAMES[part.Name] then return false end
 
+    -- ネットワークオーナーのチェックを安全に
     local isOwner = false
-    pcall(function() if part:GetNetworkOwner() == player then isOwner = true end end)
+    safeCall(function()
+        if part:GetNetworkOwner() == player then isOwner = true end
+    end)
+    
     if isOwner or part:FindFirstChild("creator") or part.Name == "Handle" or part:GetAttribute("Creator") == player.UserId then 
         return true 
     end
 
-    if part.Size.X < 30 and part.Size.Y < 30 and part.Size.Z < 30 then
+    -- サイズ制限（大きすぎるオブジェクトは無視）
+    local size = part.Size
+    if size.X < 30 and size.Y < 30 and size.Z < 30 then
         return true
     end
 
     return false
 end
 
--- --- 物理・モデル管理関数 ---
-local function clearObjects()
-    for obj in pairs(hoveringObjects) do
-        pcall(function()
-            if obj and obj.Parent then
-                local parts = obj:IsA("Model") and obj:GetDescendants() or {obj}
-                for _, p in ipairs(parts) do
-                    if p:IsA("BasePart") then p.CanCollide = true end
-                end
-                
-                local root = obj:IsA("Model") and obj.PrimaryPart or obj
-                if root then
-                    if root:FindFirstChild("SyncForce") then root.SyncForce:Destroy() end
-                    if root:FindFirstChild("SyncGyro") then root.SyncGyro:Destroy() end
-                end
-            end
-        end)
-    end
-    hoveringObjects = {}; objectData = {}
-end
-
+-- --- 物理・モデル管理関数（最適化）---
 local function unregisterObject(obj)
-    pcall(function()
-        if obj and obj.Parent then
-            local parts = obj:IsA("Model") and obj:GetDescendants() or {obj}
-            for _, p in ipairs(parts) do
-                if p:IsA("BasePart") then p.CanCollide = true end
+    if not obj or not obj.Parent then return end
+    
+    safeCall(function()
+        local parts = obj:IsA("Model") and obj:GetDescendants() or {obj}
+        for _, p in ipairs(parts) do
+            if p:IsA("BasePart") then 
+                p.CanCollide = true 
+                p.Anchored = false
             end
-            local root = obj:IsA("Model") and obj.PrimaryPart or obj
-            if root then
-                if root:FindFirstChild("SyncForce") then root.SyncForce:Destroy() end
-                if root:FindFirstChild("SyncGyro") then root.SyncGyro:Destroy() end
+        end
+        
+        local root = obj:IsA("Model") and obj.PrimaryPart or obj
+        if root then
+            for _, child in ipairs(root:GetChildren()) do
+                if child:IsA("BodyVelocity") or child:IsA("BodyGyro") then
+                    child:Destroy()
+                end
             end
         end
     end)
+    
     hoveringObjects[obj] = nil
     objectData[obj] = nil
+end
+
+local function clearObjects()
+    for obj in pairs(hoveringObjects) do
+        unregisterObject(obj)
+    end
+    hoveringObjects = {}
+    objectData = {}
 end
 
 local function registerPart(part)
@@ -136,12 +172,16 @@ local function registerPart(part)
     
     local targetChar = player.Character
     local targetPlayer = Players:FindFirstChild(targetPlayerName)
-    if targetPlayer and targetPlayer.Character then targetChar = targetPlayer.Character end
+    if targetPlayer and targetPlayer.Character then 
+        targetChar = targetPlayer.Character 
+    end
     
     if targetChar and not isSelectableObject(part, targetChar) then return end
     
     local target = part.Parent:IsA("Model") and part.Parent or part
-    if target:IsA("Model") and target:IsA("Workspace") then target = part end
+    if target:IsA("Model") and target:IsA("Workspace") then 
+        target = part 
+    end
     
     if hoveringObjects[target] then return end 
 
@@ -157,7 +197,9 @@ local function registerPart(part)
     
     local rootPart = part
     if target:IsA("Model") then
-        if not target.PrimaryPart then target.PrimaryPart = part end
+        if not target.PrimaryPart then 
+            target.PrimaryPart = part 
+        end
         rootPart = target.PrimaryPart
         
         for _, p in ipairs(target:GetDescendants()) do
@@ -176,12 +218,21 @@ local function registerPart(part)
         part.CanCollide = false
     end
     
+    -- BodyVelocity と BodyGyro を作成
     local bv = Instance.new("BodyVelocity")
-    bv.Name = "SyncForce"; bv.MaxForce = Vector3.new(1,1,1)*1e7; bv.Velocity = Vector3.zero; bv.Parent = rootPart
-    local bg = Instance.new("BodyGyro")
-    bg.Name = "SyncGyro"; bg.MaxTorque = Vector3.new(1,1,1)*1e7; bg.Parent = rootPart
+    bv.Name = "SyncForce"
+    bv.MaxForce = Vector3.new(1,1,1)*1e7
+    bv.Velocity = Vector3.zero
+    bv.Parent = rootPart
     
-    pcall(function() rootPart:SetNetworkOwner(player) end)
+    local bg = Instance.new("BodyGyro")
+    bg.Name = "SyncGyro"
+    bg.MaxTorque = Vector3.new(1,1,1)*1e7
+    bg.Parent = rootPart
+    
+    safeCall(function() 
+        rootPart:SetNetworkOwner(player) 
+    end)
 end
 
 -- --- モード変換用マップ ---
@@ -191,23 +242,26 @@ local modeOptions = {
     "水", "ひょうたん", "人（棒人間）", "丸（回転の逆のやつ）", "縦丸", "四角", "三角", "六角", "時空の裂け目", "渦巻き", "球体"
 }
 
+local modeMap = {
+    ["None"]="None", ["回転"]="Orbit", ["魔法陣"]="MagicCircle", 
+    ["幽霊"]="Ghost", ["神聖"]="Divine", ["卍"]="Manji", 
+    ["幾何学の輪"]="Geometry", ["羽"]="Wing", ["ハート"]="Heart", 
+    ["竜巻"]="Tornado", ["星"]="Star", ["電気"]="Lightning", 
+    ["ビーム"]="Beam", ["土星"]="Saturn", ["魔法2"]="Magic2", ["魔法3"]="Magic3",
+    ["四角形cm3"]="CubeArea", ["丸cm3"]="SphereArea", ["盾"]="Shield",
+    ["祭り"]="Matsuri", ["時計"]="Clock", ["太陽"]="Sun", ["木"]="Tree",
+    ["冠"]="Crown", ["雨"]="Rain",
+    ["マーソル"]="Cursor", ["うんち"]="Poop", ["花"]="Flower",
+    ["星2"]="Star2", ["ハート2"]="Heart2", ["数字"]="Number", ["島"]="Island",
+    ["水"]="Water", ["ひょうたん"]="Gourd", ["人（棒人間）"]="Stickman", 
+    ["丸（回転の逆のやつ）"]="ReverseOrbit",
+    ["縦丸"]="VerticalOrbit", ["四角"]="Square", ["三角"]="Triangle", 
+    ["六角"]="Hexagon", ["時空の裂け目"]="SpaceTimeRift", ["渦巻き"]="Spiral", 
+    ["球体"]="Sphere"
+}
+
 local function getModeInternalName(jpName)
-    local map = {
-        ["None"]="None", ["回転"]="Orbit", ["魔法陣"]="MagicCircle", 
-        ["幽霊"]="Ghost", ["神聖"]="Divine", ["卍"]="Manji", 
-        ["幾何学の輪"]="Geometry", ["羽"]="Wing", ["ハート"]="Heart", 
-        ["竜巻"]="Tornado", ["星"]="Star", ["電気"]="Lightning", 
-        ["ビーム"]="Beam", ["土星"]="Saturn", ["魔法2"]="Magic2", ["魔法3"]="Magic3",
-        ["四角形cm3"]="CubeArea", ["丸cm3"]="SphereArea", ["盾"]="Shield",
-        ["祭り"]="Matsuri", ["時計"]="Clock", ["太陽"]="Sun", ["木"]="Tree",
-        ["冠"]="Crown", ["雨"]="Rain",
-        ["マーソル"]="Cursor", ["うんち"]="Poop", ["花"]="Flower",
-        ["星2"]="Star2", ["ハート2"]="Heart2", ["数字"]="Number", ["島"]="Island",
-        ["水"]="Water", ["ひょうたん"]="Gourd", ["人（棒人間）"]="Stickman", ["丸（回転の逆のやつ）"]="ReverseOrbit",
-        ["縦丸"]="VerticalOrbit", ["四角"]="Square", ["三角"]="Triangle", ["六角"]="Hexagon",
-        ["時空の裂け目"]="SpaceTimeRift", ["渦巻き"]="Spiral", ["球体"]="Sphere"
-    }
-    return map[jpName] or "None"
+    return modeMap[jpName] or "None"
 end
 
 local function getPlayerNames()
@@ -218,8 +272,12 @@ local function getPlayerNames()
     return names
 end
 
--- --- UI構築 (toy mod script kiki hub) ---
-local Window = OrionLib:MakeWindow({ Name = "toy mod script kiki hub", HidePremium = false, IntroText = "toy mod script kiki hub" })
+-- --- UI構築 ---
+local Window = OrionLib:MakeWindow({ 
+    Name = "toy mod script kiki hub", 
+    HidePremium = false, 
+    IntroText = "toy mod script kiki hub" 
+})
 
 local MainTab = Window:MakeTab({ Name = "メイン能力", Icon = "rbxassetid://4483345998" })
 local CombineTab = Window:MakeTab({ Name = "モード合体！", Icon = "rbxassetid://4483345998" })
@@ -236,8 +294,13 @@ local TargetDropdown = MainTab:AddDropdown({
     end
 })
 
-Players.PlayerAdded:Connect(function() TargetDropdown:Refresh(getPlayerNames(), true) end)
-Players.PlayerRemoving:Connect(function() TargetDropdown:Refresh(getPlayerNames(), true) end)
+-- プレイヤーリスト更新
+Players.PlayerAdded:Connect(function() 
+    TargetDropdown:Refresh(getPlayerNames(), true) 
+end)
+Players.PlayerRemoving:Connect(function() 
+    TargetDropdown:Refresh(getPlayerNames(), true) 
+end)
 
 MainTab:AddDropdown({
     Name = "モード選択",
@@ -265,66 +328,250 @@ MainTab:AddToggle({
     end
 })
 
-MainTab:AddButton({ Name = "全パーツ解除", Callback = function() clearObjects() end })
+MainTab:AddButton({ 
+    Name = "全パーツ解除", 
+    Callback = function() 
+        clearObjects() 
+    end 
+})
 
 -- 【モード合体！】
 CombineTab:AddSection({ Name = "1〜10つのモードを個別に有効化して本数指定" })
 
+local comboModeVars = {}
 for i = 1, 10 do
-    local comboModeVar = "comboMode" .. i
+    comboModeVars[i] = "comboMode" .. i
+    _G[comboModeVars[i]] = "None"
+end
+
+for i = 1, 10 do
+    local comboModeVar = comboModeVars[i]
     local comboCountVar = "comboCount" .. i
     local comboActiveVar = "comboActive" .. i
     
-    CombineTab:AddToggle({ Name = "コンボ" .. i .. "を有効化", Default = true, Callback = function(v) 
-        settings[comboActiveVar] = v; 
-        if v and _G[comboModeVar] ~= "None" then mode = "Combined" end 
-    end })
-    CombineTab:AddDropdown({ Name = "コンボ" .. i .. "選択", Default = "None", Options = modeOptions, Callback = function(v) 
-        _G[comboModeVar] = getModeInternalName(v); 
-        if _G[comboModeVar] ~= "None" and settings[comboActiveVar] then mode = "Combined" end 
-    end })
-    CombineTab:AddTextbox({ Name = "コンボ" .. i .. "のパーツ割り当て本数", Default = "10", TextDisappear = false, Callback = function(t) 
-        settings[comboCountVar] = math.max(0, math.floor(tonumber(t) or 10)) 
-    end })
-    if i < 10 then CombineTab:AddSection({ Name = "------------------------------------" }) end
+    CombineTab:AddToggle({ 
+        Name = "コンボ" .. i .. "を有効化", 
+        Default = true, 
+        Callback = function(v) 
+            settings[comboActiveVar] = v
+            if v and _G[comboModeVar] ~= "None" then 
+                mode = "Combined" 
+            end 
+        end 
+    })
+    
+    CombineTab:AddDropdown({ 
+        Name = "コンボ" .. i .. "選択", 
+        Default = "None", 
+        Options = modeOptions, 
+        Callback = function(v) 
+            _G[comboModeVar] = getModeInternalName(v)
+            if _G[comboModeVar] ~= "None" and settings[comboActiveVar] then 
+                mode = "Combined" 
+            end 
+        end 
+    })
+    
+    CombineTab:AddTextbox({ 
+        Name = "コンボ" .. i .. "のパーツ割り当て本数", 
+        Default = "10", 
+        TextDisappear = false, 
+        Callback = function(t) 
+            settings[comboCountVar] = math.max(0, math.floor(tonumber(t) or 10)) 
+        end 
+    })
+    
+    if i < 10 then 
+        CombineTab:AddSection({ Name = "------------------------------------" }) 
+    end
 end
 
 CombineTab:AddSection({ Name = "------------------------------------" })
-CombineTab:AddButton({ Name = "合体モード解除 (通常に戻す)", Callback = function() 
-    mode = "None"; 
-    for i = 1, 10 do _G["comboMode" .. i] = "None" end
-end })
+CombineTab:AddButton({ 
+    Name = "合体モード解除 (通常に戻す)", 
+    Callback = function() 
+        mode = "None"
+        for i = 1, 10 do 
+            _G[comboModeVars[i]] = "None" 
+        end
+    end 
+})
 
 -- 【調整タブ】
-AdjustTab:AddToggle({ Name = "向きを外側にする (方向反転)", Default = false, Callback = function(V) settings.invertDirection = V end })
-AdjustTab:AddTextbox({ Name = "通常：回転速度", Default = "0.03", TextDisappear = false, Callback = function(T) settings.speed = tonumber(T) or 0.03 end })
-AdjustTab:AddTextbox({ Name = "通常：広がり", Default = "18", TextDisappear = false, Callback = function(T) settings.width = tonumber(T) or 18 end })
-AdjustTab:AddTextbox({ Name = "通常：高さ", Default = "5", TextDisappear = false, Callback = function(T) settings.height = tonumber(T) or 5 end })
-AdjustTab:AddTextbox({ Name = "通常：密度 (間隔が大きいほどバラけます)", Default = "1.0", TextDisappear = false, Callback = function(T) settings.density = tonumber(T) or 1.0 end })
-AdjustTab:AddTextbox({ Name = "通常：前後オフセット (正=前 / 負=後)", Default = "0", TextDisappear = false, Callback = function(T) settings.depth = tonumber(T) or 0 end })
-AdjustTab:AddTextbox({ Name = "X軸 (横の広がり倍率)", Default = "1.0", TextDisappear = false, Callback = function(T) settings.xAxis = tonumber(T) or 1.0 end })
-AdjustTab:AddTextbox({ Name = "Y軸 (縦の広がり倍率)", Default = "1.0", TextDisappear = false, Callback = function(T) settings.yAxis = tonumber(T) or 1.0 end })
+AdjustTab:AddToggle({ 
+    Name = "向きを外側にする (方向反転)", 
+    Default = false, 
+    Callback = function(V) 
+        settings.invertDirection = V 
+    end 
+})
 
--- コンボごとの詳細設定 (1~10)
+AdjustTab:AddTextbox({ 
+    Name = "通常：回転速度", 
+    Default = "0.03", 
+    TextDisappear = false, 
+    Callback = function(T) 
+        settings.speed = tonumber(T) or 0.03 
+    end 
+})
+
+AdjustTab:AddTextbox({ 
+    Name = "通常：広がり", 
+    Default = "18", 
+    TextDisappear = false, 
+    Callback = function(T) 
+        settings.width = tonumber(T) or 18 
+    end 
+})
+
+AdjustTab:AddTextbox({ 
+    Name = "通常：高さ", 
+    Default = "5", 
+    TextDisappear = false, 
+    Callback = function(T) 
+        settings.height = tonumber(T) or 5 
+    end 
+})
+
+AdjustTab:AddTextbox({ 
+    Name = "通常：密度 (間隔が大きいほどバラけます)", 
+    Default = "1.0", 
+    TextDisappear = false, 
+    Callback = function(T) 
+        settings.density = tonumber(T) or 1.0 
+    end 
+})
+
+AdjustTab:AddTextbox({ 
+    Name = "通常：前後オフセット (正=前 / 負=後)", 
+    Default = "0", 
+    TextDisappear = false, 
+    Callback = function(T) 
+        settings.depth = tonumber(T) or 0 
+    end 
+})
+
+AdjustTab:AddTextbox({ 
+    Name = "X軸 (横の広がり倍率)", 
+    Default = "1.0", 
+    TextDisappear = false, 
+    Callback = function(T) 
+        settings.xAxis = tonumber(T) or 1.0 
+    end 
+})
+
+AdjustTab:AddTextbox({ 
+    Name = "Y軸 (縦の広がり倍率)", 
+    Default = "1.0", 
+    TextDisappear = false, 
+    Callback = function(T) 
+        settings.yAxis = tonumber(T) or 1.0 
+    end 
+})
+
+-- コンボごとの詳細設定（ループで簡潔に）
 for i = 1, 10 do
     AdjustTab:AddSection({ Name = "👑 コンボ" .. i .. "設定" })
-    AdjustTab:AddToggle({ Name = "コンボ" .. i .. "を有効にする", Default = true, Callback = function(v) settings["comboActive" .. i] = v end })
-    AdjustTab:AddTextbox({ Name = "コンボ" .. i .. "：回転速度", Default = "0.03", TextDisappear = false, Callback = function(T) settings["comboSpeed" .. i] = tonumber(T) or 0.03 end })
-    AdjustTab:AddTextbox({ Name = "コンボ" .. i .. "：広がり", Default = "18", TextDisappear = false, Callback = function(T) settings["comboWidth" .. i] = tonumber(T) or 18 end })
-    AdjustTab:AddTextbox({ Name = "コンボ" .. i .. "：高さ", Default = "5", TextDisappear = false, Callback = function(T) settings["comboHeight" .. i] = tonumber(T) or 5 end })
-    AdjustTab:AddTextbox({ Name = "コンボ" .. i .. "：密度", Default = "1.0", TextDisappear = false, Callback = function(T) settings["comboDensity" .. i] = tonumber(T) or 1.0 end })
-    AdjustTab:AddTextbox({ Name = "コンボ" .. i .. "：X軸", Default = "1.0", TextDisappear = false, Callback = function(T) settings["comboXAxis" .. i] = tonumber(T) or 1.0 end })
-    AdjustTab:AddTextbox({ Name = "コンボ" .. i .. "：Y軸", Default = "1.0", TextDisappear = false, Callback = function(T) settings["comboYAxis" .. i] = tonumber(T) or 1.0 end })
+    AdjustTab:AddToggle({ 
+        Name = "コンボ" .. i .. "を有効にする", 
+        Default = true, 
+        Callback = function(v) 
+            settings["comboActive" .. i] = v 
+        end 
+    })
+    AdjustTab:AddTextbox({ 
+        Name = "コンボ" .. i .. "：回転速度", 
+        Default = "0.03", 
+        TextDisappear = false, 
+        Callback = function(T) 
+            settings["comboSpeed" .. i] = tonumber(T) or 0.03 
+        end 
+    })
+    AdjustTab:AddTextbox({ 
+        Name = "コンボ" .. i .. "：広がり", 
+        Default = "18", 
+        TextDisappear = false, 
+        Callback = function(T) 
+            settings["comboWidth" .. i] = tonumber(T) or 18 
+        end 
+    })
+    AdjustTab:AddTextbox({ 
+        Name = "コンボ" .. i .. "：高さ", 
+        Default = "5", 
+        TextDisappear = false, 
+        Callback = function(T) 
+            settings["comboHeight" .. i] = tonumber(T) or 5 
+        end 
+    })
+    AdjustTab:AddTextbox({ 
+        Name = "コンボ" .. i .. "：密度", 
+        Default = "1.0", 
+        TextDisappear = false, 
+        Callback = function(T) 
+            settings["comboDensity" .. i] = tonumber(T) or 1.0 
+        end 
+    })
+    AdjustTab:AddTextbox({ 
+        Name = "コンボ" .. i .. "：X軸", 
+        Default = "1.0", 
+        TextDisappear = false, 
+        Callback = function(T) 
+            settings["comboXAxis" .. i] = tonumber(T) or 1.0 
+        end 
+    })
+    AdjustTab:AddTextbox({ 
+        Name = "コンボ" .. i .. "：Y軸", 
+        Default = "1.0", 
+        TextDisappear = false, 
+        Callback = function(T) 
+            settings["comboYAxis" .. i] = tonumber(T) or 1.0 
+        end 
+    })
 end
 
 AdjustTab:AddSection({ Name = "全体設定" })
-AdjustTab:AddTextbox({ Name = "物を吸い込む範囲", Default = "100", TextDisappear = false, Callback = function(T) settings.wingRange = tonumber(T) or 100 end })
+AdjustTab:AddTextbox({ 
+    Name = "物を吸い込む範囲", 
+    Default = "100", 
+    TextDisappear = false, 
+    Callback = function(T) 
+        settings.wingRange = tonumber(T) or 100 
+    end 
+})
 
 AdjustTab:AddSection({ Name = "羽（ウイング）専用設定" })
-AdjustTab:AddTextbox({ Name = "羽の全体サイズ", Default = "8", TextDisappear = false, Callback = function(T) settings.wingSize = tonumber(T) or 8 end })
-AdjustTab:AddTextbox({ Name = "羽ばたき速度", Default = "4", TextDisappear = false, Callback = function(T) settings.flapSpeed = tonumber(T) or 4 end })
-AdjustTab:AddTextbox({ Name = "羽ばたきの大きさ", Default = "1.5", TextDisappear = false, Callback = function(T) settings.flapStrength = tonumber(T) or 1.5 end })
-AdjustTab:AddTextbox({ Name = "翼の角度・広がり", Default = "1.0", TextDisappear = false, Callback = function(T) settings.wingSpread = tonumber(T) or 1.0 end })
+AdjustTab:AddTextbox({ 
+    Name = "羽の全体サイズ", 
+    Default = "8", 
+    TextDisappear = false, 
+    Callback = function(T) 
+        settings.wingSize = tonumber(T) or 8 
+    end 
+})
+AdjustTab:AddTextbox({ 
+    Name = "羽ばたき速度", 
+    Default = "4", 
+    TextDisappear = false, 
+    Callback = function(T) 
+        settings.flapSpeed = tonumber(T) or 4 
+    end 
+})
+AdjustTab:AddTextbox({ 
+    Name = "羽ばたきの大きさ", 
+    Default = "1.5", 
+    TextDisappear = false, 
+    Callback = function(T) 
+        settings.flapStrength = tonumber(T) or 1.5 
+    end 
+})
+AdjustTab:AddTextbox({ 
+    Name = "翼の角度・広がり", 
+    Default = "1.0", 
+    TextDisappear = false, 
+    Callback = function(T) 
+        settings.wingSpread = tonumber(T) or 1.0 
+    end 
+})
 
 -- 【クレジットタブ】
 CreditTab:AddLabel("うんこ")
@@ -339,47 +586,67 @@ CreditTab:AddLabel("【拡散してくれた人】 うんこ")
 
 -- キャラクター接触判定
 local function connectCharacter(char)
-    char:WaitForChild("HumanoidRootPart")
-    for _, v in ipairs(char:GetChildren()) do
-        if v:IsA("BasePart") then
-            v.Touched:Connect(function(hit) 
-                if mode ~= "None" and mode ~= "Wing" then 
-                    registerPart(hit) 
-                end 
-            end)
+    safeCall(function()
+        char:WaitForChild("HumanoidRootPart")
+        for _, v in ipairs(char:GetChildren()) do
+            if v:IsA("BasePart") then
+                v.Touched:Connect(function(hit) 
+                    if mode ~= "None" and mode ~= "Wing" then 
+                        registerPart(hit) 
+                    end 
+                end)
+            end
         end
-    end
+    end)
 end
+
 player.CharacterAdded:Connect(connectCharacter)
-if player.Character then connectCharacter(player.Character) end
+if player.Character then 
+    connectCharacter(player.Character) 
+end
 
 -- デジタル数字用データ
 local digitSegments = {
-    [0] = {1,1,1,0,1,1,1}, [1] = {0,0,1,0,0,1,0}, [2] = {1,0,1,1,1,0,1}, [3] = {1,0,1,1,0,1,1}, [4] = {0,1,1,1,0,1,0},
-    [5] = {1,1,0,1,0,1,1}, [6] = {1,1,0,1,1,1,1}, [7] = {1,1,1,0,0,1,0}, [8] = {1,1,1,1,1,1,1}, [9] = {1,1,1,1,0,1,1}
+    [0] = {1,1,1,0,1,1,1}, 
+    [1] = {0,0,1,0,0,1,0}, 
+    [2] = {1,0,1,1,1,0,1}, 
+    [3] = {1,0,1,1,0,1,1}, 
+    [4] = {0,1,1,1,0,1,0},
+    [5] = {1,1,0,1,0,1,1}, 
+    [6] = {1,1,0,1,1,1,1}, 
+    [7] = {1,1,1,0,0,1,0}, 
+    [8] = {1,1,1,1,1,1,1}, 
+    [9] = {1,1,1,1,0,1,1}
 }
+
 local segmentLines = {
-    {Vector3.new(-1,2,0), Vector3.new(1,2,0)}, {Vector3.new(-1,2,0), Vector3.new(-1,0,0)}, {Vector3.new(1,2,0), Vector3.new(1,0,0)},
-    {Vector3.new(-1,0,0), Vector3.new(1,0,0)}, {Vector3.new(-1,0,0), Vector3.new(-1,-2,0)}, {Vector3.new(1,0,0), Vector3.new(1,-2,0)},
+    {Vector3.new(-1,2,0), Vector3.new(1,2,0)}, 
+    {Vector3.new(-1,2,0), Vector3.new(-1,0,0)}, 
+    {Vector3.new(1,2,0), Vector3.new(1,0,0)},
+    {Vector3.new(-1,0,0), Vector3.new(1,0,0)}, 
+    {Vector3.new(-1,0,0), Vector3.new(-1,-2,0)}, 
+    {Vector3.new(1,0,0), Vector3.new(1,-2,0)},
     {Vector3.new(-1,-2,0), Vector3.new(1,-2,0)}
 }
 
--- 座標・回転計算関数
+-- 座標・回転計算関数（最適化）
 local function calculatePosition(currentMode, idx, count, hrp, data, timeCounter, lookCFrame, flapWave, invertMult, currentPos, useWidth, useHeight, useDensity, useXAxis, useYAxis)
-    if currentMode == "None" then return nil, nil end
+    if currentMode == "None" then 
+        return nil, nil 
+    end
+    
     local targetPos
     local rotCFrame = nil
     
     local baseCenter = hrp.Position + (lookCFrame.LookVector * settings.depth)
     local directionAngle = settings.invertDirection and CFrame.Angles(0, math.pi, 0) or CFrame.identity
 
-    -- X軸・Y軸の適用（各モードで調整）
     local function applyAxis(vec)
         return Vector3.new(vec.X * (useXAxis or 1.0), vec.Y * (useYAxis or 1.0), vec.Z)
     end
 
+    -- 各モードの処理（変更なし）
     if currentMode == "SpaceTimeRift" then
-        -- 時空の裂け目：歪んだ空間のような動き
         local angle = timeCounter * 0.8 + (idx / count) * math.pi * 2 * useDensity
         local distortion = math.sin(timeCounter * 0.5 + idx * 0.3) * 0.5 + 0.5
         local radius = useWidth * (0.3 + distortion * 0.7)
@@ -396,7 +663,6 @@ local function calculatePosition(currentMode, idx, count, hrp, data, timeCounter
         rotCFrame = CFrame.Angles(math.sin(timeCounter + idx) * 0.1, angle, math.cos(timeCounter * 0.5 + idx) * 0.1) * directionAngle
 
     elseif currentMode == "Spiral" then
-        -- 渦巻き：らせん状に広がる
         local angle = timeCounter * 2 + (idx / count) * math.pi * 6 * useDensity
         local progress = idx / count
         local radius = useWidth * progress * 0.8
@@ -405,7 +671,6 @@ local function calculatePosition(currentMode, idx, count, hrp, data, timeCounter
         rotCFrame = CFrame.lookAt(targetPos, baseCenter + Vector3.new(0, yOffset, 0)) * directionAngle
 
     elseif currentMode == "Sphere" then
-        -- 球体：3D球体を形成（より滑らか）
         local phi = math.acos(1 - 2 * ((idx - 1) / count))
         local theta = math.pi * (1 + 5^0.5) * idx + timeCounter * 0.3
         local radius = useWidth * 0.5
@@ -436,11 +701,14 @@ local function calculatePosition(currentMode, idx, count, hrp, data, timeCounter
         local f = deg - side
         local p1, p2
         if side == 0 then
-            p1 = Vector3.new(0, 0, 1) p2 = Vector3.new(math.sqrt(3)/2, 0, -0.5)
+            p1 = Vector3.new(0, 0, 1) 
+            p2 = Vector3.new(math.sqrt(3)/2, 0, -0.5)
         elseif side == 1 then
-            p1 = Vector3.new(math.sqrt(3)/2, 0, -0.5) p2 = Vector3.new(-math.sqrt(3)/2, 0, -0.5)
+            p1 = Vector3.new(math.sqrt(3)/2, 0, -0.5) 
+            p2 = Vector3.new(-math.sqrt(3)/2, 0, -0.5)
         else
-            p1 = Vector3.new(-math.sqrt(3)/2, 0, -0.5) p2 = Vector3.new(0, 0, 1)
+            p1 = Vector3.new(-math.sqrt(3)/2, 0, -0.5) 
+            p2 = Vector3.new(0, 0, 1)
         end
         local p = p1:Lerp(p2, f) * useWidth
         targetPos = baseCenter + applyAxis(Vector3.new(p.X, useHeight, p.Z))
@@ -472,7 +740,9 @@ local function calculatePosition(currentMode, idx, count, hrp, data, timeCounter
         local angle = ratio * math.pi * 2 * 3 + timeCounter
         local heightLocal = (ratio - 0.5) * (useHeight * 2.5) * useDensity
         local gourdRadius = math.abs(math.sin(ratio * math.pi)) * (useWidth * 0.4) * useDensity
-        if ratio > 0.5 then gourdRadius = gourdRadius * 0.7 end
+        if ratio > 0.5 then 
+            gourdRadius = gourdRadius * 0.7 
+        end
         targetPos = baseCenter + applyAxis(Vector3.new(math.cos(angle) * gourdRadius, useHeight + heightLocal, math.sin(angle) * gourdRadius))
         rotCFrame = CFrame.Angles(0, angle, 0) * directionAngle
 
@@ -527,7 +797,8 @@ local function calculatePosition(currentMode, idx, count, hrp, data, timeCounter
         local size = useWidth * 0.5 * pulse
         local x = 16 * math.pow(math.sin(angle), 3)
         local y = 13 * math.cos(angle) - 5 * math.cos(2*angle) - 2 * math.cos(3*angle) - math.cos(4*angle)
-        x = (x / 16) * size; y = (y / 16) * size
+        x = (x / 16) * size
+        y = (y / 16) * size
         local zDist = -5 - (math.sin(idx + timeCounter) * 0.5)
         targetPos = (lookCFrame + (lookCFrame.LookVector * settings.depth)):PointToWorldSpace(applyAxis(Vector3.new(x, y + useHeight, zDist)))
         rotCFrame = lookCFrame * directionAngle
@@ -536,12 +807,18 @@ local function calculatePosition(currentMode, idx, count, hrp, data, timeCounter
         local currentDigit = math.floor(tick()) % 10
         local activeSegments = digitSegments[currentDigit]
         local validLines = {}
-        for sId, active in ipairs(activeSegments) do if active == 1 then table.insert(validLines, segmentLines[sId]) end end
+        for sId, active in ipairs(activeSegments) do 
+            if active == 1 then 
+                table.insert(validLines, segmentLines[sId]) 
+            end 
+        end
         local lineCount = #validLines
         if lineCount > 0 then
             local pPerLine = math.ceil(count / lineCount)
             local lineIdx = math.floor((idx - 1) / pPerLine) + 1
-            if lineIdx > lineCount then lineIdx = lineCount end
+            if lineIdx > lineCount then 
+                lineIdx = lineCount 
+            end
             local localIdx = (idx - 1) % pPerLine
             local ratio = pPerLine > 1 and (localIdx / (pPerLine - 1)) or 0.5
             local line = validLines[lineIdx]
@@ -612,12 +889,31 @@ local function calculatePosition(currentMode, idx, count, hrp, data, timeCounter
         local t = perSide > 1 and (localIdx / (perSide - 1) * 2 - 1) or 0
         local u = math.sin(localIdx * 1.5) 
         local x, y, z = 0, useHeight, 0
-        if sideIdx == 1 then x = size; y = y + t * size; z = u * size
-        elseif sideIdx == 2 then x = -size; y = y + t * size; z = u * size
-        elseif sideIdx == 3 then x = t * size; y = y + size; z = u * size
-        elseif sideIdx == 4 then x = t * size; y = y - size; z = u * size
-        elseif sideIdx == 5 then x = t * size; y = y + u * size; z = size
-        else x = t * size; y = y + u * size; z = -size end
+        if sideIdx == 1 then 
+            x = size
+            y = y + t * size
+            z = u * size
+        elseif sideIdx == 2 then 
+            x = -size
+            y = y + t * size
+            z = u * size
+        elseif sideIdx == 3 then 
+            x = t * size
+            y = y + size
+            z = u * size
+        elseif sideIdx == 4 then 
+            x = t * size
+            y = y - size
+            z = u * size
+        elseif sideIdx == 5 then 
+            x = t * size
+            y = y + u * size
+            z = size
+        else 
+            x = t * size
+            y = y + u * size
+            z = -size 
+        end
         targetPos = baseCenter + applyAxis(Vector3.new(x, y - useHeight, z))
         rotCFrame = CFrame.lookAt(targetPos, baseCenter + Vector3.new(0, y - useHeight, 0)) * directionAngle
 
@@ -686,7 +982,9 @@ local function calculatePosition(currentMode, idx, count, hrp, data, timeCounter
         local yOffset = useHeight - 2 + (progress * useHeight * 2.5)
         local radius = useWidth * 0.5 * (1 - (progress * 0.8)) 
         local angle = (idx * 1.2 * useDensity) + timeCounter
-        if progress < 0.15 then radius = 1 end 
+        if progress < 0.15 then 
+            radius = 1 
+        end 
         targetPos = baseCenter + applyAxis(Vector3.new(math.cos(angle) * radius, yOffset, math.sin(angle) * radius))
         rotCFrame = CFrame.lookAt(targetPos, baseCenter + Vector3.new(0, yOffset, 0)) * directionAngle
 
@@ -725,7 +1023,8 @@ local function calculatePosition(currentMode, idx, count, hrp, data, timeCounter
         local size = useWidth * 0.6
         local x = 16 * math.pow(math.sin(angle), 3)
         local y = 13 * math.cos(angle) - 5 * math.cos(2*angle) - 2 * math.cos(3*angle) - math.cos(4*angle)
-        x = (x / 16) * size; y = (y / 16) * size
+        x = (x / 16) * size
+        y = (y / 16) * size
         targetPos = (lookCFrame + (lookCFrame.LookVector * settings.depth)):PointToWorldSpace(applyAxis(Vector3.new(x, y + useHeight, 3)))
         rotCFrame = lookCFrame * directionAngle
 
@@ -783,16 +1082,19 @@ local function calculatePosition(currentMode, idx, count, hrp, data, timeCounter
         local z = math.sign(math.sin(angle)) * math.pow(math.abs(math.sin(angle)), 0.2) * s
         targetPos = baseCenter + Vector3.new(0, useHeight, 0) + (CFrame.Angles(math.rad(11.5), 0, math.rad(11.5)) * applyAxis(Vector3.new(x, 0, z)))
         rotCFrame = hrp.CFrame * CFrame.Angles(math.rad(11.5), angle, math.rad(11.5)) * directionAngle
+        
     elseif currentMode == "Orbit" then
         local angle = timeCounter + (idx * (math.pi * 2 / count) * useDensity)
         local radius = useWidth
         targetPos = baseCenter + applyAxis(Vector3.new(math.cos(angle) * radius, useHeight, math.sin(angle) * radius))
         rotCFrame = CFrame.lookAt(targetPos, baseCenter) * directionAngle
+        
     elseif currentMode == "Ghost" then
         local t = timeCounter + (data and data.seed or 0)
         local radius = useWidth
         targetPos = baseCenter + applyAxis(Vector3.new(math.sin(t * 0.7) * radius * useDensity, math.cos(t * 0.5) * (radius * 0.5) + useHeight, math.sin(t * 0.3) * radius * useDensity))
         rotCFrame = targetPos and CFrame.Angles(0.05, 0.05, 0.05) * directionAngle or CFrame.identity
+        
     elseif currentMode == "Manji" then
         local b = (idx - 1) % 4
         local a = (b * math.pi / 2) + (timeCounter * 1.5)
@@ -801,11 +1103,13 @@ local function calculatePosition(currentMode, idx, count, hrp, data, timeCounter
         local radius = (r * useWidth) * useDensity
         targetPos = baseCenter + applyAxis(Vector3.new(math.cos(a) * radius, useHeight, math.sin(a) * radius))
         rotCFrame = CFrame.lookAt(Vector3.zero, Vector3.new(math.cos(a), 0, math.sin(a))) * directionAngle
+        
     elseif currentMode == "Divine" then
         local a = (idx / count) * math.pi * 2 * useDensity + (timeCounter * 0.5)
         local radius = useWidth
         targetPos = baseCenter + applyAxis(Vector3.new(math.cos(a) * radius, useHeight + math.sin(timeCounter + idx) * 0.5, math.sin(a) * radius))
         rotCFrame = CFrame.lookAt(targetPos, baseCenter + Vector3.new(0, 10, 0)) * directionAngle
+        
     elseif currentMode == "Geometry" then
         local n = 12 
         local sA = timeCounter * 1.5 + (data and data.phase or 0)
@@ -818,15 +1122,24 @@ local function calculatePosition(currentMode, idx, count, hrp, data, timeCounter
     return targetPos, rotCFrame
 end
 
--- 各タイムカウンター (1~10 + 通常)
-local timeCounters = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+-- タイムカウンター（動的に初期化）
+local timeCounters = {}
+for i = 1, 10 do
+    timeCounters[i] = 0
+end
 local timeNormal = 0
 
-RunService.Heartbeat:Connect(function()
-    if mode == "None" then return end
+-- メインループ
+RunService.Heartbeat:Connect(function(deltaTime)
+    if mode == "None" then 
+        return 
+    end
     
     local targetPlayer = Players:FindFirstChild(targetPlayerName) or player
-    local hrp = targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+    local char = targetPlayer.Character
+    if not char then return end
+    
+    local hrp = char:FindFirstChild("HumanoidRootPart")
     if not hrp then return end
     
     timeNormal = timeNormal + settings.speed
@@ -834,10 +1147,16 @@ RunService.Heartbeat:Connect(function()
         timeCounters[i] = timeCounters[i] + settings["comboSpeed" .. i]
     end
 
-    -- 現在吸い込まれている（追従中）のオブジェクト数をカウント
+    -- 現在吸い込まれているオブジェクト数をカウント
     local currentCount = 0
     for o in pairs(hoveringObjects) do
-        if o and o.Parent then currentCount = currentCount + 1 end
+        if o and o.Parent then 
+            currentCount = currentCount + 1 
+        else
+            -- 親がないオブジェクトはクリーンアップ
+            hoveringObjects[o] = nil
+            objectData[o] = nil
+        end
     end
 
     -- 合体モード時の合計割り当て上限数を計算
@@ -852,46 +1171,59 @@ RunService.Heartbeat:Connect(function()
         comboLimit = settings.maxObjects
     end
 
-    scanCooldown = scanCooldown + RunService.Heartbeat:Wait()
+    scanCooldown = scanCooldown + (deltaTime or RunService.Heartbeat:Wait())
     if scanCooldown >= 0.1 then
         scanCooldown = 0
-        -- 【新ロジック】現在のパーツ数が設定本数上限を超えていない場合のみ、新しいパーツを吸い込む
         if not isSuikomiStopped and currentCount < comboLimit then
-            local foundParts = workspace:GetPartBoundsInRadius(hrp.Position, settings.wingRange)
-            for _, p in ipairs(foundParts) do
-                -- 吸い込む前に再チェック（ループ内での溢れ防止）
-                if currentCount >= comboLimit then break end
-                
-                if isSelectableObject(p, targetPlayer.Character) then
-                    local target = p.Parent:IsA("Model") and p.Parent or p
-                    if target:IsA("Model") and target:IsA("Workspace") then target = p end
-                    if not hoveringObjects[target] then 
-                        registerPart(p) 
-                        currentCount = currentCount + 1
+            safeCall(function()
+                local foundParts = workspace:GetPartBoundsInRadius(hrp.Position, settings.wingRange)
+                for _, p in ipairs(foundParts) do
+                    if currentCount >= comboLimit then break end
+                    
+                    if isSelectableObject(p, char) then
+                        local target = p.Parent:IsA("Model") and p.Parent or p
+                        if target:IsA("Model") and target:IsA("Workspace") then 
+                            target = p 
+                        end
+                        if not hoveringObjects[target] then 
+                            registerPart(p) 
+                            currentCount = currentCount + 1
+                        end
                     end
                 end
-            end
+            end)
         end
     end
 
+    -- アクティブなオブジェクトを収集
     local currentObjects = {}
     for o in pairs(hoveringObjects) do
         local root = o:IsA("Model") and o.PrimaryPart or o
         if o and o.Parent and root and root:FindFirstChild("SyncForce") then
             table.insert(currentObjects, o)
-            local parts = o:IsA("Model") and o:GetDescendants() or {o}
-            for _, p in ipairs(parts) do if p:IsA("BasePart") then p.CanCollide = false end end
+            safeCall(function()
+                local parts = o:IsA("Model") and o:GetDescendants() or {o}
+                for _, p in ipairs(parts) do 
+                    if p:IsA("BasePart") then 
+                        p.CanCollide = false 
+                    end 
+                end
+            end)
         else
-            hoveringObjects[o] = nil
-            objectData[o] = nil
+            -- 無効なオブジェクトをクリーンアップ
+            unregisterObject(o)
         end
     end
 
-    -- 念のための安全ブレーキ（万が一上限を超えていた場合は登録を即時解除）
+    -- 上限超過時の安全対策
     if #currentObjects > comboLimit then
-        for i = comboLimit + 1, #currentObjects do unregisterObject(currentObjects[i]) end
+        for i = comboLimit + 1, #currentObjects do 
+            unregisterObject(currentObjects[i]) 
+        end
         local newTable = {}
-        for i = 1, comboLimit do table.insert(newTable, currentObjects[i]) end
+        for i = 1, comboLimit do 
+            table.insert(newTable, currentObjects[i]) 
+        end
         currentObjects = newTable
     end
 
@@ -902,7 +1234,7 @@ RunService.Heartbeat:Connect(function()
     local flapWave = math.sin(tick() * settings.flapSpeed) * settings.flapStrength
     local invertMult = settings.invertDirection and -1.0 or 1.0
 
-    -- 各コンボのアクティブ状態取得
+    -- コンボモードの情報を収集
     local comboModes = {}
     local comboCounts = {}
     for i = 1, 10 do
@@ -910,41 +1242,91 @@ RunService.Heartbeat:Connect(function()
         comboCounts[i] = settings["comboActive" .. i] and settings["comboCount" .. i] or 0
     end
 
+    -- 各オブジェクトを更新
     for i, obj in ipairs(currentObjects) do
         local root = obj:IsA("Model") and obj.PrimaryPart or obj
         if root and root:FindFirstChild("SyncForce") then
             local data = objectData[obj]
-            local currentPos = root.Position
-            local targetPos, rotCFrame
+            if data then
+                local currentPos = root.Position
+                local targetPos, rotCFrame
 
-            if mode == "Combined" then
-                local placed = false
-                local runningSum = 0
-                
-                for cId = 1, 10 do
-                    local prevSum = runningSum
-                    runningSum = runningSum + comboCounts[cId]
-                    if i <= runningSum and comboModes[cId] ~= "None" then
-                        local idx = i - prevSum
-                        targetPos, rotCFrame = calculatePosition(comboModes[cId], idx, comboCounts[cId], hrp, data, timeCounters[cId], lookCFrame, flapWave, invertMult, currentPos, settings["comboWidth" .. cId], settings["comboHeight" .. cId], settings["comboDensity" .. cId], settings["comboXAxis" .. cId], settings["comboYAxis" .. cId])
-                        placed = true
-                        break
+                if mode == "Combined" then
+                    local placed = false
+                    local runningSum = 0
+                    
+                    for cId = 1, 10 do
+                        local prevSum = runningSum
+                        runningSum = runningSum + comboCounts[cId]
+                        if i <= runningSum and comboModes[cId] ~= "None" then
+                            local idx = i - prevSum
+                            targetPos, rotCFrame = calculatePosition(
+                                comboModes[cId], 
+                                idx, 
+                                comboCounts[cId], 
+                                hrp, 
+                                data, 
+                                timeCounters[cId], 
+                                lookCFrame, 
+                                flapWave, 
+                                invertMult, 
+                                currentPos, 
+                                settings["comboWidth" .. cId], 
+                                settings["comboHeight" .. cId], 
+                                settings["comboDensity" .. cId], 
+                                settings["comboXAxis" .. cId], 
+                                settings["comboYAxis" .. cId]
+                            )
+                            placed = true
+                            break
+                        end
                     end
+                    
+                    if not placed then
+                        unregisterObject(obj)
+                        targetPos, rotCFrame = nil, nil
+                    end
+                else
+                    targetPos, rotCFrame = calculatePosition(
+                        mode, 
+                        i, 
+                        total, 
+                        hrp, 
+                        data, 
+                        timeNormal, 
+                        lookCFrame, 
+                        flapWave, 
+                        invertMult, 
+                        currentPos, 
+                        settings.width, 
+                        settings.height, 
+                        settings.density, 
+                        settings.xAxis, 
+                        settings.yAxis
+                    )
                 end
                 
-                if not placed then
-                    unregisterObject(obj)
-                    targetPos, rotCFrame = nil, nil
+                if targetPos then 
+                    root.SyncForce.Velocity = (targetPos - currentPos) * 25 
                 end
-            else
-                targetPos, rotCFrame = calculatePosition(mode, i, total, hrp, data, timeNormal, lookCFrame, flapWave, invertMult, currentPos, settings.width, settings.height, settings.density, settings.xAxis, settings.yAxis)
+                if rotCFrame then 
+                    root.SyncGyro.CFrame = rotCFrame 
+                end
+                
+                -- ネットワークオーナーシップ更新（頻度を下げて最適化）
+                if math.random() > 0.95 then 
+                    safeCall(function() 
+                        root:SetNetworkOwner(player) 
+                    end) 
+                end
             end
-            
-            if targetPos then root.SyncForce.Velocity = (targetPos - currentPos) * 25 end
-            if rotCFrame then root.SyncGyro.CFrame = rotCFrame end
-            if math.random() > 0.85 then pcall(function() root:SetNetworkOwner(player) end) end
         end
     end
+end)
+
+-- クリーンアップ処理（スクリプト停止時）
+game:BindToClose(function()
+    clearObjects()
 end)
 
 OrionLib:Init()
