@@ -1,0 +1,177 @@
+local Players = game:GetService("Players")
+local RS = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+
+local Player = Players.LocalPlayer
+local Mouse = Player:GetMouse()
+
+-- ウィンドウ作成
+local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/deividcomsono/Obsidian/main/Library.lua"))()
+local Window = Library:CreateWindow({
+    Title = "Ragdoll",
+    Footer = "Snowball Spammer",
+    NotifySide = "Right",
+})
+
+local Tabs = {
+    Main = Window:AddTab("Main", "skull", "Snowball spammer")
+}
+
+local MainGroup = Tabs.Main:AddLeftGroupbox("Snowball Settings")
+
+local selectedTarget = nil
+
+-- プレイヤーリスト取得
+local function getPlayerList()
+    local list = {}
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= Player then
+            table.insert(list, plr.DisplayName .. " (" .. plr.Name .. ")")
+        end
+    end
+    return list
+end
+
+-- 選択からプレイヤーを取得
+local function getPlayerFromSelection(selection)
+    if not selection then return nil end
+    local username = selection:match("%((.-)%)")
+    if username then
+        return Players:FindFirstChild(username)
+    end
+    return nil
+end
+
+-- ターゲット選択
+MainGroup:AddDropdown("TargetSelect", {
+    Text = "Select Target",
+    Values = getPlayerList(),
+    Default = 1,
+    Callback = function(Value)
+        selectedTarget = getPlayerFromSelection(Value)
+    end
+})
+
+-- リフレッシュボタン
+MainGroup:AddButton({
+    Text = "Refresh Player List",
+    Func = function()
+        Library.Options.TargetSelect:SetValues(getPlayerList())
+        Library.Options.TargetSelect:SetValue(nil)
+        selectedTarget = nil
+    end
+})
+
+-- メイン機能
+MainGroup:AddCheckbox("SnowballSpam", {
+    Text = "Ragdoll Snowball",
+    Default = false,
+    Callback = function(Value)
+        _G.RagdollSnowballActive = Value
+
+        if not Value then return end
+
+        task.spawn(function()
+            local SpawnRemote = RS:WaitForChild("MenuToys"):WaitForChild("SpawnToyRemoteFunction")
+            local ToyFolderName = Player.Name .. "SpawnedInToys"
+
+            while _G.RagdollSnowballActive do
+                local target = selectedTarget
+
+                if target and target.Character then
+                    local tChar = target.Character
+                    local torso = tChar:FindFirstChild("HumanoidRootPart") 
+                        or tChar:FindFirstChild("UpperTorso") 
+                        or tChar:FindFirstChild("Torso")
+
+                    if torso then
+                        -- スノーボールをスポーン
+                        pcall(function()
+                            local offset = Vector3.new(
+                                math.random(-50, 50) / 100,
+                                math.random(-50, 50) / 100,
+                                math.random(-50, 50) / 100
+                            )
+                            task.spawn(function()
+                                SpawnRemote:InvokeServer(
+                                    "BallSnowball",
+                                    torso.CFrame * CFrame.new(offset),
+                                    Vector3.zero
+                                )
+                            end)
+                        end)
+
+                        -- 既存のスノーボールをターゲットにテレポート
+                        local folder = Workspace:FindFirstChild(ToyFolderName)
+                        if folder then
+                            for _, snowball in ipairs(folder:GetChildren()) do
+                                if snowball.Name == "BallSnowball" then
+                                    local part = snowball:IsA("BasePart") and snowball 
+                                        or snowball.PrimaryPart 
+                                        or snowball:FindFirstChildWhichIsA("BasePart")
+                                    if part then
+                                        part.CFrame = torso.CFrame
+                                        part.AssemblyLinearVelocity = Vector3.zero
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+
+                RunService.Heartbeat:Wait()
+            end
+        end)
+    end
+})
+
+-- キーバインド
+local KeybindsTab = Window:AddTab("Keybinds", "keyboard", "Keybinds")
+local KeybindsGroup = KeybindsTab:AddLeftGroupbox("Keybinds")
+
+KeybindsGroup:AddLabel("Snowball Toggle"):AddKeyPicker("SnowballKeybind", {
+    Default = "T",
+    Text = "Toggle Snowball Spam",
+    NoUI = false,
+    Callback = function()
+        local current = Library.Options.SnowballSpam.Value
+        Library.Options.SnowballSpam:SetValue(not current)
+    end
+})
+
+-- UI設定
+local UISettings = Window:AddTab("UI Settings", "settings")
+local MenuGroup = UISettings:AddLeftGroupbox("Menu")
+
+MenuGroup:AddButton("Unload", function()
+    Library:Unload()
+end)
+
+MenuGroup:AddLabel("Menu Keybind"):AddKeyPicker("MenuKeybind", {
+    Default = "RightShift",
+    NoUI = true,
+    Text = "Menu keybind"
+})
+
+Library.ToggleKeybind = Library.Options.MenuKeybind
+
+-- テーマ＆保存
+local ThemeManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/deividcomsono/Obsidian/main/addons/ThemeManager.lua"))()
+local SaveManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/deividcomsono/Obsidian/main/addons/SaveManager.lua"))()
+
+ThemeManager:SetLibrary(Library)
+SaveManager:SetLibrary(Library)
+SaveManager:IgnoreThemeSettings()
+SaveManager:SetIgnoreIndexes({ "MenuKeybind" })
+ThemeManager:SetFolder("Ragdoll")
+SaveManager:SetFolder("Ragdoll/Configs")
+SaveManager:BuildConfigSection(UISettings)
+ThemeManager:ApplyToTab(UISettings)
+
+Library:Notify({
+    Title = "Ragdoll",
+    Description = "Loaded successfully!",
+    Time = 3
+})
