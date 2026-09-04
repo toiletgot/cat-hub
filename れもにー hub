@@ -1,0 +1,474 @@
+-- ==============================================================================
+-- れもにーHUB (LemonHUB) - 完全版（おんぶタブ含む・フェラ風対応）
+-- 再起動防止ブロッカー付き / 使用期間 30分
+-- ==============================================================================
+
+-- =====================================================
+-- ★★★ 再起動防止ブロッカー ★★★
+-- =====================================================
+local CoreGui = game:GetService("CoreGui")
+if CoreGui:FindFirstChild("LemonHub_Blocker") then
+    pcall(function()
+        game:GetService("StarterGui"):SetCore("SendNotification", {
+            Title = "🚫 ブロック済み",
+            Text = "れもにーHUBは既に起動しています。",
+            Duration = 3,
+        })
+    end)
+    return
+end
+
+local blocker = Instance.new("BoolValue")
+blocker.Name = "LemonHub_Blocker"
+blocker.Parent = CoreGui
+
+-- =====================================================
+-- ライブラリ読み込み
+-- =====================================================
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+
+local repo = "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/"
+local Library = loadstring(game:HttpGet(repo .. "Library.lua"))()
+local ThemeManager = loadstring(game:HttpGet(repo .. "addons/ThemeManager.lua"))()
+local SaveManager = loadstring(game:HttpGet(repo .. "addons/SaveManager.lua"))()
+
+local Window = Library:CreateWindow({
+    Title = "🍋 れもにーHUB",
+    Footer = "Made by GR",
+    NotifySide = "Right",
+    ShowCustomCursor = true,
+})
+
+local Tabs = {
+    Defense = Window:AddTab("defense", "shield"),
+    Target = Window:AddTab("target", "crosshair"),
+    Grab = Window:AddTab("grab", "hand"),
+    Player = Window:AddTab("player", "user"),
+    Misc = Window:AddTab("misc", "box"),
+    Build = Window:AddTab("build", "box"),
+    LagKick = Window:AddTab("lagkick", "clock"),
+    Backpack = Window:AddTab("おんぶ", "target"),
+    PlotBreak = Window:AddTab("プロットブレイク", "box"),
+    ["UI Settings"] = Window:AddTab("UI Settings", "settings")
+}
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local StarterGui = game:GetService("StarterGui")
+local PS = game:GetService("Players")
+local RS = game:GetService("ReplicatedStorage")
+local R = game:GetService("RunService")
+local Workspace = workspace
+local Player = PS.LocalPlayer
+local Camera = Workspace.CurrentCamera
+
+local function notify(title, content, duration)
+    Library:Notify({ Title = title or "Notification", Description = content or "", Time = duration or 5 })
+end
+
+-- =====================================================
+-- おんぶ (Backpack) タブ - フェラ風対応
+-- =====================================================
+local BackpackTab = Tabs.Backpack
+local BackpackLeftGroup = BackpackTab:AddLeftGroupbox("Target Selection")
+local BackpackRightGroup = BackpackTab:AddRightGroupbox("おんぶ (Backpack)")
+
+local backpackActive = false
+local backpackTask = nil
+local backpackTargetName = ""
+local POSE_MODE = "front" -- "front", "back", "carry"
+
+-- ★★★ 各ポーズのパラメータ（フェラ風・適度な距離）★★★
+local POSES = {
+    -- おんぶ（背後）
+    back = {
+        offset = Vector3.new(0, 1, 1.5),
+        rotateY = 0,
+        head = { pos = Vector3.new(0, 1.5, 0), ang = Vector3.new(0, 0, 0) },
+        larm = { pos = Vector3.new(-1.5, 0.5, -0.5), ang = Vector3.new(90, 0, 0) },
+        rarm = { pos = Vector3.new(1.5, 0.5, -0.5), ang = Vector3.new(90, 0, 0) },
+        lleg = { pos = Vector3.new(-1, -1.7, -0.7), ang = Vector3.new(80, 45, -35) },
+        rleg = { pos = Vector3.new(1, -1.7, -0.7), ang = Vector3.new(80, -45, 35) },
+    },
+    -- ★★★ フェラ風（適度な距離）★★★
+    front = {
+        offset = Vector3.new(0, -2.2, -1.5),
+        rotateY = 180,
+        head = { pos = Vector3.new(0, -2.2, 0.5), ang = Vector3.new(-70, 0, 0) },
+        larm = { pos = Vector3.new(-1.2, -2.0, 0.8), ang = Vector3.new(-90, 55, -65) },
+        rarm = { pos = Vector3.new(1.2, -2.0, 0.8), ang = Vector3.new(-90, -55, 65) },
+        lleg = { pos = Vector3.new(-0.7, -3.2, -0.3), ang = Vector3.new(5, 70, -50) },
+        rleg = { pos = Vector3.new(0.7, -3.2, -0.3), ang = Vector3.new(5, -70, 50) },
+    },
+    -- お姫様だっこ
+    carry = {
+        offset = Vector3.new(0, 0.5, -1.2),
+        rotateY = 180,
+        head = { pos = Vector3.new(0, 0.8, 0.5), ang = Vector3.new(15, 0, 0) },
+        larm = { pos = Vector3.new(-1.8, 0.2, -0.5), ang = Vector3.new(-90, 30, 0) },
+        rarm = { pos = Vector3.new(1.8, 0.2, -0.5), ang = Vector3.new(-90, -30, 0) },
+        lleg = { pos = Vector3.new(-1.5, -1.5, -0.5), ang = Vector3.new(-20, 60, -20) },
+        rleg = { pos = Vector3.new(1.5, -1.5, -0.5), ang = Vector3.new(-20, -60, 20) },
+    },
+}
+
+local function GetPoseConfig()
+    return POSES[POSE_MODE] or POSES.front
+end
+
+local function GetBackpackPlayerList()
+    local opts = {}
+    for _, p in pairs(PS:GetPlayers()) do
+        if p ~= Player then
+            table.insert(opts, p.DisplayName .. " (" .. p.Name .. ")")
+        end
+    end
+    return opts
+end
+
+local function GetBackpackUserName(displayString)
+    if not displayString or displayString == "" then return nil end
+    local startPos = string.find(displayString, "%(")
+    if startPos then
+        return string.sub(displayString, startPos + 1, -2)
+    end
+    return nil
+end
+
+local function BackpackClaimNetwork(part)
+    pcall(function()
+        local GE = RS:FindFirstChild("GrabEvents")
+        if GE and GE:FindFirstChild("SetNetworkOwner") then
+            GE.SetNetworkOwner:FireServer(part, part.CFrame)
+        end
+    end)
+end
+
+local backpackNoclipConnection = nil
+
+local function BackpackEnableNoclip(targetChar)
+    if backpackNoclipConnection then
+        backpackNoclipConnection:Disconnect()
+    end
+    if not targetChar then return end
+    for _, part in pairs(targetChar:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.CanCollide = false
+        end
+    end
+    backpackNoclipConnection = targetChar.DescendantAdded:Connect(function(part)
+        if part:IsA("BasePart") then
+            part.CanCollide = false
+        end
+    end)
+end
+
+local function BackpackDisableNoclip(targetChar)
+    if backpackNoclipConnection then
+        backpackNoclipConnection:Disconnect()
+        backpackNoclipConnection = nil
+    end
+    if not targetChar then return end
+    for _, part in pairs(targetChar:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.CanCollide = true
+        end
+    end
+end
+
+local function ApplyPose(targetChar, baseCF, pose, rotateY)
+    if not targetChar or not baseCF then return end
+    
+    local rotCF = CFrame.Angles(0, math.rad(rotateY or 0), 0)
+    
+    local head = targetChar:FindFirstChild("Head")
+    if head then
+        head.CFrame = baseCF * rotCF * CFrame.new(pose.head.pos) * CFrame.Angles(
+            math.rad(pose.head.ang.X),
+            math.rad(pose.head.ang.Y),
+            math.rad(pose.head.ang.Z)
+        )
+        head.Velocity = Vector3.zero
+        head.RotVelocity = Vector3.zero
+    end
+    
+    local leftArm = targetChar:FindFirstChild("Left Arm") or targetChar:FindFirstChild("LeftArm")
+    if leftArm then
+        leftArm.CFrame = baseCF * rotCF * CFrame.new(pose.larm.pos) * CFrame.Angles(
+            math.rad(pose.larm.ang.X),
+            math.rad(pose.larm.ang.Y),
+            math.rad(pose.larm.ang.Z)
+        )
+        leftArm.Velocity = Vector3.zero
+        leftArm.RotVelocity = Vector3.zero
+    end
+    
+    local rightArm = targetChar:FindFirstChild("Right Arm") or targetChar:FindFirstChild("RightArm")
+    if rightArm then
+        rightArm.CFrame = baseCF * rotCF * CFrame.new(pose.rarm.pos) * CFrame.Angles(
+            math.rad(pose.rarm.ang.X),
+            math.rad(pose.rarm.ang.Y),
+            math.rad(pose.rarm.ang.Z)
+        )
+        rightArm.Velocity = Vector3.zero
+        rightArm.RotVelocity = Vector3.zero
+    end
+    
+    local leftLeg = targetChar:FindFirstChild("Left Leg") or targetChar:FindFirstChild("LeftLeg")
+    if leftLeg then
+        leftLeg.CFrame = baseCF * rotCF * CFrame.new(pose.lleg.pos) * CFrame.Angles(
+            math.rad(pose.lleg.ang.X),
+            math.rad(pose.lleg.ang.Y),
+            math.rad(pose.lleg.ang.Z)
+        )
+        leftLeg.Velocity = Vector3.zero
+        leftLeg.RotVelocity = Vector3.zero
+    end
+    
+    local rightLeg = targetChar:FindFirstChild("Right Leg") or targetChar:FindFirstChild("RightLeg")
+    if rightLeg then
+        rightLeg.CFrame = baseCF * rotCF * CFrame.new(pose.rleg.pos) * CFrame.Angles(
+            math.rad(pose.rleg.ang.X),
+            math.rad(pose.rleg.ang.Y),
+            math.rad(pose.rleg.ang.Z)
+        )
+        rightLeg.Velocity = Vector3.zero
+        rightLeg.RotVelocity = Vector3.zero
+    end
+    
+    local torso = targetChar:FindFirstChild("Torso") or targetChar:FindFirstChild("UpperTorso")
+    if torso then
+        torso.CFrame = baseCF * rotCF
+        torso.Velocity = Vector3.zero
+        torso.RotVelocity = Vector3.zero
+    end
+end
+
+local function BackpackMainLoop()
+    while backpackActive do
+        local target = PS:FindFirstChild(backpackTargetName)
+        if not target then
+            task.wait(0.5)
+            continue
+        end
+        local targetChar = target.Character
+        if not targetChar then
+            task.wait(0.1)
+            continue
+        end
+        local tHRP = targetChar:FindFirstChild("HumanoidRootPart")
+        local tHum = targetChar:FindFirstChild("Humanoid")
+        if not tHRP or not tHum or tHum.Health <= 0 then
+            task.wait(0.1)
+            continue
+        end
+        BackpackEnableNoclip(targetChar)
+        local myChar = Player.Character
+        local myHRP = myChar and myChar:FindFirstChild("HumanoidRootPart")
+        if not myHRP then
+            task.wait(0.1)
+            continue
+        end
+        
+        local pose = GetPoseConfig()
+        
+        while backpackActive do
+            local target = PS:FindFirstChild(backpackTargetName)
+            if not target then break end
+            local tChar = target.Character
+            if not tChar then break end
+            local tHRP = tChar:FindFirstChild("HumanoidRootPart")
+            local tHum = tChar:FindFirstChild("Humanoid")
+            if not tHRP or not tHum then break end
+            if tHum.Health <= 0 then break end
+            BackpackEnableNoclip(tChar)
+            local myChar = Player.Character
+            local myHRP = myChar and myChar:FindFirstChild("HumanoidRootPart")
+            if not myHRP then break end
+            
+            local baseCF = myHRP.CFrame * CFrame.new(pose.offset)
+            tHRP.CFrame = baseCF * CFrame.Angles(0, math.rad(pose.rotateY or 0), 0)
+            tHRP.Velocity = Vector3.zero
+            tHRP.RotVelocity = Vector3.zero
+            
+            ApplyPose(tChar, baseCF, pose, pose.rotateY or 0)
+            BackpackClaimNetwork(tHRP)
+            RunService.Heartbeat:Wait()
+        end
+        BackpackDisableNoclip(targetChar)
+        task.wait(0.1)
+    end
+end
+
+-- プレイヤー選択ドロップダウン
+local backpackDropdown = BackpackLeftGroup:AddDropdown("BackpackTargetSelect", {
+    Text = "Select Player",
+    Default = "",
+    Values = GetBackpackPlayerList(),
+    Callback = function(selected)
+        local userName = GetBackpackUserName(selected)
+        if userName then
+            backpackTargetName = userName
+        end
+    end
+})
+
+-- ポーズ選択ドロップダウン
+local poseDropdown = BackpackLeftGroup:AddDropdown("PoseSelect", {
+    Text = "ポーズ選択",
+    Default = "🔞 フェラ風",
+    Values = {"🔞 フェラ風", "🔄 おんぶ", "👑 お姫様だっこ"},
+    Callback = function(selected)
+        if selected == "🔞 フェラ風" then
+            POSE_MODE = "front"
+        elseif selected == "🔄 おんぶ" then
+            POSE_MODE = "back"
+        elseif selected == "👑 お姫様だっこ" then
+            POSE_MODE = "carry"
+        end
+    end
+})
+
+local function UpdateBackpackList()
+    backpackDropdown:SetValues(GetBackpackPlayerList())
+end
+
+PS.PlayerAdded:Connect(function() task.wait(0.5) UpdateBackpackList() end)
+PS.PlayerRemoving:Connect(function() task.wait(0.2) UpdateBackpackList() end)
+task.spawn(function() task.wait(1) UpdateBackpackList() end)
+
+-- おんぶトグル
+BackpackRightGroup:AddToggle("BackpackToggle", {
+    Text = "🍋 おんぶ (Backpack)",
+    Default = false,
+    Callback = function(Value)
+        backpackActive = Value
+        if Value then
+            if backpackTargetName and backpackTargetName ~= "" then
+                backpackTask = task.spawn(BackpackMainLoop)
+                Library:Notify({ Title = "🍋 おんぶ", Description = "起動: " .. backpackTargetName, Time = 3 })
+            else
+                backpackActive = false
+                Library:Notify({ Title = "Error", Description = "先にターゲットを選択してください！", Time = 3 })
+            end
+        else
+            if backpackTask then
+                task.cancel(backpackTask)
+                backpackTask = nil
+            end
+            local target = PS:FindFirstChild(backpackTargetName)
+            if target and target.Character then
+                BackpackDisableNoclip(target.Character)
+            end
+            Library:Notify({ Title = "🍋 おんぶ", Description = "停止しました", Time = 2 })
+        end
+    end
+})
+
+-- 現在の状態表示
+BackpackRightGroup:AddLabel("現在のポーズ: 🔞 フェラ風")
+BackpackRightGroup:AddLabel("ターゲット: " .. (backpackTargetName or "なし"))
+
+-- =====================================================
+-- Defense Tab (抜粋)
+-- =====================================================
+local DefenseGroup = Tabs.Defense:AddLeftGroupbox("Defense Main")
+
+local autoStruggleConn = nil
+DefenseGroup:AddToggle("AntiGrabObsidian", {
+    Text = "Anti Grab",
+    Default = false,
+    Callback = function(Value)
+        local Struggle = ReplicatedStorage:FindFirstChild("CharacterEvents") and ReplicatedStorage.CharacterEvents:FindFirstChild("Struggle")
+        if Value then
+            if autoStruggleConn then autoStruggleConn:Disconnect() end
+            autoStruggleConn = RunService.Heartbeat:Connect(function()
+                local character = LocalPlayer.Character
+                if character and character:FindFirstChild("Head") then
+                    local head = character.Head
+                    if head:FindFirstChild("PartOwner") then
+                        task.spawn(function()
+                            if Struggle then Struggle:FireServer(LocalPlayer) end
+                            for _, part in pairs(character:GetChildren()) do
+                                if part:IsA("BasePart") then part.Anchored = true end
+                            end
+                            local isHeld = LocalPlayer:FindFirstChild("IsHeld")
+                            while isHeld and isHeld.Value do task.wait() end
+                            for _, part in pairs(character:GetChildren()) do
+                                if part:IsA("BasePart") then part.Anchored = false end
+                            end
+                        end)
+                    end
+                end
+            end)
+        else
+            if autoStruggleConn then autoStruggleConn:Disconnect() autoStruggleConn = nil end
+        end
+    end
+})
+
+-- =====================================================
+-- Target Tab (抜粋)
+-- =====================================================
+local TargetGroup = Tabs.Target:AddLeftGroupbox("Target Interaction")
+local selectedKickPlayer = nil
+
+local function getPlayerList()
+    local list = {}
+    for _, plr in ipairs(PS:GetPlayers()) do
+        if plr ~= Player then table.insert(list, plr.DisplayName .. " (" .. plr.Name .. ")") end
+    end
+    return list
+end
+
+local function getPlayerFromSelection(selection)
+    if not selection then return nil end
+    local username = selection:match("%((.-)%)")
+    if username then return PS:FindFirstChild(username) end
+    return nil
+end
+
+TargetGroup:AddDropdown("KickPlayerDropdown", {
+    Values = getPlayerList(),
+    Default = 1,
+    Multi = false,
+    Text = "select player for kick",
+    Callback = function(Value) selectedKickPlayer = getPlayerFromSelection(Value) end,
+})
+
+-- =====================================================
+-- UI Settings
+-- =====================================================
+local MenuGroup = Tabs["UI Settings"]:AddLeftGroupbox("Menu")
+MenuGroup:AddButton("Unload", function()
+    backpackActive = false
+    if backpackTask then task.cancel(backpackTask) end
+    Library:Unload()
+end)
+MenuGroup:AddLabel("Menu Keybind"):AddKeyPicker("MenuKeybind", {Default="RightShift", NoUI=true, Text="Menu keybind"})
+Library.ToggleKeybind = Options.MenuKeybind
+ThemeManager:SetLibrary(Library)
+SaveManager:SetLibrary(Library)
+SaveManager:IgnoreThemeSettings()
+SaveManager:SetIgnoreIndexes({"MenuKeybind"})
+ThemeManager:SetFolder("LemoneeHub")
+SaveManager:SetFolder("LemoneeHub/Configs")
+SaveManager:BuildConfigSection(Tabs["UI Settings"])
+ThemeManager:ApplyToTab(Tabs["UI Settings"])
+
+-- =====================================================
+-- 使用期間制限: 30分
+-- =====================================================
+task.delay(1800, function()
+    backpackActive = false
+    if backpackTask then task.cancel(backpackTask) end
+    Library:Unload()
+    notify("⏰ 使用時間終了", "30分が経過したため停止しました。", 5)
+end)
+
+print("🍋 れもにーHUB 完全ロード完了（おんぶタブ・フェラ風対応）")
