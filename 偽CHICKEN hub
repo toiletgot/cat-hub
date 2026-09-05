@@ -1,0 +1,489 @@
+-- ================= ライブラリ読み込み =================
+local repo = "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/"
+local Library = loadstring(game:HttpGet(repo .. "Library.lua"))()
+local ThemeManager = loadstring(game:HttpGet(repo .. "addons/ThemeManager.lua"))()
+local SaveManager = loadstring(game:HttpGet(repo .. "addons/SaveManager.lua"))()
+
+local Options = Library.Options
+local Toggles = Library.Toggles
+
+Library.ForceCheckbox = false
+Library.ShowToggleFrameInKeybinds = true
+
+-- ================= ウィンドウ作成 =================
+local Window = Library:CreateWindow({
+    Title = "CHICKEN hub",
+    Footer = "by grok_chickenhubowner",
+    Icon = 95816097006870,
+    NotifySide = "Right",
+    ShowCustomCursor = true,
+})
+
+-- ================= タブ作成 =================
+local Tabs = {
+    Player = Window:AddTab("Player", "user"),
+    Anti = Window:AddTab("Anti", "shield"),
+    Credit = Window:AddTab("Credit", "file-text"),
+    Aura = Window:AddTab("Aura", "target"),
+    DriftKick = Window:AddTab("drift kick", "target"),
+    SpamKick = Window:AddTab("Spam Kick(alpha)", "sword"),
+    KickPlayer = Window:AddTab("Kick Player", "users"),
+    KickAll = Window:AddTab("Kick All", "users"),
+    BarrierBreak = Window:AddTab("Barrier Break", "hammer"),
+    Blobkill = Window:AddTab("Blobkill", "sword"),
+    ["UI Settings"] = Window:AddTab("UI設定", "settings"),
+}
+
+-- ================= サービス取得 =================
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+local LocalPlayer = Players.LocalPlayer
+
+-- ================= プレイヤータブ =================
+local PlayerGroup = Tabs.Player:AddLeftGroupbox("移動速度")
+local PlayerGroup2 = Tabs.Player:AddRightGroupbox("無限ジャンプ")
+local PlayerGroup3 = Tabs.Player:AddLeftGroupbox("壁抜け")
+local PlayerGroup4 = Tabs.Player:AddRightGroupbox("視点")
+
+-- 移動速度 - 機能なし
+PlayerGroup:AddToggle("SuperSpeed", {
+    Text = "移動速度",
+    Default = false,
+    Callback = function(v) end
+})
+
+PlayerGroup:AddSlider("SpeedMultiplier", {
+    Text = "速度倍率",
+    Default = 0.15,
+    Min = 0.1,
+    Max = 5,
+    Rounding = 2,
+    Callback = function(v) end
+})
+
+-- 無限ジャンプ - 機能なし
+PlayerGroup2:AddToggle("InfiniteJump", {
+    Text = "無限ジャンプ",
+    Default = false,
+    Callback = function(v) end
+})
+
+PlayerGroup2:AddSlider("JumpPower", {
+    Text = "ジャンプ力",
+    Default = 24,
+    Min = 24,
+    Max = 1000,
+    Rounding = 0,
+    Callback = function(v) end
+})
+
+-- 壁抜け - 機能なし
+PlayerGroup3:AddToggle("Noclip", {
+    Text = "壁抜け",
+    Default = false,
+    Callback = function(v) end
+})
+
+-- 視点 - 機能なし
+PlayerGroup4:AddToggle("ThirdPerson", {
+    Text = "Third Person",
+    Default = false,
+    Callback = function(state) end
+})
+
+-- ================= Anti タブ =================
+local InvGroup = Tabs.Anti:AddLeftGroupbox("Anti")
+
+-- Anti Ragdoll/Snowball - 機能なし
+InvGroup:AddButton({
+    Text = "Anti Ragdoll/Snowball",
+    Func = function() end
+})
+
+-- Destroy Void - 機能なし
+InvGroup:AddButton({
+    Text = "Destroy Void",
+    Func = function() end
+})
+
+-- Gucci Anti - 機能なし
+InvGroup:AddToggle("GucciAnti", {
+    Text = "Gucci Anti",
+    Default = false,
+    Callback = function(v) end
+})
+
+-- Destroy Gucci (All) - 機能なし
+InvGroup:AddButton({
+    Text = "Destroy Gucci (All)",
+    Func = function() end
+})
+
+-- Anti Blob Kill - 機能なし
+InvGroup:AddToggle("AntiBlobKill", {
+    Text = "Anti Blob Kill",
+    Default = false,
+    Callback = function(v) end
+})
+
+-- Anti Explode - 機能なし
+InvGroup:AddToggle("AntiExplode", {
+    Text = "Anti Explode",
+    Default = false,
+    Callback = function(v) end
+})
+
+-- Anti Fire - 機能なし
+InvGroup:AddToggle("AntiFire", {
+    Text = "Anti Fire",
+    Default = false,
+    Callback = function(v) end
+})
+
+-- Anti Lag - 機能なし
+InvGroup:AddToggle("AntiLag", {
+    Text = "Anti Lag",
+    Default = false,
+    Callback = function(v) end
+})
+
+-- Anti Blobman - 機能なし
+InvGroup:AddToggle("AntiBlobman", {
+    Text = "Anti Blobman",
+    Default = false,
+    Callback = function(v) end
+})
+
+-- ================= Credit タブ =================
+local LogGroup = Tabs.Credit:AddLeftGroupbox("Information")
+LogGroup:AddLabel("TikTok = grok_chickenhubowner")
+LogGroup:AddButton({
+    Text = "📋 Copy Username (grok_chickenhubowner)",
+    Func = function()
+        setclipboard("grok_chickenhubowner")
+    end
+})
+
+-- ================= Aura タブ =================
+local AuraGroup = Tabs.Aura:AddLeftGroupbox("Aura")
+AuraGroup:AddToggle("AuraToggle", {
+    Text = "Blobman Kill Aura (範囲1スタッド)",
+    Default = false,
+    Callback = function(v) end
+})
+
+-- ================= Blobkill タブ =================
+local BlobkillGroup = Tabs.Blobkill:AddLeftGroupbox("Blobkill")
+
+local blobkillPlayerMap = {}
+
+local function getBlobkillPlayerNames()
+    local names = {}
+    blobkillPlayerMap = {}
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            local displayStr = player.DisplayName .. " (@" .. player.Name .. ")"
+            table.insert(names, displayStr)
+            blobkillPlayerMap[displayStr] = player.Name
+        end
+    end
+    return names
+end
+
+local BlobkillTargetDropdown = BlobkillGroup:AddDropdown("BlobkillTarget", {
+    Values = getBlobkillPlayerNames(),
+    Default = 1,
+    Text = "ターゲットを選択",
+    Callback = function(selected) end
+})
+
+BlobkillGroup:AddButton({
+    Text = "プレイヤーリストを更新",
+    Func = function()
+        BlobkillTargetDropdown:SetValues(getBlobkillPlayerNames())
+    end
+})
+
+-- Blobkill Loop - 機能なし
+BlobkillGroup:AddToggle("BlobkillLoop", {
+    Text = "Blobkill Loop",
+    Default = false,
+    Callback = function(v) end
+})
+
+Players.PlayerAdded:Connect(function()
+    task.wait(0.5)
+    BlobkillTargetDropdown:SetValues(getBlobkillPlayerNames())
+end)
+
+Players.PlayerRemoving:Connect(function()
+    task.wait(0.2)
+    BlobkillTargetDropdown:SetValues(getBlobkillPlayerNames())
+end)
+
+task.spawn(function()
+    task.wait(1)
+    BlobkillTargetDropdown:SetValues(getBlobkillPlayerNames())
+end)
+
+-- ================= Drift Kick タブ =================
+local DriftGroup = Tabs.DriftKick:AddLeftGroupbox("Drift Kick")
+
+local orbitPlayerMap = {}
+
+local function getOrbitPlayerNames()
+    local names = {}
+    orbitPlayerMap = {}
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            local displayStr = player.DisplayName .. " (@" .. player.Name .. ")"
+            table.insert(names, displayStr)
+            orbitPlayerMap[displayStr] = player.Name
+        end
+    end
+    return names
+end
+
+local OrbitTargetDropdown = DriftGroup:AddDropdown("OrbitTarget", {
+    Values = getOrbitPlayerNames(),
+    Default = 1,
+    Text = "ターゲットを選択",
+    Callback = function(selected) end
+})
+
+DriftGroup:AddButton({
+    Text = "プレイヤーリストを更新",
+    Func = function()
+        OrbitTargetDropdown:SetValues(getOrbitPlayerNames())
+    end
+})
+
+DriftGroup:AddSlider("OrbitRadius", {
+    Text = "Orbit半径",
+    Default = 19,
+    Min = 5,
+    Max = 50,
+    Rounding = 0,
+    Callback = function(v) end
+})
+
+DriftGroup:AddSlider("OrbitSpeed", {
+    Text = "Orbit速度",
+    Default = 8.5,
+    Min = 1,
+    Max = 20,
+    Rounding = 1,
+    Callback = function(v) end
+})
+
+DriftGroup:AddSlider("OrbitHeight", {
+    Text = "高度オフセット",
+    Default = 0,
+    Min = -10,
+    Max = 10,
+    Rounding = 0,
+    Callback = function(v) end
+})
+
+-- Drift Kick - 機能なし
+DriftGroup:AddToggle("DriftKickToggle", {
+    Text = "drift kick",
+    Default = false,
+    Callback = function(v) end
+})
+
+Players.PlayerAdded:Connect(function()
+    task.wait(0.5)
+    OrbitTargetDropdown:SetValues(getOrbitPlayerNames())
+end)
+
+Players.PlayerRemoving:Connect(function()
+    task.wait(0.2)
+    OrbitTargetDropdown:SetValues(getOrbitPlayerNames())
+end)
+
+task.spawn(function()
+    task.wait(1)
+    OrbitTargetDropdown:SetValues(getOrbitPlayerNames())
+end)
+
+-- ================= Kick Player タブ =================
+local KickPlayerGroup = Tabs.KickPlayer:AddLeftGroupbox("Kick Player")
+
+local selectedKickTarget = nil
+local kickPlayerMap = {}
+
+local function getKickPlayerNames()
+    local names = {}
+    kickPlayerMap = {}
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            local displayStr = player.DisplayName .. " (@" .. player.Name .. ")"
+            table.insert(names, displayStr)
+            kickPlayerMap[displayStr] = player.Name
+        end
+    end
+    return names
+end
+
+local KickTargetDropdown = KickPlayerGroup:AddDropdown("KickTarget", {
+    Values = getKickPlayerNames(),
+    Default = 1,
+    Text = "Select Player",
+    Callback = function(selected)
+        selectedKickTarget = kickPlayerMap[selected] or ""
+    end
+})
+
+KickPlayerGroup:AddButton({
+    Text = "プレイヤーリストを更新",
+    Func = function()
+        KickTargetDropdown:SetValues(getKickPlayerNames())
+    end
+})
+
+-- Kick Selected Player - 機能なし
+KickPlayerGroup:AddButton({
+    Text = "Kick Selected Player",
+    Func = function() end
+})
+
+Players.PlayerAdded:Connect(function()
+    task.wait(0.5)
+    KickTargetDropdown:SetValues(getKickPlayerNames())
+end)
+
+Players.PlayerRemoving:Connect(function()
+    task.wait(0.2)
+    KickTargetDropdown:SetValues(getKickPlayerNames())
+end)
+
+task.spawn(function()
+    task.wait(1)
+    KickTargetDropdown:SetValues(getKickPlayerNames())
+end)
+
+-- ================= スパムキックタブ =================
+local SpamGroup = Tabs.SpamKick:AddLeftGroupbox("スパムキック")
+
+local spamPlayerMap = {}
+
+local function getSpamPlayerNames()
+    local names = {}
+    spamPlayerMap = {}
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            local displayStr = player.DisplayName .. " (@" .. player.Name .. ")"
+            table.insert(names, displayStr)
+            spamPlayerMap[displayStr] = player.Name
+        end
+    end
+    return names
+end
+
+local SpamTargetDropdown = SpamGroup:AddDropdown("SpamTarget", {
+    Values = getSpamPlayerNames(),
+    Default = 1,
+    Text = "ターゲットを選択",
+    Callback = function(selected) end
+})
+
+SpamGroup:AddButton({
+    Text = "プレイヤーリストを更新",
+    Func = function()
+        SpamTargetDropdown:SetValues(getSpamPlayerNames())
+    end
+})
+
+-- Spam Kick - 機能なし
+SpamGroup:AddToggle("SpamKickToggle", {
+    Text = "スパムキック開始",
+    Default = false,
+    Callback = function(v) end
+})
+
+SpamGroup:AddSlider("SpamInterval", {
+    Text = "キック間隔 (秒)",
+    Default = 0.5,
+    Min = 0.1,
+    Max = 2,
+    Rounding = 1,
+    Callback = function(v) end
+})
+
+Players.PlayerAdded:Connect(function()
+    task.wait(0.5)
+    SpamTargetDropdown:SetValues(getSpamPlayerNames())
+end)
+
+Players.PlayerRemoving:Connect(function()
+    task.wait(0.2)
+    SpamTargetDropdown:SetValues(getSpamPlayerNames())
+end)
+
+task.spawn(function()
+    task.wait(1)
+    SpamTargetDropdown:SetValues(getSpamPlayerNames())
+end)
+
+-- ================= Kick All タブ =================
+local KickAllGroup = Tabs.KickAll:AddLeftGroupbox("Kick All")
+
+-- Kick All - 機能なし
+KickAllGroup:AddButton({
+    Text = "全員をキック",
+    Func = function() end
+})
+
+KickAllGroup:AddButton({
+    Text = "全員をキック (Blobman使用)",
+    Func = function() end
+})
+
+-- ================= Barrier Break タブ =================
+local BarrierGroup = Tabs.BarrierBreak:AddLeftGroupbox("Barrier Break")
+
+-- Barrier Break - 機能なし
+BarrierGroup:AddToggle("BarrierBreakToggle", {
+    Text = "バリア破壊",
+    Default = false,
+    Callback = function(v) end
+})
+
+BarrierGroup:AddButton({
+    Text = "全てのバリアを破壊",
+    Func = function() end
+})
+
+-- ================= UI設定タブ =================
+local UISettingsGroup = Tabs["UI Settings"]:AddLeftGroupbox("メニュー設定")
+
+UISettingsGroup:AddButton({
+    Text = "メニューを閉じる",
+    Func = function()
+        Window:Close()
+    end
+})
+
+UISettingsGroup:AddButton({
+    Text = "メニューを開く",
+    Func = function()
+        Window:Open()
+    end
+})
+
+-- ================= テーマ管理 =================
+ThemeManager:SetLibrary(Library)
+SaveManager:SetLibrary(Library)
+
+SaveManager:IgnoreThemeSettings()
+ThemeManager:SetFolder("CHICKENhub")
+SaveManager:SetFolder("CHICKENhub/saves")
+
+SaveManager:BuildConfigSection(Tabs["UI Settings"])
+ThemeManager:ApplyToTab(Tabs["UI Settings"])
+
+SaveManager:LoadAutoloadConfig()
