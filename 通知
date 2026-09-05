@@ -1,0 +1,795 @@
+-- Obsidian UI - Yokai Hub Private (Notify + Visuals + UI Settings)
+local repo = "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/"
+local Library = loadstring(game:HttpGet(repo .. "Library.lua"))()
+local ThemeManager = loadstring(game:HttpGet(repo .. "addons/ThemeManager.lua"))()
+local SaveManager = loadstring(game:HttpGet(repo .. "addons/SaveManager.lua"))()
+
+local Options = Library.Options
+local Toggles = Library.Toggles
+
+local player = game.Players.LocalPlayer
+local ws = game:GetService("Workspace")
+local run = game:GetService("RunService")
+local lighting = game:GetService("Lighting")
+local soundService = game:GetService("SoundService")
+local Players = game:GetService("Players")
+
+-- Window
+local Window = Library:CreateWindow({
+    Title = "Yokai Hub Private",
+    Footer = "v2.0 | Private Build",
+    Icon = "sparkle",
+    NotifySide = "Right",
+    ShowCustomCursor = true,
+})
+
+-- Tabs
+local Tabs = {
+    Visuals = Window:AddTab("ビジュアル", "eye"),
+    Notify = Window:AddTab("通知", "bell"),
+    ["UI Settings"] = Window:AddTab("UI設定", "settings"),
+}
+
+-- ============================================
+-- SOUND VOLUME SETTINGS
+-- ============================================
+local soundVolume = 1
+
+local function playSound(soundId)
+    pcall(function()
+        local s = Instance.new("Sound")
+        s.SoundId = soundId
+        s.Volume = soundVolume
+        s.PlayOnRemove = true
+        s.Parent = soundService
+        s:Destroy()
+    end)
+end
+
+-- ============================================
+-- DECAL TEXTURE CHANGER
+-- ============================================
+local DECAL_TEXTURE = "rbxassetid://123863415108935"
+local changedDecals = {}
+
+local function changeDecalTexture(decal)
+    if not decal or not decal:IsA("Decal") then return end
+    if changedDecals[decal] then return end
+    
+    decal.Texture = DECAL_TEXTURE
+    changedDecals[decal] = true
+    
+    decal.AncestryChanged:Connect(function(_, parent)
+        if not parent then
+            changedDecals[decal] = nil
+        end
+    end)
+end
+
+local function scanAndChangeDecals()
+    for _, obj in ipairs(ws:GetDescendants()) do
+        if obj:IsA("Decal") and not changedDecals[obj] then
+            changeDecalTexture(obj)
+        end
+    end
+    for _, obj in ipairs(lighting:GetDescendants()) do
+        if obj:IsA("Decal") and not changedDecals[obj] then
+            changeDecalTexture(obj)
+        end
+    end
+end
+
+local function setupDecalWatcher()
+    local function onDecalAdded(obj)
+        if obj:IsA("Decal") and not changedDecals[obj] then
+            changeDecalTexture(obj)
+        end
+    end
+    
+    ws.DescendantAdded:Connect(onDecalAdded)
+    lighting.DescendantAdded:Connect(onDecalAdded)
+end
+
+task.spawn(function()
+    task.wait(0.5)
+    scanAndChangeDecals()
+    setupDecalWatcher()
+    print("Decal texture changer initialized")
+end)
+
+-- ============================================
+-- VISUALS TAB - PCLD ESP
+-- ============================================
+local VisualsGroup = Tabs.Visuals:AddLeftGroupbox("PCLD ESP", "eye")
+
+local pcldSettings = {
+    Enabled = false,
+    OutlineColor = Color3.fromRGB(255, 255, 255),
+    FillColor = Color3.fromRGB(255, 255, 255),
+    OutlineTransparency = 0,
+    FillTransparency = 0.75,
+    LineThickness = 0.05,
+}
+
+local ESPBoxes = {}
+local Connections = {}
+
+local function IsPCLD(obj)
+    if not obj:IsA("BasePart") then return false end
+    local name = string.lower(obj.Name)
+    return name == "partesp" or 
+           name == "playercharacterlocationdetector" or
+           name == "pcld" or
+           name == "locationdetector"
+end
+
+local function CreateBox(part)
+    if not part or not part.Parent then return end
+    
+    if ESPBoxes[part] then
+        pcall(function() ESPBoxes[part]:Destroy() end)
+        ESPBoxes[part] = nil
+    end
+    
+    local box = Instance.new("SelectionBox")
+    box.Adornee = part
+    box.LineThickness = pcldSettings.LineThickness
+    box.Color3 = pcldSettings.OutlineColor
+    box.Transparency = pcldSettings.OutlineTransparency
+    box.SurfaceTransparency = pcldSettings.FillTransparency
+    box.SurfaceColor3 = pcldSettings.FillColor
+    box.Parent = part
+    
+    ESPBoxes[part] = box
+    return box
+end
+
+local function ClearAllBoxes()
+    for part, box in pairs(ESPBoxes) do
+        if box then
+            pcall(function() box:Destroy() end)
+        end
+    end
+    ESPBoxes = {}
+end
+
+local function ScanAndApply()
+    if not pcldSettings.Enabled then return end
+    
+    for _, obj in ipairs(ws:GetDescendants()) do
+        if IsPCLD(obj) and obj.Parent then
+            CreateBox(obj)
+        end
+    end
+end
+
+local function SetupWatchers()
+    for _, conn in ipairs(Connections) do
+        if conn.Connected then conn:Disconnect() end
+    end
+    Connections = {}
+    
+    local addedConn = ws.DescendantAdded:Connect(function(obj)
+        if pcldSettings.Enabled and IsPCLD(obj) then
+            task.defer(function()
+                if obj and obj.Parent then
+                    CreateBox(obj)
+                end
+            end)
+        end
+    end)
+    table.insert(Connections, addedConn)
+    
+    local removedConn = ws.DescendantRemoving:Connect(function(obj)
+        if ESPBoxes[obj] then
+            pcall(function() ESPBoxes[obj]:Destroy() end)
+            ESPBoxes[obj] = nil
+        end
+    end)
+    table.insert(Connections, removedConn)
+end
+
+VisualsGroup:AddToggle("PCLDEsp", {
+    Text = "PCLD ESP（白色SelectionBox）",
+    Tooltip = "PCLDパーツを白色のSelectionBoxで囲みます",
+    Default = false,
+    Callback = function(Value)
+        pcldSettings.Enabled = Value
+        
+        if Value then
+            ClearAllBoxes()
+            ScanAndApply()
+            SetupWatchers()
+        else
+            ClearAllBoxes()
+            for _, conn in ipairs(Connections) do
+                if conn.Connected then conn:Disconnect() end
+            end
+            Connections = {}
+        end
+    end,
+})
+
+VisualsGroup:AddDivider()
+
+VisualsGroup:AddLabel("アウトライン色 (Outline)")
+    :AddColorPicker("OutlineColorPicker", {
+        Default = pcldSettings.OutlineColor,
+        Title = "アウトライン色を選択",
+        Callback = function(Value)
+            pcldSettings.OutlineColor = Value
+            for part, box in pairs(ESPBoxes) do
+                if box and box.Parent then
+                    box.Color3 = Value
+                end
+            end
+        end,
+    })
+
+VisualsGroup:AddLabel("内側の色 (Fill)")
+    :AddColorPicker("FillColorPicker", {
+        Default = pcldSettings.FillColor,
+        Title = "内側の色を選択",
+        Callback = function(Value)
+            pcldSettings.FillColor = Value
+            for part, box in pairs(ESPBoxes) do
+                if box and box.Parent then
+                    box.SurfaceColor3 = Value
+                end
+            end
+        end,
+    })
+
+VisualsGroup:AddDivider()
+
+VisualsGroup:AddSlider("OutlineTransparencySlider", {
+    Text = "アウトライン透明度",
+    Default = pcldSettings.OutlineTransparency * 100,
+    Min = 0,
+    Max = 100,
+    Rounding = 0,
+    Suffix = "%",
+    Callback = function(Value)
+        pcldSettings.OutlineTransparency = Value / 100
+        for part, box in pairs(ESPBoxes) do
+            if box and box.Parent then
+                box.Transparency = pcldSettings.OutlineTransparency
+            end
+        end
+    end,
+})
+
+VisualsGroup:AddSlider("FillTransparencySlider", {
+    Text = "内側透明度",
+    Default = pcldSettings.FillTransparency * 100,
+    Min = 0,
+    Max = 100,
+    Rounding = 0,
+    Suffix = "%",
+    Callback = function(Value)
+        pcldSettings.FillTransparency = Value / 100
+        for part, box in pairs(ESPBoxes) do
+            if box and box.Parent then
+                box.SurfaceTransparency = pcldSettings.FillTransparency
+            end
+        end
+    end,
+})
+
+VisualsGroup:AddSlider("LineThicknessSlider", {
+    Text = "ラインの太さ",
+    Default = pcldSettings.LineThickness * 100,
+    Min = 1,
+    Max = 20,
+    Rounding = 0,
+    Suffix = "",
+    Callback = function(Value)
+        pcldSettings.LineThickness = Value / 100
+        for part, box in pairs(ESPBoxes) do
+            if box and box.Parent then
+                box.LineThickness = pcldSettings.LineThickness
+            end
+        end
+    end,
+})
+
+VisualsGroup:AddDivider()
+
+VisualsGroup:AddButton({
+    Text = "リフレッシュ（再スキャン）",
+    Func = function()
+        if pcldSettings.Enabled then
+            ClearAllBoxes()
+            ScanAndApply()
+            Library:Notify({
+                Title = "PCLD ESP",
+                Description = "再スキャン完了",
+                Time = 2,
+                Icon = "sparkle",
+            })
+        end
+    end,
+})
+
+VisualsGroup:AddButton({
+    Text = "デフォルトカラーに戻す（白）",
+    Func = function()
+        pcldSettings.OutlineColor = Color3.fromRGB(255, 255, 255)
+        pcldSettings.FillColor = Color3.fromRGB(255, 255, 255)
+        pcldSettings.OutlineTransparency = 0
+        pcldSettings.FillTransparency = 0.75
+        
+        if Options.OutlineColorPicker then
+            Options.OutlineColorPicker:SetValueRGB(Color3.fromRGB(255, 255, 255))
+        end
+        if Options.FillColorPicker then
+            Options.FillColorPicker:SetValueRGB(Color3.fromRGB(255, 255, 255))
+        end
+        if Options.OutlineTransparencySlider then
+            Options.OutlineTransparencySlider:SetValue(0)
+        end
+        if Options.FillTransparencySlider then
+            Options.FillTransparencySlider:SetValue(75)
+        end
+        
+        for part, box in pairs(ESPBoxes) do
+            if box and box.Parent then
+                box.Color3 = pcldSettings.OutlineColor
+                box.SurfaceColor3 = pcldSettings.FillColor
+                box.Transparency = pcldSettings.OutlineTransparency
+                box.SurfaceTransparency = pcldSettings.FillTransparency
+            end
+        end
+        
+        Library:Notify({
+            Title = "PCLD ESP",
+            Description = "カラーをデフォルト (白) に戻しました",
+            Time = 2,
+            Icon = "sparkle",
+        })
+    end,
+})
+
+-- ============================================
+-- NOTIFICATIONS TAB
+-- ============================================
+local NotifyGroup = Tabs.Notify:AddLeftGroupbox("プレイヤー通知")
+local BlackHoleGroup = Tabs.Notify:AddRightGroupbox("ブラックホール")
+
+local showCoordinates = false
+
+-- Player Leave Notify
+local leaveNotifyEnabled = false
+local leaveSoundEnabled = true
+local notifiedPlayers = {}
+
+local function playLeaveSound()
+    if not leaveSoundEnabled then return end
+    playSound("rbxassetid://138707899268973")
+end
+
+local function getPlayerDisplay(plr)
+    return plr.DisplayName .. " [@" .. plr.Name .. "]"
+end
+
+NotifyGroup:AddToggle("LeaveNotify", {
+    Text = "プレイヤー退出通知",
+    Tooltip = "プレイヤーが退出したときに通知します",
+    Default = false,
+    Callback = function(v)
+        leaveNotifyEnabled = v
+        if not v then
+            notifiedPlayers = {}
+        end
+    end
+})
+
+NotifyGroup:AddToggle("LeaveSound", {
+    Text = "退出音",
+    Tooltip = "プレイヤーが退出したときに音を鳴らします",
+    Default = true,
+    Callback = function(v)
+        leaveSoundEnabled = v
+    end
+})
+
+game.Players.PlayerRemoving:Connect(function(plr)
+    if plr == player then return end
+    if leaveNotifyEnabled then
+        if not notifiedPlayers[plr.UserId] then
+            notifiedPlayers[plr.UserId] = true
+            Library:Notify({
+                Title = "プレイヤー退出",
+                Description = getPlayerDisplay(plr),
+                Time = 4,
+                Icon = "log-out",
+            })
+            playLeaveSound()
+            
+            task.delay(5, function()
+                notifiedPlayers[plr.UserId] = nil
+            end)
+        end
+    end
+end)
+
+game.Players.PlayerAdded:Connect(function(plr)
+    notifiedPlayers[plr.UserId] = nil
+end)
+
+-- Black Hole Notify
+local blackHoleNotifyEnabled = false
+local blackHoleSoundEnabled = true
+local gettingKicked = {}
+local blackHoleFolder = Instance.new("Folder", ws)
+blackHoleFolder.Name = "BlackHoleTracker"
+
+local glowingPlayers = {}
+local glowConnections = {}
+
+BlackHoleGroup:AddToggle("ShowCoordinates", {
+    Text = "座標を表示",
+    Tooltip = "ブラックホール通知に座標を表示します",
+    Default = false,
+    Callback = function(v)
+        showCoordinates = v
+    end
+})
+
+local function playBlackHoleSound()
+    if not blackHoleSoundEnabled then return end
+    playSound("rbxassetid://138707899268973")
+end
+
+local function applyGlowEffect(character, playerObj)
+    if not character then return end
+    
+    if glowingPlayers[character] then return end
+    
+    local highlight = Instance.new("Highlight")
+    highlight.FillColor = Color3.fromRGB(255, 255, 255)
+    highlight.FillTransparency = 1
+    highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+    highlight.OutlineTransparency = 0
+    highlight.Parent = character
+    
+    glowingPlayers[character] = {
+        highlight = highlight,
+        player = playerObj,
+        startTime = tick()
+    }
+    
+    task.delay(4, function()
+        if glowingPlayers[character] then
+            local conn
+            conn = run.Heartbeat:Connect(function()
+                local elapsed = tick() - glowingPlayers[character].startTime
+                local progress = (elapsed - 4) / 1
+                
+                if progress >= 1 then
+                    if highlight and highlight.Parent then
+                        highlight:Destroy()
+                    end
+                    glowingPlayers[character] = nil
+                    if conn then conn:Disconnect() end
+                    if glowConnections[character] then
+                        glowConnections[character]:Disconnect()
+                        glowConnections[character] = nil
+                    end
+                    return
+                end
+                
+                if highlight then
+                    highlight.OutlineTransparency = progress
+                end
+            end)
+            glowConnections[character] = conn
+        end
+    end)
+    
+    character.AncestryChanged:Connect(function(_, parent)
+        if not parent then
+            if highlight then highlight:Destroy() end
+            glowingPlayers[character] = nil
+            if glowConnections[character] then
+                glowConnections[character]:Disconnect()
+                glowConnections[character] = nil
+            end
+        end
+    end)
+    
+    if playerObj then
+        playerObj.AncestryChanged:Connect(function(_, parent)
+            if not parent then
+                if highlight and highlight.Parent then
+                    highlight:Destroy()
+                end
+                glowingPlayers[character] = nil
+                if glowConnections[character] then
+                    glowConnections[character]:Disconnect()
+                    glowConnections[character] = nil
+                end
+            end
+        end)
+    end
+end
+
+local function getClosestPlayerToBlackHole(pos)
+    local closest = nil
+    local dist = math.huge
+    for _, plr in pairs(game.Players:GetPlayers()) do
+        if plr ~= player then
+            local hrp = plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
+            if hrp then
+                local d = (hrp.Position - pos).Magnitude
+                if d < dist then
+                    dist = d
+                    closest = plr
+                end
+            end
+        end
+    end
+    return closest
+end
+
+local function getBlackHolePosition(obj)
+    if obj:IsA("BasePart") then return obj.Position end
+    local part = obj:FindFirstChildWhichIsA("BasePart", true)
+    if part then return part.Position end
+    return nil
+end
+
+ws.ChildAdded:Connect(function(obj)
+    if not blackHoleNotifyEnabled then return end
+    if obj.Name == "BlackHoleKick" or obj.Name == "BlackHoleDetected" then
+        task.wait(0.05)
+        
+        local pos = getBlackHolePosition(obj)
+        if not pos then return end
+        
+        local victim = getClosestPlayerToBlackHole(pos)
+        if not victim then return end
+        
+        if victim.Character then
+            applyGlowEffect(victim.Character, victim)
+        end
+        
+        victim.CharacterAdded:Connect(function(char)
+            if blackHoleNotifyEnabled then
+                for oldChar, data in pairs(glowingPlayers) do
+                    if data.player == victim then
+                        if data.highlight then
+                            data.highlight:Destroy()
+                        end
+                        glowingPlayers[oldChar] = nil
+                        if glowConnections[oldChar] then
+                            glowConnections[oldChar]:Disconnect()
+                            glowConnections[oldChar] = nil
+                        end
+                    end
+                end
+                applyGlowEffect(char, victim)
+            end
+        end)
+        
+        victim.AncestryChanged:Connect(function(_, parent)
+            if not parent then
+                for char, data in pairs(glowingPlayers) do
+                    if data.player == victim then
+                        if data.highlight then
+                            data.highlight:Destroy()
+                        end
+                        glowingPlayers[char] = nil
+                        if glowConnections[char] then
+                            glowConnections[char]:Disconnect()
+                            glowConnections[char] = nil
+                        end
+                    end
+                end
+            end
+        end)
+        
+        local alreadyNotified = false
+        for _, id in pairs(gettingKicked) do
+            if id == victim.UserId then
+                alreadyNotified = true
+                break
+            end
+        end
+        
+        if not alreadyNotified then
+            table.insert(gettingKicked, victim.UserId)
+            
+            local description = string.format("%s [@%s] was kicked", victim.DisplayName, victim.Name)
+            
+            if showCoordinates then
+                local posStr = string.format("(%.0f, %.0f, %.0f)", pos.X, pos.Y, pos.Z)
+                description = description .. " at " .. posStr
+            end
+            
+            Library:Notify({
+                Title = "ブラックホールキック",
+                Description = description,
+                Time = 6,
+                Icon = "circle-slash-2",
+            })
+            
+            playBlackHoleSound()
+            
+            task.delay(5, function()
+                for i, id in pairs(gettingKicked) do
+                    if id == victim.UserId then
+                        table.remove(gettingKicked, i)
+                        break
+                    end
+                end
+            end)
+        end
+    end
+end)
+
+player.CharacterAdded:Connect(function()
+    task.wait(1)
+    gettingKicked = {}
+end)
+
+BlackHoleGroup:AddToggle("BlackHoleNotify", {
+    Text = "ブラックホール通知",
+    Tooltip = "誰かがブラックホールでキックされたときに通知します",
+    Default = false,
+    Callback = function(v)
+        blackHoleNotifyEnabled = v
+        if not v then
+            for char, data in pairs(glowingPlayers) do
+                if data.highlight then
+                    data.highlight:Destroy()
+                end
+                if glowConnections[char] then
+                    glowConnections[char]:Disconnect()
+                    glowConnections[char] = nil
+                end
+            end
+            glowingPlayers = {}
+            gettingKicked = {}
+        end
+    end
+})
+
+BlackHoleGroup:AddToggle("BlackHoleSound", {
+    Text = "ブラックホール音",
+    Tooltip = "ブラックホール通知時に音を鳴らします",
+    Default = true,
+    Callback = function(v)
+        blackHoleSoundEnabled = v
+    end
+})
+
+BlackHoleGroup:AddButton({
+    Text = "エフェクトをクリア",
+    Func = function()
+        for char, data in pairs(glowingPlayers) do
+            if data.highlight then
+                data.highlight:Destroy()
+            end
+            if glowConnections[char] then
+                glowConnections[char]:Disconnect()
+                glowConnections[char] = nil
+            end
+        end
+        glowingPlayers = {}
+        gettingKicked = {}
+        Library:Notify({
+            Title = "Black Hole",
+            Description = "エフェクトをクリアしました",
+            Time = 2,
+            Icon = "circle-slash-2",
+        })
+    end,
+    Tooltip = "すべての発光エフェクトを消去します",
+})
+
+-- ============================================
+-- UI SETTINGS TAB
+-- ============================================
+local UIGroup = Tabs["UI Settings"]:AddLeftGroupbox("UI Settings", "wrench")
+
+UIGroup:AddSlider("SoundVolume", {
+    Text = "音量",
+    Default = 100,
+    Min = 0,
+    Max = 100,
+    Rounding = 0,
+    Suffix = "%",
+    Callback = function(Value)
+        soundVolume = Value / 100
+    end
+})
+
+UIGroup:AddDivider()
+
+UIGroup:AddToggle("ShowCustomCursor", {
+    Text = "カスタムカーソル",
+    Default = true,
+    Callback = function(Value)
+        Library.ShowCustomCursor = Value
+    end
+})
+
+UIGroup:AddDivider()
+UIGroup:AddLabel("Menu Keybind"):AddKeyPicker("MenuKeybind", {
+    Default = "RightShift",
+    NoUI = true,
+    Text = "Menu keybind"
+})
+Library.ToggleKeybind = Options.MenuKeybind
+
+UIGroup:AddDivider()
+UIGroup:AddButton({
+    Text = "スクリプトを終了",
+    Func = function()
+        Library:Unload()
+    end
+})
+
+-- ============================================
+-- PCLD ESP PERIODIC SCAN
+-- ============================================
+task.spawn(function()
+    while true do
+        task.wait(5)
+        if pcldSettings.Enabled then
+            for _, obj in ipairs(ws:GetDescendants()) do
+                if IsPCLD(obj) and not ESPBoxes[obj] and obj.Parent then
+                    CreateBox(obj)
+                end
+            end
+        end
+    end
+end)
+
+player.CharacterAdded:Connect(function()
+    if pcldSettings.Enabled then
+        task.wait(0.5)
+        ScanAndApply()
+    end
+end)
+
+-- ============================================
+-- SAVE & THEME
+-- ============================================
+ThemeManager:SetLibrary(Library)
+SaveManager:SetLibrary(Library)
+
+SaveManager:IgnoreThemeSettings()
+SaveManager:SetIgnoreIndexes({ "MenuKeybind" })
+
+ThemeManager:SetFolder("YokaiHubPrivate")
+SaveManager:SetFolder("YokaiHubPrivate/configs")
+
+SaveManager:BuildConfigSection(Tabs["UI Settings"])
+ThemeManager:ApplyToTab(Tabs["UI Settings"])
+
+Library:OnUnload(function()
+    ws.FallenPartsDestroyHeight = -100
+    if blackHoleFolder then blackHoleFolder:Destroy() end
+    for char, data in pairs(glowingPlayers) do
+        if data.highlight then
+            data.highlight:Destroy()
+        end
+        if glowConnections[char] then
+            glowConnections[char]:Disconnect()
+            glowConnections[char] = nil
+        end
+    end
+    glowingPlayers = {}
+    ClearAllBoxes()
+    for _, conn in ipairs(Connections) do
+        if conn.Connected then conn:Disconnect() end
+    end
+    Connections = {}
+    changedDecals = {}
+    print("Yokai Hub Private unloaded")
+end)
+
+SaveManager:LoadAutoloadConfig()
+print("Yokai Hub Private loaded! (Notify + Visuals + UI Settings)")
