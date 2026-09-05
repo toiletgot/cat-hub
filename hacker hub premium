@@ -1,0 +1,76 @@
+-- [[ 1つのファイルで完結する自動更新＆キーシステム搭載スクリプト ]]
+local CG, TCS, Players = game:GetService("CoreGui"), game:GetService("TextChatService"), game:GetService("Players")
+local LP = Players.LocalPlayer
+
+-- 1. バージョンの自動カウント（実行するたびに0.1増える）
+if not _G.PremiumHubVersion then
+    _G.PremiumHubVersion = 66.6 -- ご希望のベースバージョン
+else
+    _G.PremiumHubVersion = _G.PremiumHubVersion + 0.1
+end
+
+local vStr = string.format("%.1f", _G.PremiumHubVersion)
+
+-- 2. 古いUIが残っていたら消去
+if CG:FindFirstChild("PremiumHubInstantAuth") then CG.PremiumHubInstantAuth:Destroy() end
+
+-- 3. キーボックスUIの生成
+local Gui = Instance.new("ScreenGui", CG) Gui.Name = "PremiumHubInstantAuth"
+local KeyF = Instance.new("Frame", Gui) KeyF.Size, KeyF.Position, KeyF.BackgroundColor3 = UDim2.new(0, 280, 0, 100), UDim2.new(0.5, -140, 0.5, -50), Color3.fromRGB(25, 25, 25)
+
+local Title = Instance.new("TextLabel", KeyF) Title.Size, Title.Text, Title.TextColor3, Title.BackgroundColor3, Title.TextSize, Title.Font = UDim2.new(1, 0, 0, 25), "Hacker Premium Hub v" .. vStr, Color3.fromRGB(255, 255, 255), Color3.fromRGB(35, 35, 35), 13, 1
+local Box = Instance.new("TextBox", KeyF) Box.Size, Box.Position, Box.PlaceholderText, Box.TextColor3, Box.BackgroundColor3, Box.TextSize = UDim2.new(0, 260, 0, 25), UDim2.new(0.5, -130, 0, 35), "TikTokでDMしてキーを獲得...", Color3.fromRGB(255, 255, 255), Color3.fromRGB(45, 45, 45), 12
+local Btn = Instance.new("TextButton", KeyF) Btn.Size, Btn.Position, Btn.Text, Btn.BackgroundColor3, Btn.TextColor3, Btn.TextSize = UDim2.new(0, 80, 0, 22), UDim2.new(0.5, -40, 0, 68), "認証", Color3.fromRGB(0, 140, 90), Color3.fromRGB(255, 255, 255), 12
+local WL = Instance.new("TextLabel", Gui) WL.Size, WL.Position, WL.BackgroundTransparency, WL.Text, WL.TextColor3, WL.TextSize, WL.Font, WL.Visible = UDim2.new(0, 300, 0, 30), UDim2.new(0, 10, 1, -40), 1, "10回キーを間違えるとキックされます", Color3.fromRGB(255, 0, 0), 16, 1, false
+local failedAttempts = 0
+
+local function send(m) pcall(function() if TCS.ChatVersion == Enum.ChatVersion.TextChatService then TCS.TextChannels.RBXGeneral:SendAsync(m) else game:GetService("ReplicatedStorage").DefaultChatSystemChatEvents.SayMessageRequest:FireServer(m, "All") end end) end
+
+Btn.MouseButton1Click:Connect(function()
+    -- キーの判定
+    if Box.Text == "👑✅️Scripter1761✅️👑" then
+        Box.Text, Box.PlaceholderText, Btn.Text, Btn.BackgroundColor3 = "", "🔑 キーがアンロックされました！", "成功", Color3.fromRGB(0, 180, 120)
+        task.wait(0.8) Gui:Destroy() send("Hacker Premium Hub v" .. vStr .. "起動中...") task.wait(0.3) send("Hacker Premium Hub v" .. vStr .. "起動完了")
+        
+        -- メインのRayfield UI起動
+        local Ray = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+        local W = Ray:CreateWindow({Name = "Hacker Premium Hub v" .. vStr, LoadingTitle = "Hacker Premium Hub v" .. vStr .. " Loaded!", LoadingSubtitle = "by scripter1761", ConfigurationSaving = {Enabled = false}, KeySystem = false})
+        local T = W:CreateTab("🛠️ Main Scripts", 4483345998)
+        local function loadScr(u) task.spawn(function() loadstring(game:HttpGet(u))() end) end
+        
+        -- スクリプト群
+        local scrs = {
+            {"Goner", "Goner"}, {"Star Glitcher", "Star%20Glitcher"}, {"Sin Dragon", "refs/heads/main/Loadstrings/Sin%20Dragon"},
+            {"24-Hours Sword script", "https://raw.githubusercontent.com/BloxinStud10/24-Hours/refs/heads/main/Obfuscations/StarGlitcherV1.luau"},
+            {"Lightning Cannon", "Lightning%20Cannon"}, {"fling things and people script 2", "https://raw.githubusercontent.com/BlizTBr/scripts/main/FTAP.lua"},
+            {"fling things and people script 3", "https://raw.githubusercontent.com/hololove1021/HolonHUB/refs/heads/main/language/hub-jp.lua"},
+            {"neptunian v", "Neptunian%20V"}, {"uhhhhhh script", "https://raw.githubusercontent.com/STEVE-916-create/Uhhhhhh/main/source/reanim.lua"},
+            -- 追加されたスクリプト
+            {"Hacker hubv1.5", "https://raw.githubusercontent.com/hackerhub0624/hacker-hub-script/main/hackerhub.lua"},
+            {"暗殺者対保安官2", "https://raw.githubusercontent.com/deadlysesons/testing/refs/heads/main/murder%20vs%20sheriff%20duels%202"}
+        }
+        for _, v in ipairs(scrs) do T:CreateButton({ Name = v[1], Callback = function() loadScr(v[2]:find("http") and v[2] or "https://raw.githubusercontent.com/GenesisFE/Genesis/main/Obfuscations/" .. v[2]) end }) end
+        
+        -- forsaken BEST autoblock script ボタン
+        T:CreateButton({
+            Name = "forsaken BEST autoblock script",
+            Callback = function()
+                Ray:Notify({Name = "スクリプト起動", Content = "Autoblockを読み込んでいます...", Duration = 3, Image = 4483345998})
+                loadScr("https://raw.githubusercontent.com/LolnotaKid/project/refs/heads/main/AutoBLOCKKKWAHV1")
+            end
+        })
+        
+        local C = W:CreateTab("ℹ️ Credits", 4483345998)
+        C:CreateSection("GUI Info") C:CreateLabel("GUI Name: Hacker Premium Hub v" .. vStr) C:CreateLabel("Version: " .. vStr)
+        C:CreateSection("Authors / Scripters") C:CreateLabel("Main Developer Roblox ID: scripter1761") C:CreateLabel("Key System Customizer: scripter1761")
+        C:CreateSection("Official Links (Click to Copy)")
+        local function cp(n, l) C:CreateButton({Name = n, Callback = function() if setclipboard then setclipboard(l) Ray:Notify({Name = "コピー成功", Content = n:sub(1,7).."のリンクをコピーしました！", Duration = 3, Image = 4483345998}) end end}) end
+        cp("YouTube チャンネルリンクをコピー", "https://www.youtube.com/@COOLKID_666hacker")
+        cp("TikTok アカウントリンクをコピー", "https://www.tiktok.com/@coolkid92313?_r=1&_t=ZS-97TAML95U5U")
+        C:CreateSection("Actions") C:CreateButton({Name = "製作者のクレジットをチャットに出力", Callback = function() send("Hacker Premium Hub v" .. vStr .. " - Created by scripter1761") end})
+    else
+        failedAttempts = failedAttempts + 1
+        if failedAttempts >= 10 then LP:Kick("キー入力を10回連続で失敗したため、キックされました。") return end
+        Box.Text, Box.PlaceholderText, WL.Visible = "", "❌ キーが違います (残り " .. (10 - failedAttempts) .. " 回)", true
+    end
+end)
