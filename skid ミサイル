@@ -1,0 +1,458 @@
+--[[
+	GrabMoveController.lua (LocalScript, サーバー不使用, 物理演算対応版)
+	配置場所: StarterPlayer > StarterPlayerScripts
+]]
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+local camera = workspace.CurrentCamera
+
+----------------------------------------------------------------
+-- 0. 起動時メッセージ
+----------------------------------------------------------------
+
+local startupGui = Instance.new("ScreenGui")
+startupGui.Name = "StartupMessageGui"
+startupGui.ResetOnSpawn = false
+startupGui.Parent = playerGui
+
+local messageLabel = Instance.new("TextLabel")
+messageLabel.Size = UDim2.new(0, 450, 0, 70)
+messageLabel.AnchorPoint = Vector2.new(0.5, 0.5)
+messageLabel.Position = UDim2.new(0.5, 0, 0.4, 0)
+messageLabel.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+messageLabel.BackgroundTransparency = 0.2
+messageLabel.Text = "skidしてすいません"
+messageLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+messageLabel.Font = Enum.Font.GothamBold
+messageLabel.TextSize = 18
+
+local msgCorner = Instance.new("UICorner")
+msgCorner.CornerRadius = UDim.new(0, 10)
+msgCorner.Parent = messageLabel
+messageLabel.Parent = startupGui
+
+task.delay(2, function()
+	if startupGui then startupGui:Destroy() end
+end)
+
+----------------------------------------------------------------
+-- 1. 状態管理
+----------------------------------------------------------------
+
+local controlling = false
+local currentRoot = nil
+local mover = nil
+local alignMover = nil
+local orientationAttachment = nil
+
+local RAY_DISTANCE = 100
+local CURRENT_SPEED = 20
+
+local CAMERA_DISTANCE = 20
+local cameraYaw = 0
+local cameraPitch = -20
+local currentYaw = 0
+local currentPitch = -20
+local CAMERA_SMOOTHNESS = 30
+local CAMERA_SENSITIVITY = 1.0
+
+local PLAYER_FIXED_POSITION = Vector3.new(460.4, 131.4, 202.7)
+local savedPlayerCFrame = nil
+
+----------------------------------------------------------------
+-- ★ ミサイルの「機首の向き」補正
+----------------------------------------------------------------
+-- 現在の見た目: 真横(左)を向いているので、Y軸を-90°回して前を向かせる
+local NOSE_CORRECTION = CFrame.Angles(0, math.rad(-90), 0) * CFrame.Angles(math.rad(90), 0, 0)
+
+-- もし上の設定で違う方向を向いたら、下の候補を1つずつ試してください:
+--   候補1: CFrame.Angles(0, math.rad(-90), 0) * CFrame.Angles(math.rad(90), 0, 0)  ← これ
+--   候補2: CFrame.Angles(0, math.rad( 90), 0) * CFrame.Angles(math.rad(90), 0, 0)
+--   候補3: CFrame.Angles(0, math.rad(-90), 0)
+--   候補4: CFrame.Angles(0, math.rad( 90), 0)
+--   候補5: CFrame.Angles(math.rad(-90), 0, 0)
+--   候補6: CFrame.Angles(0, 0, 0)
+
+----------------------------------------------------------------
+-- ホワイトリスト
+----------------------------------------------------------------
+
+local GRABBABLE_NAMES = { BombMissile = true }
+
+local function isGrabbable(part)
+	if not part or not part:IsA("BasePart") then return false end
+	if part.Anchored then return false end
+	if GRABBABLE_NAMES[part.Name] then return true end
+	local model = part:FindFirstAncestorOfClass("Model")
+	if model and GRABBABLE_NAMES[model.Name] then return true end
+	return false
+end
+
+----------------------------------------------------------------
+-- 2. レイキャスト
+----------------------------------------------------------------
+
+local function findCenterTarget()
+	local cam = workspace.CurrentCamera
+	if not cam then return nil end
+	local origin = cam.CFrame.Position
+	local direction = cam.CFrame.LookVector * RAY_DISTANCE
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = { player.Character }
+	params.IgnoreWater = true
+	local result = workspace:Raycast(origin, direction, params)
+	if not result then return nil end
+	local part = result.Instance
+	if not isGrabbable(part) then return nil end
+	return part
+end
+
+----------------------------------------------------------------
+-- 3. 三人称カメラ
+----------------------------------------------------------------
+
+local function updateThirdPersonCamera(dt)
+	if not currentRoot then return end
+	currentYaw = currentYaw + (cameraYaw - currentYaw) * math.clamp(dt * CAMERA_SMOOTHNESS, 0, 1)
+	currentPitch = currentPitch + (cameraPitch - currentPitch) * math.clamp(dt * CAMERA_SMOOTHNESS, 0, 1)
+	local yawRad = math.rad(currentYaw)
+	local pitchRad = math.rad(currentPitch)
+	local offset = Vector3.new(
+		math.cos(pitchRad) * math.sin(yawRad),
+		math.sin(pitchRad),
+		math.cos(pitchRad) * math.cos(yawRad)
+	) * CAMERA_DISTANCE
+	local targetPos = currentRoot.Position
+	camera.CFrame = CFrame.lookAt(targetPos + offset, targetPos)
+end
+
+----------------------------------------------------------------
+-- 4. 開始/終了
+----------------------------------------------------------------
+
+local MAX_FORCE = 100000
+
+local function destroyMover()
+	if mover then mover:Destroy() mover = nil end
+	if alignMover then alignMover:Destroy() alignMover = nil end
+	if orientationAttachment then orientationAttachment:Destroy() orientationAttachment = nil end
+end
+
+local function setRobloxJumpButtonVisible(visible)
+	pcall(function()
+		local touchGui = playerGui:FindFirstChild("TouchGui")
+		if touchGui then
+			local f = touchGui:FindFirstChild("TouchControlFrame")
+			if f then
+				local jb = f:FindFirstChild("JumpButton")
+				if jb then jb.Visible = visible end
+			end
+		end
+	end)
+end
+
+local function startControl()
+	local target = findCenterTarget()
+	if not target then return false end
+	currentRoot = target.AssemblyRootPart or target
+
+	local char = player.Character
+	if char then
+		local hrp = char:FindFirstChild("HumanoidRootPart")
+		if hrp then
+			savedPlayerCFrame = hrp.CFrame
+			hrp.CFrame = CFrame.new(PLAYER_FIXED_POSITION)
+			hrp.AssemblyLinearVelocity = Vector3.zero
+			hrp.AssemblyAngularVelocity = Vector3.zero
+		end
+	end
+
+	destroyMover()
+	mover = Instance.new("BodyVelocity")
+	mover.Name = "GrabMoveVelocity"
+	mover.MaxForce = Vector3.new(MAX_FORCE, MAX_FORCE, MAX_FORCE)
+	mover.P = 12500
+	mover.Velocity = Vector3.zero
+	mover.Parent = currentRoot
+
+	orientationAttachment = Instance.new("Attachment")
+	orientationAttachment.Name = "GrabMoveAttachment"
+	orientationAttachment.Parent = currentRoot
+
+	alignMover = Instance.new("AlignOrientation")
+	alignMover.Name = "GrabMoveOrientation"
+	alignMover.Mode = Enum.OrientationAlignmentMode.OneAttachment
+	alignMover.Attachment0 = orientationAttachment
+	alignMover.MaxTorque = 1000000
+	alignMover.Responsiveness = 20
+	alignMover.Parent = currentRoot
+
+	cameraYaw = 0
+	cameraPitch = -20
+	currentYaw = 0
+	currentPitch = -20
+
+	camera.CameraType = Enum.CameraType.Scriptable
+	updateThirdPersonCamera(0)
+
+	controlling = true
+	setRobloxJumpButtonVisible(false)
+	return true
+end
+
+local function stopControl()
+	destroyMover()
+	if savedPlayerCFrame then
+		local char = player.Character
+		if char then
+			local hrp = char:FindFirstChild("HumanoidRootPart")
+			if hrp then
+				hrp.CFrame = savedPlayerCFrame
+				hrp.AssemblyLinearVelocity = Vector3.zero
+				hrp.AssemblyAngularVelocity = Vector3.zero
+			end
+		end
+		savedPlayerCFrame = nil
+	end
+	controlling = false
+	currentRoot = nil
+	camera.CameraType = Enum.CameraType.Custom
+	setRobloxJumpButtonVisible(true)
+end
+
+----------------------------------------------------------------
+-- 5. GUI
+----------------------------------------------------------------
+
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "GrabMoveGui"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = playerGui
+
+local crosshair = Instance.new("Frame")
+crosshair.Size = UDim2.new(0, 8, 0, 8)
+crosshair.AnchorPoint = Vector2.new(0.5, 0.5)
+crosshair.Position = UDim2.new(0.5, 0, 0.5, 0)
+crosshair.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+crosshair.BackgroundTransparency = 0.3
+local crosshairCorner = Instance.new("UICorner")
+crosshairCorner.CornerRadius = UDim.new(1, 0)
+crosshairCorner.Parent = crosshair
+crosshair.Parent = screenGui
+
+local toggleButton = Instance.new("TextButton")
+toggleButton.Size = UDim2.new(0, 110, 0, 40)
+toggleButton.Position = UDim2.new(1, -130, 0, 20)
+toggleButton.Text = "操作: OFF"
+toggleButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+toggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+toggleButton.Font = Enum.Font.GothamBold
+toggleButton.TextSize = 15
+local btnCorner = Instance.new("UICorner")
+btnCorner.CornerRadius = UDim.new(0, 8)
+btnCorner.Parent = toggleButton
+toggleButton.Parent = screenGui
+
+local subButtonContainer = Instance.new("Frame")
+subButtonContainer.Size = UDim2.new(0, 120, 0, 40)
+subButtonContainer.Position = UDim2.new(1, -265, 0, 20)
+subButtonContainer.BackgroundTransparency = 1
+subButtonContainer.Visible = false
+subButtonContainer.Parent = screenGui
+
+local listLayout = Instance.new("UIListLayout")
+listLayout.FillDirection = Enum.FillDirection.Horizontal
+listLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right
+listLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+listLayout.Padding = UDim.new(0, 10)
+listLayout.Parent = subButtonContainer
+
+local speedBox = Instance.new("TextBox")
+speedBox.Size = UDim2.new(0, 100, 0, 40)
+speedBox.Text = tostring(CURRENT_SPEED)
+speedBox.PlaceholderText = "速度"
+speedBox.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+speedBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+speedBox.Font = Enum.Font.GothamBold
+speedBox.TextSize = 14
+speedBox.ClearTextOnFocus = false
+speedBox.LayoutOrder = 1
+local sBoxCorner = Instance.new("UICorner")
+sBoxCorner.CornerRadius = UDim.new(0, 8)
+sBoxCorner.Parent = speedBox
+speedBox.Parent = subButtonContainer
+
+speedBox.FocusLost:Connect(function()
+	local val = tonumber(speedBox.Text)
+	if val then
+		CURRENT_SPEED = math.clamp(val, 1, 9999)
+		speedBox.Text = tostring(CURRENT_SPEED)
+	else
+		speedBox.Text = tostring(CURRENT_SPEED)
+	end
+end)
+
+local stickBase = Instance.new("Frame")
+stickBase.Size = UDim2.new(0, 90, 0, 90)
+stickBase.Position = UDim2.new(0, 40, 1, -150)
+stickBase.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+stickBase.BackgroundTransparency = 0.4
+stickBase.Visible = false
+local baseCorner = Instance.new("UICorner")
+baseCorner.CornerRadius = UDim.new(1, 0)
+baseCorner.Parent = stickBase
+stickBase.Parent = screenGui
+
+local stickKnob = Instance.new("Frame")
+stickKnob.Size = UDim2.new(0, 40, 0, 40)
+stickKnob.Position = UDim2.new(0.5, -20, 0.5, -20)
+stickKnob.BackgroundColor3 = Color3.fromRGB(200, 200, 200)
+local knobCorner = Instance.new("UICorner")
+knobCorner.CornerRadius = UDim.new(1, 0)
+knobCorner.Parent = stickKnob
+stickKnob.Parent = stickBase
+
+local stickRadius = 45
+local stickCenter = Vector2.new(45, 45)
+local stickInput = Vector2.new(0, 0)
+local activeStickTouch = nil
+
+local function updateKnob(delta)
+	local clamped = delta
+	if clamped.Magnitude > stickRadius then clamped = clamped.Unit * stickRadius end
+	stickKnob.Position = UDim2.new(0.5, clamped.X - 20, 0.5, clamped.Y - 20)
+	stickInput = Vector2.new(clamped.X / stickRadius, clamped.Y / stickRadius)
+end
+
+local function resetKnob()
+	stickKnob.Position = UDim2.new(0.5, -20, 0.5, -20)
+	stickInput = Vector2.new(0, 0)
+end
+
+stickBase.InputBegan:Connect(function(input)
+	if not controlling then return end
+	if input.UserInputType == Enum.UserInputType.Touch
+		or input.UserInputType == Enum.UserInputType.MouseButton1 then
+		activeStickTouch = input
+		local pos = input.Position
+		local basePos = stickBase.AbsolutePosition
+		updateKnob(Vector2.new(pos.X, pos.Y) - basePos - stickCenter)
+	end
+end)
+
+----------------------------------------------------------------
+-- 6. カメラ回転
+----------------------------------------------------------------
+
+local activeCameraTouch = nil
+local lastCameraTouchPos = nil
+local MIN_PITCH = -80
+local MAX_PITCH = 80
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+	if not controlling then return end
+	if gameProcessed then return end
+	if input.UserInputType ~= Enum.UserInputType.Touch
+		and input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+	local screenWidth = camera.ViewportSize.X
+	if input.Position.X < screenWidth * 0.5 then return end
+	activeCameraTouch = input
+	lastCameraTouchPos = Vector2.new(input.Position.X, input.Position.Y)
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+	if not controlling then return end
+	if activeStickTouch == input
+		and (input.UserInputType == Enum.UserInputType.Touch
+			or input.UserInputType == Enum.UserInputType.MouseMovement) then
+		local pos = input.Position
+		local basePos = stickBase.AbsolutePosition
+		updateKnob(Vector2.new(pos.X, pos.Y) - basePos - stickCenter)
+	end
+	if activeCameraTouch == input
+		and (input.UserInputType == Enum.UserInputType.Touch
+			or input.UserInputType == Enum.UserInputType.MouseMovement) then
+		local pos = Vector2.new(input.Position.X, input.Position.Y)
+		local delta = pos - lastCameraTouchPos
+		lastCameraTouchPos = pos
+		cameraYaw = cameraYaw - delta.X * CAMERA_SENSITIVITY
+		cameraPitch = math.clamp(cameraPitch + delta.Y * CAMERA_SENSITIVITY, MIN_PITCH, MAX_PITCH)
+	end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+	if activeStickTouch == input then
+		activeStickTouch = nil
+		resetKnob()
+	end
+	if activeCameraTouch == input then
+		activeCameraTouch = nil
+		lastCameraTouchPos = nil
+	end
+end)
+
+----------------------------------------------------------------
+-- 7. トグル
+----------------------------------------------------------------
+
+toggleButton.MouseButton1Click:Connect(function()
+	if not controlling then
+		local ok = startControl()
+		if ok then
+			toggleButton.Text = "操作: ON"
+			subButtonContainer.Visible = true
+			stickBase.Visible = true
+		else
+			toggleButton.Text = "対象なし"
+			task.wait(1)
+			toggleButton.Text = "操作: OFF"
+		end
+	else
+		stopControl()
+		toggleButton.Text = "操作: OFF"
+		subButtonContainer.Visible = false
+		stickBase.Visible = false
+		resetKnob()
+	end
+end)
+
+----------------------------------------------------------------
+-- 8. 毎フレーム更新
+----------------------------------------------------------------
+
+RunService.Heartbeat:Connect(function(dt)
+	if not controlling or not mover or not currentRoot or not currentRoot.Parent then
+		if controlling then
+			stopControl()
+			toggleButton.Text = "操作: OFF"
+			subButtonContainer.Visible = false
+			stickBase.Visible = false
+			resetKnob()
+		end
+		return
+	end
+
+	updateThirdPersonCamera(dt)
+	local camCF = camera.CFrame
+
+	local forwardVel = camCF.LookVector * CURRENT_SPEED
+	local rightVel = camCF.RightVector * (stickInput.X * CURRENT_SPEED)
+	local upVel = Vector3.new(0, 1, 0) * (-stickInput.Y * CURRENT_SPEED)
+	local targetVel = forwardVel + rightVel + upVel
+
+	mover.MaxForce = Vector3.new(MAX_FORCE, MAX_FORCE, MAX_FORCE)
+	mover.Velocity = targetVel
+
+	-- ★ 進行方向へ機首を向ける（NOSE_CORRECTION を必ず掛ける）
+	if alignMover and targetVel.Magnitude > 0.5 then
+		local lookCFrame = CFrame.lookAt(Vector3.zero, targetVel.Unit)
+		alignMover.CFrame = lookCFrame * NOSE_CORRECTION
+	end
+end)
