@@ -1,0 +1,812 @@
+local _5 = loadstring(game:HttpGet('https://raw.githubusercontent.com/jadpy/suki/refs/heads/main/orion'))()
+local _call7 = _5:MakeWindow({
+    Name = 'Hacker Hub v1.5',
+    ConfigFolder = 'BlobKickConfig',
+    IntroText = 'Hacker Hub',
+    HidePremium = false,
+    SaveConfig = false,
+})
+local _call9 = game:GetService('Players')
+local _call11 = game:GetService('ReplicatedStorage')
+local _call15 = game:GetService('RunService')
+
+game:GetService('UserInputService')
+
+local _LocalPlayer18 = _call9.LocalPlayer
+local _call20 = _call7:MakeTab({
+    PremiumOnly = false,
+    Name = '\u{30d7}\u{30ec}\u{30a4}\u{30e4}\u{30fc}',
+    Icon = 'rbxassetid://4483362458',
+})
+
+_call20:AddToggle({
+    Callback = function(_23, _23_2, _23_3)
+        local _call25 = game:GetService('VirtualUser')
+
+        game:GetService('RunService').RenderStepped:Connect(function(_31)
+            _call25.ClickButton1(_call25, Vector2.new())
+            _call25.ClickButton1(_call25, Vector2.new())
+            _call25.ClickButton1(_call25, Vector2.new())
+            _call25.ClickButton1(_call25, Vector2.new())
+            _call25.ClickButton1(_call25, Vector2.new())
+        end)
+    end,
+    Name = '\u{30aa}\u{30fc}\u{30c8}\u{30af}\u{30ea}\u{30c3}\u{30af}',
+    Default = false,
+})
+_call15.Heartbeat:Connect(function(_55)
+    _LocalPlayer18.Character:FindFirstChild('HumanoidRootPart')
+
+    for _61, _61_2 in ipairs(_call9:GetPlayers())do
+        local _ = _61_2 == _LocalPlayer18
+
+        _61_2.Character:FindFirstChild('HumanoidRootPart')
+    end
+end)
+
+for _68, _68_2 in ipairs(_call9:GetPlayers())do
+    local _ = _68_2 == _LocalPlayer18
+    local _ = _68_2.Character
+
+    task.spawn(function(_73, _73_2, _73_3, _73_4, _73_5)
+        _68_2.Character:WaitForChild('Head', 5)
+    end)
+    _68_2.CharacterAdded:Connect(function(_80, _80_2, _80_3, _80_4, _80_5, _80_6)
+        task.wait(0.5)
+        _80:WaitForChild('Head', 5)
+    end)
+end
+
+_call9.PlayerAdded:Connect(function(_86)
+    local _ = _86 == _LocalPlayer18
+    local _ = _86.Character
+
+    task.spawn(function(_91, _91_2, _91_3, _91_4, _91_5)
+        _86.Character:WaitForChild('Head', 5)
+    end)
+    _86.CharacterAdded:Connect(function(_98, _98_2, _98_3, _98_4, _98_5, _98_6)
+        task.wait(0.5)
+        _98:WaitForChild('Head', 5)
+    end)
+end)
+_call9.PlayerRemoving:Connect(function(_104, _104_2, _104_3) end)
+_call20:AddToggle({
+    Callback = function(_107, _107_2, _107_3, _107_4)
+        for _110, _110_2 in ipairs(_call9:GetPlayers())do
+            local _ = _110_2 == _LocalPlayer18
+            local _Character112 = _110_2.Character
+            local _call116 = Instance.new('BillboardGui')
+
+            _call116.Name = 'ESP_Billboard'
+            _call116.AlwaysOnTop = true
+            _call116.Size = UDim2.new(0, 200, 0, 60)
+            _call116.StudsOffset = Vector3.new(0, 2.5, 0)
+            _call116.Parent = _Character112:FindFirstChild('Head')
+
+            local _call122 = Instance.new('ImageLabel')
+
+            _call122.Size = UDim2.new(0, 28, 0, 28)
+            _call122.Position = UDim2.new(0.5, -14, 0, 0)
+            _call122.BackgroundTransparency = 1
+            _call122.Image = 'https://www.roblox.com/headshot-thumbnail/image?userId=' .. _110_2.UserId .. '&width=48&height=48&format=png'
+            _call122.Parent = _call116
+
+            local _call131 = Instance.new('TextLabel')
+
+            _call131.Size = UDim2.new(1, 0, 0, 28)
+            _call131.Position = UDim2.new(0, 0, 0, 30)
+            _call131.BackgroundTransparency = 1
+            _call131.TextColor3 = Color3.fromRGB(255, 255, 255)
+            _call131.TextStrokeTransparency = 0
+            _call131.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+            _call131.Font = Enum.Font.GothamBold
+            _call131.TextScaled = true
+            _call131.Text = _110_2.DisplayName .. ' (' .. _110_2.Name .. ')'
+            _call131.Parent = _call116
+        end
+    end,
+    Name = 'ESP\u{ff08}\u{540d}\u{524d}\u{30fb}ID\u{30fb}\u{30a2}\u{30a4}\u{30b3}\u{30f3}\u{ff09}',
+    Default = false,
+})
+_call20:AddToggle({
+    Callback = function(_149, _149_2, _149_3, _149_4, _149_5, _149_6)
+        local _call151 = Instance.new('ScreenGui')
+
+        _call151.Name = 'DistScreenGui'
+        _call151.ResetOnSpawn = false
+        _call151.DisplayOrder = 100
+        _call151.Parent = _LocalPlayer18.PlayerGui
+
+        local _call154 = Instance.new('Frame')
+
+        _call154.Size = UDim2.new(0, 150, 0, 180)
+        _call154.Position = UDim2.new(1, -158, 0.5, -90)
+        _call154.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+        _call154.BackgroundTransparency = 0.4
+        _call154.BorderSizePixel = 0
+        _call154.ClipsDescendants = true
+        _call154.Parent = _call151
+
+        local _call162 = Instance.new('Frame')
+
+        _call162.Name = 'TitleBar'
+        _call162.Size = UDim2.new(1, 0, 0, 20)
+        _call162.Position = UDim2.new(0, 0, 0, 0)
+        _call162.BackgroundColor3 = Color3.fromRGB(180, 0, 0)
+        _call162.BackgroundTransparency = 0.2
+        _call162.BorderSizePixel = 0
+        _call162.Parent = _call154
+
+        local _call170 = Instance.new('TextLabel')
+
+        _call170.Size = UDim2.new(1, 0, 1, 0)
+        _call170.BackgroundTransparency = 1
+        _call170.TextColor3 = Color3.fromRGB(255, 255, 255)
+        _call170.Font = Enum.Font.GothamBold
+        _call170.TextSize = 11
+        _call170.Text = '\u{30d7}\u{30ec}\u{30a4}\u{30e4}\u{30fc}\u{8ddd}\u{96e2}'
+        _call170.Parent = _call162
+
+        local _call178 = Instance.new('ScrollingFrame')
+
+        _call178.Name = 'DistScrollFrame'
+        _call178.Size = UDim2.new(1, 0, 1, -20)
+        _call178.Position = UDim2.new(0, 0, 0, 20)
+        _call178.BackgroundTransparency = 1
+        _call178.BorderSizePixel = 0
+        _call178.ScrollBarThickness = 4
+        _call178.ScrollBarImageColor3 = Color3.fromRGB(255, 80, 80)
+        _call178.CanvasSize = UDim2.new(0, 0, 0, 0)
+        _call178.Parent = _call154
+
+        local _call188 = Instance.new('UIListLayout')
+
+        _call188.SortOrder = Enum.SortOrder.LayoutOrder
+        _call188.Padding = UDim.new(0, 1)
+        _call188.Parent = _call178
+
+        _call162.InputBegan:Connect(function(_196, _196_2)
+            local _ = _196.UserInputType == Enum.UserInputType.Touch
+            local _ = _196.UserInputType == Enum.UserInputType.MouseButton1
+        end)
+        _call162.InputChanged:Connect(function(_208) end)
+        _call162.InputEnded:Connect(function(_212, _212_2, _212_3, _212_4, _212_5, _212_6)
+            local _ = _212.UserInputType == Enum.UserInputType.Touch
+            local _ = _212.UserInputType == Enum.UserInputType.MouseButton1
+        end)
+
+        for _223, _223_2 in ipairs(_call9:GetPlayers())do
+            local _ = _223_2 == _LocalPlayer18
+            local _Character225 = _223_2.Character
+            local _call229 = Instance.new('BillboardGui')
+
+            _call229.Name = 'DIST_Billboard'
+            _call229.AlwaysOnTop = true
+            _call229.Size = UDim2.new(0, 120, 0, 24)
+            _call229.StudsOffset = Vector3.new(0, 4.5, 0)
+            _call229.Parent = _Character225:FindFirstChild('Head')
+
+            local _call235 = Instance.new('TextLabel')
+
+            _call235.Size = UDim2.new(1, 0, 1, 0)
+            _call235.BackgroundTransparency = 1
+            _call235.TextColor3 = Color3.fromRGB(255, 220, 50)
+            _call235.TextStrokeTransparency = 0
+            _call235.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+            _call235.Font = Enum.Font.GothamBold
+            _call235.TextScaled = true
+            _call235.Text = '0 studs'
+            _call235.Parent = _call229
+        end
+    end,
+    Name = '\u{8ddd}\u{96e2}\u{8868}\u{793a}',
+    Default = false,
+})
+_call20:AddToggle({
+    Callback = function(_246, _246_2, _246_3, _246_4, _246_5, _246_6)
+        for _249, _249_2 in ipairs(workspace:GetDescendants())do
+            _249_2:IsA('BasePart')
+
+            for _254, _254_2 in ipairs(_call9:GetPlayers())do
+                local _ = _254_2.Character
+
+                _249_2:IsDescendantOf(_254_2.Character)
+            end
+        end
+    end,
+    Name = 'XRay\u{ff08}\u{58c1}\u{3092}\u{534a}\u{900f}\u{660e}\u{ff09}',
+    Default = false,
+})
+_call20:AddToggle({
+    Callback = function(_261, _261_2, _261_3, _261_4, _261_5)
+        for _264, _264_2 in ipairs(_call9:GetPlayers())do
+            local _ = _264_2 == _LocalPlayer18
+            local _Character266 = _264_2.Character
+            local _Character269 = _LocalPlayer18.Character
+            local _call273 = Instance.new('Attachment')
+
+            _call273.Name = 'ChamAtt0_' .. _264_2.Name
+            _call273.CFrame = CFrame.new(0, 0, 0)
+            _call273.Parent = _Character269:FindFirstChild('HumanoidRootPart')
+
+            local _call279 = Instance.new('Attachment')
+
+            _call279.Name = 'ChamAtt1_' .. _264_2.Name
+            _call279.CFrame = CFrame.new(0, 0, 0)
+            _call279.Parent = _Character266:FindFirstChild('HumanoidRootPart')
+
+            local _call285 = Instance.new('Beam')
+
+            _call285.Name = 'ChamBeam_' .. _264_2.Name
+            _call285.Attachment0 = _call273
+            _call285.Attachment1 = _call279
+
+            local _call289 = Color3.fromRGB(255, 0, 0)
+            local _call295 = ColorSequence.new({
+                [1] = ColorSequenceKeypoint.new(0, _call289),
+                [2] = ColorSequenceKeypoint.new(1, _call289),
+            })
+
+            _call285.Color = _call295
+            _call285.Width0 = 0.08
+            _call285.Width1 = 0.08
+            _call285.FaceCamera = true
+
+            local _call301 = NumberSequence.new({
+                [1] = NumberSequenceKeypoint.new(0, 0),
+                [2] = NumberSequenceKeypoint.new(1, 0),
+            })
+
+            _call285.Transparency = _call301
+            _call285.Segments = 1
+            _call285.Parent = workspace.Terrain
+        end
+    end,
+    Name = '\u{30c1}\u{30e3}\u{30e0}\u{30e9}\u{30a4}\u{30f3}\u{ff08}\u{8d64}\u{3044}\u{7d10}\u{ff09}',
+    Default = false,
+})
+_call20:AddToggle({
+    Callback = function(_305, _305_2, _305_3)
+        local _Position308 = workspace.CurrentCamera.CFrame.Position
+
+        _call15.RenderStepped:Connect(function(_312)
+            local _workspaceCurrentCamera313 = workspace.CurrentCamera
+
+            _workspaceCurrentCamera313.CameraType = Enum.CameraType.Scriptable
+            _workspaceCurrentCamera313.CFrame = CFrame.new(_Position308, (_Position308 + _workspaceCurrentCamera313.CFrame.LookVector))
+        end)
+    end,
+    Name = '\u{30ab}\u{30e1}\u{30e9}\u{56fa}\u{5b9a}',
+    Default = false,
+})
+_call20:AddButton({
+    Name = '\u{30ea}\u{30b8}\u{30e7}\u{30a4}\u{30f3}\u{ff08}\u{4eca}\u{306e}\u{30b5}\u{30fc}\u{30d0}\u{30fc}\u{ff09}',
+    Callback = function(_323)
+        game:GetService('TeleportService'):TeleportToPlaceInstance(game.PlaceId, game.JobId, _LocalPlayer18)
+    end,
+})
+_call20:AddButton({
+    Name = '\u{5225}\u{30b5}\u{30fc}\u{30d0}\u{30fc}\u{3078}',
+    Callback = function()
+        game:GetService('TeleportService'):Teleport(game.PlaceId, _LocalPlayer18)
+    end,
+})
+_call20:AddToggle({
+    Callback = function(_340, _340_2)
+        local _call343 = _LocalPlayer18.Character:FindFirstChildOfClass('Humanoid')
+        local _call345 = Instance.new('Animation')
+
+        _call345.AnimationId = 'rbxassetid://33796059'
+
+        _call343:LoadAnimation(_call345):Play(0.1, 1, 100000000)
+    end,
+    Name = '\u{4f53}\u{8352}\u{3076}\u{308a}',
+    Default = false,
+})
+
+local _call351 = _call7:MakeTab({
+    PremiumOnly = false,
+    Name = '\u{30b0}\u{30e9}\u{30d6}',
+    Icon = 'rbxassetid://4483362458',
+})
+
+_call11:FindFirstChild('DataEvents')
+_call11.DataEvents:FindFirstChild('UpdateLineColorsEvent')
+Color3.new(1, 1, 1)
+Color3.new(1, 1, 1)
+Color3.new(1, 1, 1)
+Color3.new(1, 1, 1)
+Color3.new(1, 1, 1)
+Color3.new(1, 1, 1)
+Color3.new(1, 1, 1)
+Color3.new(1, 1, 1)
+Color3.new(1, 1, 1)
+Color3.new(1, 1, 1)
+_call15.Heartbeat:Connect(function(_380, _380_2, _380_3, _380_4) end)
+_call351:AddToggle({
+    Callback = function(_383, _383_2, _383_3, _383_4, _383_5) end,
+    Name = '\u{30ad}\u{30eb}\u{30b0}\u{30e9}\u{30d6}',
+    Default = false,
+})
+_call351:AddToggle({
+    Callback = function(_386, _386_2, _386_3, _386_4) end,
+    Name = '\u{8cab}\u{901a}\u{30b0}\u{30e9}\u{30d6}',
+    Default = false,
+})
+_call351:AddToggle({
+    Callback = function(_389, _389_2, _389_3, _389_4, _389_5, _389_6) end,
+    Name = '\u{4e0a}\u{30b0}\u{30e9}\u{30d6}',
+    Default = false,
+})
+_call351:AddToggle({
+    Callback = function(_392, _392_2, _392_3) end,
+    Name = '\u{4e0b}\u{30b0}\u{30e9}\u{30d6}',
+    Default = false,
+})
+_call351:AddToggle({
+    Callback = function(_395, _395_2, _395_3, _395_4, _395_5, _395_6) end,
+    Name = '\u{5965}\u{30b0}\u{30e9}\u{30d6}',
+    Default = false,
+})
+_call351:AddToggle({
+    Callback = function(_398, _398_2, _398_3, _398_4) end,
+    Name = '\u{624b}\u{524d}\u{30b0}\u{30e9}\u{30d6}',
+    Default = false,
+})
+_call351:AddToggle({
+    Callback = function(_401) end,
+    Name = '\u{53f3}\u{30b0}\u{30e9}\u{30d6}',
+    Default = false,
+})
+_call351:AddToggle({
+    Callback = function(_404, _404_2, _404_3, _404_4, _404_5) end,
+    Name = '\u{5de6}\u{30b0}\u{30e9}\u{30d6}',
+    Default = false,
+})
+_call351:AddToggle({
+    Callback = function(_407) end,
+    Name = '\u{30ec}\u{30a4}\u{30f3}\u{30dc}\u{30fc}\u{30e9}\u{30a4}\u{30f3}',
+    Default = false,
+})
+game:GetService('Workspace').ChildAdded:Connect(function(_411, _411_2, _411_3, _411_4, _411_5)
+    local _ = _411.Name
+end)
+
+local _call414 = _call7:MakeTab({
+    PremiumOnly = false,
+    Name = '\u{30d6}\u{30ed}\u{30d6}\u{30de}\u{30f3}',
+    Icon = 'rbxassetid://7743871002',
+})
+
+task.spawn(function(_417, _417_2)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    task.wait(0.1)
+    error('internal 582: <25ms: infinitelooperror>')
+end)
+_call414:AddSection({
+    Name = '\u{30d6}\u{30ed}\u{30d6}\u{30de}\u{30f3}',
+})
+
+for _423, _423_2 in ipairs(_call9:GetPlayers())do
+    local _ = _423_2 == _LocalPlayer18
+end
+
+_call414:AddDropdown({
+    Callback = function(_431, _431_2, _431_3, _431_4)
+        _call9:FindFirstChild(_431:match('%((.-)%)'))
+    end,
+    Options = {
+        [1] = _423_2.DisplayName .. ' (' .. _423_2.Name .. ')',
+    },
+    Name = '\u{30d7}\u{30ec}\u{30a4}\u{30e4}\u{30fc}\u{9078}\u{629e}',
+    Default = '',
+})
+_call9.PlayerAdded:Connect(function(_439, _439_2, _439_3, _439_4, _439_5)
+    task.wait(0.5)
+    error('internal 582: <25ms: infinitelooperror>')
+end)
+_call9.PlayerRemoving:Connect(function() end)
+_call414:AddToggle({
+    Callback = function(_447, _447_2, _447_3, _447_4, _447_5, _447_6) end,
+    Name = '\u{30d6}\u{30ed}\u{30d6}\u{30ad}\u{30c3}\u{30af}',
+    Default = false,
+})
+_call414:AddToggle({
+    Callback = function(_450, _450_2, _450_3) end,
+    Name = '\u{30d6}\u{30ed}\u{30d6}\u{30ad}\u{30c3}\u{30af}v2',
+    Default = false,
+})
+_call414:AddToggle({
+    Callback = function(_453, _453_2, _453_3) end,
+    Name = '\u{30d6}\u{30ed}\u{30d6}\u{30ad}\u{30c3}\u{30af}v3',
+    Default = false,
+})
+_call414:AddToggle({
+    Callback = function(_456, _456_2, _456_3) end,
+    Name = '\u{30c9}\u{30ea}\u{30d5}\u{30c8}\u{30ad}\u{30c3}\u{30af}',
+    Default = false,
+})
+
+local _call458 = _call7:MakeTab({
+    PremiumOnly = false,
+    Name = '\u{305d}\u{306e}\u{4ed6}',
+    Icon = 'rbxassetid://4483362458',
+})
+
+_call458:AddSection({
+    Name = 'UFO',
+})
+_call458:AddToggle({
+    Callback = function(_463) end,
+    Name = 'UFO\u{64cd}\u{4f5c}',
+    Default = false,
+})
+_call458:AddSection({
+    Name = '\u{5217}\u{8eca}',
+})
+_call458:AddButton({
+    Name = '\u{30e9}\u{30f3}\u{30c0}\u{30e0}\u{306a}\u{7a7a}\u{5e2d}\u{306b}\u{5ea7}\u{308b}',
+    Callback = function(_468) end,
+})
+_call458:AddToggle({
+    Callback = function(_471, _471_2, _471_3, _471_4, _471_5, _471_6) end,
+    Name = '\u{5217}\u{8eca}\u{30b3}\u{30f3}\u{30c8}\u{30ed}\u{30fc}\u{30eb}\u{6e96}\u{5099}',
+    Default = false,
+})
+_call458:AddButton({
+    Name = 'vFly GUI\u{8d77}\u{52d5}',
+    Callback = function() end,
+})
+_call458:AddSection({
+    Name = '\u{4e09}\u{4eba}\u{79f0}\u{30fb}\u{30ab}\u{30e1}\u{30e9}',
+})
+_call458:AddButton({
+    Name = '\u{4e09}\u{4eba}\u{79f0}\u{30ab}\u{30e1}\u{30e9}',
+    Callback = function() end,
+})
+_call458:AddToggle({
+    Callback = function(_482) end,
+    Name = 'FOV\u{5909}\u{66f4} ON/OFF',
+    Default = false,
+})
+_call458:AddSlider({
+    Min = 0,
+    Name = 'FOV\u{8abf}\u{6574}',
+    ValueName = '',
+    Max = 120,
+    Increment = 1,
+    Callback = function(_485) end,
+    Default = 120,
+})
+_call458:AddSection({
+    Name = '\u{30d0}\u{30ea}\u{30a2}',
+})
+_call458:AddButton({
+    Name = '\u{30d0}\u{30ea}\u{30a2}\u{7834}\u{58ca}',
+    Callback = function() end,
+})
+_call458:AddSection({
+    Name = '\u{30e2}\u{30d0}\u{30a4}\u{30eb}\u{30dc}\u{30bf}\u{30f3}',
+})
+
+local _call494 = Instance.new('ScreenGui')
+
+_call494.Parent = game.Players.LocalPlayer:WaitForChild('PlayerGui')
+_call494.ResetOnSpawn = false
+_call494.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+_call494.Enabled = false
+
+local _call502 = Instance.new('TextButton')
+
+_call502.Name = 'gsgsgsg'
+_call502.Parent = _call494
+_call502.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+_call502.BackgroundTransparency = 1
+_call502.BorderSizePixel = 0
+_call502.Position = UDim2.new(0.685, 0, 0.79, 0)
+_call502.Size = UDim2.new(0, 41, 0, 39)
+_call502.Font = Enum.Font.SourceSans
+_call502.Text = ''
+_call502.TextColor3 = Color3.fromRGB(0, 0, 0)
+_call502.TextSize = 14
+
+local _call514 = Instance.new('ImageLabel')
+
+_call514.Name = 'TPLeabel'
+_call514.Parent = _call502
+_call514.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+_call514.BackgroundTransparency = 1
+_call514.BorderSizePixel = 0
+_call514.Position = UDim2.new(-0.191510454, 0, -0.187805966, 0)
+_call514.Size = UDim2.new(0, 55, 0, 54)
+_call514.Image = 'rbxassetid://97166444'
+
+local _call522 = Instance.new('ImageLabel')
+
+_call522.Name = 'TPLeabel'
+_call522.Parent = _call514
+_call522.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+_call522.BackgroundTransparency = 1
+_call522.BorderSizePixel = 0
+_call522.Position = UDim2.new(0.00591708114, 0, 0.0376456939, 0)
+_call522.Size = UDim2.new(0, 54, 0, 51)
+_call522.Image = 'rbxassetid://6723742952'
+
+local _call530 = Instance.new('TextButton')
+
+_call530.Name = 'AnchorToggle'
+_call530.Parent = _call494
+_call530.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+_call530.BackgroundTransparency = 1
+_call530.BorderSizePixel = 0
+_call530.Position = UDim2.new(0.55, 35, 0.79, 0)
+_call530.Size = UDim2.new(0, 43, 0, 42)
+_call530.Font = Enum.Font.SourceSans
+_call530.Text = ''
+_call530.TextColor3 = Color3.fromRGB(0, 0, 0)
+_call530.TextSize = 14
+
+local _call542 = Instance.new('ImageLabel')
+
+_call542.Name = 'AnchorLeabel'
+_call542.Parent = _call530
+_call542.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+_call542.BackgroundTransparency = 1
+_call542.BorderSizePixel = 0
+_call542.Position = UDim2.new(-0.148969784, 0, -0.192690164, 0)
+_call542.Size = UDim2.new(0, 55, 0, 54)
+_call542.Image = 'rbxassetid://97166444'
+
+local _call550 = Instance.new('ImageLabel')
+
+_call550.Name = 'AnchorLeabel'
+_call550.Parent = _call542
+_call550.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+_call550.BackgroundTransparency = 1
+_call550.BorderSizePixel = 0
+_call550.Position = UDim2.new(0.0415438563, 0, 0.0960388184, 0)
+_call550.Size = UDim2.new(0.885727763, 0, 0.796296299, 0)
+_call550.Image = 'rbxassetid://3040311268'
+
+_call502.MouseButton1Click:Connect(function(_560, _560_2, _560_3) end)
+_call530.MouseButton1Click:Connect(function(_564, _564_2, _564_3, _564_4) end)
+_call458:AddToggle({
+    Callback = function(_567, _567_2) end,
+    Name = '\u{30e2}\u{30d0}\u{30a4}\u{30eb}\u{30dc}\u{30bf}\u{30f3}\u{8868}\u{793a}',
+    Default = false,
+})
+
+local _call569 = _call7:MakeTab({
+    PremiumOnly = false,
+    Name = '\u{30c6}\u{30ec}\u{30dd}\u{30fc}\u{30c8}',
+    Icon = 'rbxassetid://4483362458',
+})
+
+_call569:AddSection({
+    Name = '\u{30d7}\u{30ec}\u{30a4}\u{30e4}\u{30fc}\u{30c6}\u{30ec}\u{30dd}\u{30fc}\u{30c8}',
+})
+
+for _574, _574_2 in ipairs(_call9:GetPlayers())do
+    local _ = _574_2 == _LocalPlayer18
+end
+
+_call569:AddDropdown({
+    Callback = function(_583) end,
+    Options = {
+        [1] = _574_2.DisplayName .. ' (' .. _574_2.Name .. ')',
+    },
+    Name = '\u{30c6}\u{30ec}\u{30dd}\u{30fc}\u{30c8}\u{3059}\u{308b}\u{30d7}\u{30ec}\u{30a4}\u{30e4}\u{30fc}',
+    Default = '',
+})
+_call9.PlayerAdded:Connect(function(_587, _587_2) end)
+_call9.PlayerRemoving:Connect(function(_591, _591_2, _591_3, _591_4) end)
+_call569:AddButton({
+    Name = '\u{30c6}\u{30ec}\u{30dd}\u{30fc}\u{30c8}',
+    Callback = function(_594, _594_2, _594_3, _594_4) end,
+})
+_call569:AddToggle({
+    Callback = function(_597, _597_2) end,
+    Name = '\u{30c6}\u{30ec}\u{30dd}\u{30fc}\u{30c8}\u{30eb}\u{30fc}\u{30d7}',
+    Default = false,
+})
+_5:Init()
+task.wait(0.5)
+_5:MakeNotification({
+    Time = 4,
+    Name = 'Hacker Hub v1.5',
+    Content = '\u{8d77}\u{52d5}\u{3057}\u{307e}\u{3057}\u{305f}',
+})
+task.spawn(function(_604, _604_2) end)
+task.spawn(function() end)
+_LocalPlayer18.CharacterAdded:Connect(function(_611, _611_2, _611_3, _611_4) end)
+
+local _call613 = _call7:MakeTab({
+    PremiumOnly = false,
+    Name = '\u{30a2}\u{30b9}\u{30ec}',
+    Icon = 'rbxassetid://4483345998',
+})
+
+_call613:AddSection({
+    Name = '\u{30a6}\u{30a9}\u{30fc}\u{30eb}\u{30db}\u{30c3}\u{30d7}',
+})
+
+local _Character616 = _LocalPlayer18.Character
+
+_Character616:WaitForChild('Humanoid')
+_Character616:WaitForChild('HumanoidRootPart')
+_LocalPlayer18.CharacterAdded:Connect(function(_624, _624_2, _624_3, _624_4) end)
+_call613:AddToggle({
+    Callback = function(_627) end,
+    Name = '\u{30a6}\u{30a9}\u{30fc}\u{30eb}\u{30db}\u{30c3}\u{30d7} AUTO',
+    Default = false,
+})
+_call613:AddToggle({
+    Callback = function(_630, _630_2, _630_3, _630_4) end,
+    Name = '\u{5f8c}\u{308d}\u{30a6}\u{30a9}\u{30fc}\u{30eb}\u{30db}\u{30c3}\u{30d7} AUTO',
+    Default = false,
+})
+
+local _call632 = _call7:MakeTab({
+    PremiumOnly = false,
+    Name = '\u{30c1}\u{30e3}\u{30c3}\u{30c8}',
+    Icon = 'rbxassetid://4483345998',
+})
+
+_call632:AddTextbox({
+    Callback = function(_635, _635_2, _635_3, _635_4, _635_5) end,
+    TextDisappear = false,
+    Name = '\u{30b9}\u{30d1}\u{30e0}\u{30e1}\u{30c3}\u{30bb}\u{30fc}\u{30b8}',
+    Default = '',
+})
+_call632:AddTextbox({
+    Callback = function(_638, _638_2, _638_3, _638_4, _638_5, _638_6) end,
+    TextDisappear = false,
+    Name = '\u{9593}\u{9694}\u{ff08}\u{79d2}\u{ff09}',
+    Default = '1',
+})
+_call632:AddTextbox({
+    Callback = function(_641, _641_2, _641_3, _641_4, _641_5, _641_6) end,
+    TextDisappear = false,
+    Name = '\u{56de}\u{6570}',
+    Default = '10',
+})
+_call632:AddButton({
+    Name = '\u{30b9}\u{30d1}\u{30e0}\u{9001}\u{4fe1}',
+    Callback = function() end,
+})
+_call632:AddButton({
+    Name = '\u{30b9}\u{30d1}\u{30e0}\u{505c}\u{6b62}',
+    Callback = function() end,
+})
+
+local _call649 = _call7:MakeTab({
+    PremiumOnly = false,
+    Name = 'TAS',
+    Icon = 'rbxassetid://4483345998',
+})
+
+_call649:AddToggle({
+    Callback = function(_652, _652_2, _652_3, _652_4, _652_5) end,
+    Name = 'Tas\u{3076}\u{3063}\u{98db}\u{3073}',
+    Default = false,
+})
+_LocalPlayer18.CharacterAdded:Connect(function(_656, _656_2, _656_3) end)
+
+local _call658 = _call7:MakeTab({
+    PremiumOnly = false,
+    Name = '\u{901a}\u{77e5}',
+    Icon = 'rbxassetid://4483345998',
+})
+
+_call658:AddSection({
+    Name = '\u{30d6}\u{30e9}\u{30c3}\u{30af}\u{30db}\u{30fc}\u{30eb}\u{691c}\u{77e5}',
+})
+_call658:AddToggle({
+    Callback = function(_663) end,
+    Name = '\u{30d6}\u{30e9}\u{30c3}\u{30af}\u{30db}\u{30fc}\u{30eb}\u{691c}\u{77e5}',
+    Default = false,
+})
+_call658:AddButton({
+    Name = '\u{30ab}\u{30a6}\u{30f3}\u{30c8}\u{30ea}\u{30bb}\u{30c3}\u{30c8}',
+    Callback = function(_666, _666_2, _666_3) end,
+})
