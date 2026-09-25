@@ -1,0 +1,151 @@
+--// Orion Library の読み込み
+local OrionLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/jadpy/suki/refs/heads/main/orion"))()
+
+--// 必要なサービスのみ定義
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
+local CoreGui = game:GetService("CoreGui")
+local Player = Players.LocalPlayer
+
+--// Pallet Magnet 用変数
+local sticking = false
+local connectionMagnet = nil
+local currentTargetMagnet = nil
+local offsetCFrameMagnet = CFrame.new()
+
+--// Pallet Magnet 用スキャン関数
+local function scanForPallet()
+    local char = Player.Character
+    if not char or not char:FindFirstChild("HumanoidRootPart") then return nil end
+    local hrpPos = char.HumanoidRootPart.Position
+    local rayOrigin = hrpPos
+    local rayDirection = Vector3.new(0, -15, 0)
+    local raycastParams = RaycastParams.new()
+    raycastParams.FilterDescendantsInstances = {char}
+    raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+    local result = workspace:Raycast(rayOrigin, rayDirection, raycastParams)
+    if result and result.Instance then
+        local hit = result.Instance
+        if hit.Name:match("Pallet") or (hit.Parent and hit.Parent.Name:match("Pallet")) then
+            return hit
+        end
+    end
+    for _, v in pairs(workspace:GetDescendants()) do
+        if v:IsA("BasePart") and (v.Name:match("Pallet") or (v.Parent and v.Parent.Name:match("Pallet"))) then
+            if (v.Position - hrpPos).Magnitude <= 15 then
+                return v
+            end
+        end
+    end
+    return nil
+end
+
+--// フローティングUI (ScreenGui と TextButton) の構築
+local FloatingGui = Instance.new("ScreenGui")
+local FloatingButton = Instance.new("TextButton")
+FloatingGui.Name = "PalletMagnetOverlay"
+FloatingGui.Parent = CoreGui
+FloatingGui.Enabled = false
+
+FloatingButton.Name = "MagnetBtn"
+FloatingButton.Parent = FloatingGui
+FloatingButton.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+FloatingButton.BorderSizePixel = 2
+FloatingButton.BorderColor3 = Color3.fromRGB(255, 0, 0)
+FloatingButton.Position = UDim2.new(0.5, -40, 0.5, -40)
+FloatingButton.Size = UDim2.new(0, 80, 0, 80)
+FloatingButton.Font = Enum.Font.SourceSansBold
+FloatingButton.Text = "MAGNET OFF"
+FloatingButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+FloatingButton.TextSize = 14
+FloatingButton.TextWrapped = true
+
+--// フローティングボタンのドラッグ（移動）処理
+local dragging, dragInput, dragStart, startPos
+local function update(input)
+    local delta = input.Position - dragStart
+    FloatingButton.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+end
+
+FloatingButton.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = FloatingButton.Position
+        input.Changed:Connect(function() 
+            if input.UserInputState == Enum.UserInputState.End then dragging = false end 
+        end)
+    end
+end)
+
+FloatingButton.InputChanged:Connect(function(input) 
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then 
+        dragInput = input 
+    end 
+end)
+
+game:GetService("UserInputService").InputChanged:Connect(function(input) 
+    if input == dragInput and dragging then update(input) end 
+end)
+
+--// フローティングボタンクリック時の吸着・解除ロジック
+FloatingButton.MouseButton1Click:Connect(function()
+    if not sticking then
+        local char = Player.Character
+        if not char or not char:FindFirstChild("HumanoidRootPart") then return end
+        local hrp = char.HumanoidRootPart
+        local target = scanForPallet()
+        if target then
+            currentTargetMagnet = target
+            offsetCFrameMagnet = currentTargetMagnet.CFrame:ToObjectSpace(hrp.CFrame)
+            sticking = true
+            FloatingButton.Text = "MAGNET ON"
+            FloatingButton.BackgroundColor3 = Color3.fromRGB(0, 150, 0)
+            
+            connectionMagnet = RunService.Heartbeat:Connect(function()
+                if sticking and currentTargetMagnet and currentTargetMagnet.Parent and char and char:FindFirstChild("HumanoidRootPart") then
+                    if not char:FindFirstChild("GrabLine", true) then
+                        char.HumanoidRootPart.Velocity = Vector3.new(0, 0, 0)
+                        char.HumanoidRootPart.RotVelocity = Vector3.new(0, 0, 0)
+                        char.HumanoidRootPart.CFrame = currentTargetMagnet.CFrame * offsetCFrameMagnet
+                    end
+                else
+                    sticking = false
+                    FloatingButton.Text = "MAGNET OFF"
+                    FloatingButton.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+                    if connectionMagnet then connectionMagnet:Disconnect() connectionMagnet = nil end
+                end
+            end)
+        end
+    else
+        if currentTargetMagnet and Player.Character and Player.Character:FindFirstChild("HumanoidRootPart") then
+            Player.Character.HumanoidRootPart.Velocity = currentTargetMagnet.Velocity
+            Player.Character.HumanoidRootPart.RotVelocity = currentTargetMagnet.RotVelocity
+        end
+        sticking = false
+        currentTargetMagnet = nil
+        if connectionMagnet then connectionMagnet:Disconnect() connectionMagnet = nil end
+        FloatingButton.Text = "MAGNET OFF"
+        FloatingButton.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    end
+end)
+
+--// Orion UI の構築 (トグルボタン1つのみ)
+local Window = OrionLib:MakeWindow({
+    Name = "Pallet Magnet System",
+    HidePremium = true,
+    SaveConfig = false
+})
+
+local MainTab = Window:MakeTab({ Name = "Magnet", Icon = "rbxassetid://4483345998" })
+
+MainTab:AddToggle({ 
+    Name = "Pallet Stick together (UI)", 
+    Default = false, 
+    Callback = function(Value) 
+        FloatingGui.Enabled = Value 
+    end 
+})
+
+OrionLib:Init()
