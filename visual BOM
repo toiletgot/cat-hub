@@ -265,7 +265,7 @@ end)
 
 -- UI：単発発射ボタン
 Tab:AddButton({
-    Name = "ミサイル発射（単発）",
+    Name = "ボム発射（単発）",
     Callback = function()
         spawnMissile()
         OrionLib:MakeNotification({
