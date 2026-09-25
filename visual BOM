@@ -1,0 +1,378 @@
+-- OrionLibの読み込み
+local OrionLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/BlizTBr/scripts/main/Orion%20X"))()
+
+-- ウィンドウ作成
+local Window = OrionLib:MakeWindow({
+    Name = "ビジュアルボム",
+    HidePremium = false,
+    IntroText = "ビジュアルなんですよねw"
+})
+
+-- タブとセクション
+local Tab = Window:MakeTab({
+    Name = "ボム",
+    Icon = "rbxassetid://4483345998",
+    PremiumOnly = false
+})
+
+Tab:AddSection({
+    Name = "弾道追尾ボム"
+})
+
+-- 設定
+local missileSettings = {
+    launchSpeed = 150,
+    launchDuration = 0.8,
+    homingSpeed = 180,
+    hitDistance = 8,
+    lifetime = 15,
+    knockbackForce = 250,
+    knockbackUpward = 100,
+    fireRate = 0.2,        -- 連射間隔（デフォルトを短く）
+    rapidFire = false,
+    launchVolume = 0.6,    -- 発射音の音量
+    explosionVolume = 0.8  -- 爆発音の音量
+}
+
+-- サービス
+local RunService = game:GetService("RunService")
+local Players = game:GetService("Players")
+local Debris = game:GetService("Debris")
+
+-- 効果音ID
+local EXPLOSION_SOUND_ID = "rbxassetid://5801257793"
+local LAUNCH_SOUND_ID = "rbxassetid://912540223"
+
+-- ミサイルモデル作成
+local function createMissileModel()
+    local model = Instance.new("Model")
+    model.Name = "BallisticMissile"
+
+    local body = Instance.new("Part")
+    body.Name = "Body"
+    body.Shape = Enum.PartType.Cylinder
+    body.Size = Vector3.new(6, 1.6, 1.6)
+    body.Color = Color3.fromRGB(180, 60, 60)
+    body.Material = Enum.Material.Metal
+    body.Anchored = true
+    body.CanCollide = false
+    body.CFrame = CFrame.new(0, 0, 0) * CFrame.Angles(0, 0, math.rad(90))
+    body.Parent = model
+
+    local nose = Instance.new("Part")
+    nose.Name = "Nose"
+    nose.Shape = Enum.PartType.Cylinder
+    nose.Size = Vector3.new(1.8, 0.8, 0.8)
+    nose.Color = Color3.fromRGB(140, 40, 40)
+    nose.Material = Enum.Material.Metal
+    nose.Anchored = true
+    nose.CanCollide = false
+    nose.CFrame = body.CFrame * CFrame.new(3.9, 0, 0) * CFrame.Angles(0, 0, math.rad(90))
+    nose.Parent = model
+
+    for i = 1, 4 do
+        local fin = Instance.new("Part")
+        fin.Name = "Fin"
+        fin.Size = Vector3.new(1.2, 0.25, 1.8)
+        fin.Color = Color3.fromRGB(140, 40, 40)
+        fin.Material = Enum.Material.Metal
+        fin.Anchored = true
+        fin.CanCollide = false
+        local angle = math.rad((i - 1) * 90)
+        fin.CFrame = body.CFrame
+            * CFrame.new(-2.7, 0, 0)
+            * CFrame.Angles(angle, 0, 0)
+            * CFrame.new(0, 0.9, 0)
+        fin.Parent = model
+    end
+
+    model.PrimaryPart = body
+    model.Parent = workspace
+    return model, body
+end
+
+-- 最も近いプレイヤーを探す
+local function findNearestPlayer(fromPosition, excludePlayer)
+    local nearest = nil
+    local shortestDist = math.huge
+
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= excludePlayer then
+            local char = player.Character
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+            local humanoid = char and char:FindFirstChild("Humanoid")
+
+            if hrp and humanoid and humanoid.Health > 0 then
+                local dist = (hrp.Position - fromPosition).Magnitude
+                if dist < shortestDist then
+                    shortestDist = dist
+                    nearest = hrp
+                end
+            end
+        end
+    end
+    return nearest
+end
+
+local function getMyRootPart(player)
+    local char = player.Character
+    return char and char:FindFirstChild("HumanoidRootPart")
+end
+
+-- 吹き飛ばし処理
+local function applyKnockback(position, radius)
+    for _, player in ipairs(Players:GetPlayers()) do
+        local char = player.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        local humanoid = char and char:FindFirstChild("Humanoid")
+
+        if hrp and humanoid and humanoid.Health > 0 then
+            local dist = (hrp.Position - position).Magnitude
+            if dist <= radius then
+                local forceMultiplier = 1 - (dist / radius)
+                local direction = (hrp.Position - position)
+                if direction.Magnitude < 0.1 then
+                    direction = Vector3.new(0, 1, 0)
+                else
+                    direction = direction.Unit
+                end
+                direction = (direction + Vector3.new(0, 1, 0)).Unit
+
+                local force = direction * missileSettings.knockbackForce * forceMultiplier
+                force = force + Vector3.new(0, missileSettings.knockbackUpward * forceMultiplier, 0)
+
+                hrp:ApplyImpulse(force * hrp.AssemblyMass)
+            end
+        end
+    end
+end
+
+-- 爆発処理（音量を設定から参照）
+local function explode(position)
+    local explosion = Instance.new("Explosion")
+    explosion.Position = position
+    explosion.BlastRadius = 0
+    explosion.BlastPressure = 0
+    explosion.DestroyJointRadiusPercent = 0
+    explosion.Parent = workspace
+
+    local sound = Instance.new("Sound")
+    sound.SoundId = EXPLOSION_SOUND_ID
+    sound.Volume = missileSettings.explosionVolume  -- ★ 設定から
+    sound.RollOffMaxDistance = 150
+    sound.RollOffMinDistance = 10
+    sound.Parent = workspace
+    sound:Play()
+    Debris:AddItem(sound, 5)
+
+    applyKnockback(position, 30)
+end
+
+-- 1発分のミサイル発射
+local function spawnMissile()
+    local player = Players.LocalPlayer
+    local myRoot = getMyRootPart(player)
+    if not myRoot then return end
+
+    local missileModel, missileBody = createMissileModel()
+    local spawnPos = myRoot.Position + Vector3.new(0, 3, 0)
+    missileModel:PivotTo(CFrame.new(spawnPos))
+
+    local launchSound = Instance.new("Sound")
+    launchSound.SoundId = LAUNCH_SOUND_ID
+    launchSound.Volume = missileSettings.launchVolume  -- ★ 設定から
+    launchSound.RollOffMaxDistance = 100
+    launchSound.Parent = missileBody
+    launchSound:Play()
+
+    local startTime = tick()
+    local phase = "launch"
+    local launchEndTime = startTime + missileSettings.launchDuration
+    local target = nil
+    local connection
+
+    connection = RunService.Heartbeat:Connect(function(deltaTime)
+        if not missileModel.Parent then
+            connection:Disconnect()
+            return
+        end
+
+        local now = tick()
+
+        if now - startTime > missileSettings.lifetime then
+            connection:Disconnect()
+            missileModel:Destroy()
+            return
+        end
+
+        local currentPivot = missileModel:GetPivot()
+
+        if phase == "launch" then
+            local newPos = currentPivot.Position + Vector3.new(0, missileSettings.launchSpeed * deltaTime, 0)
+            missileModel:PivotTo(CFrame.new(newPos) * CFrame.Angles(math.rad(-90), 0, 0))
+
+            if now >= launchEndTime then
+                phase = "homing"
+                target = findNearestPlayer(newPos, player)
+                if not target then
+                    target = myRoot
+                end
+            end
+
+        elseif phase == "homing" then
+            if not target or not target.Parent then
+                local newTarget = findNearestPlayer(currentPivot.Position, player)
+                if newTarget then
+                    target = newTarget
+                else
+                    target = myRoot
+                end
+            end
+
+            if not target or not target.Parent then
+                local newPos = currentPivot.Position + Vector3.new(0, -missileSettings.homingSpeed * deltaTime, 0)
+                missileModel:PivotTo(CFrame.new(newPos) * CFrame.Angles(math.rad(90), 0, 0))
+                return
+            end
+
+            local direction = (target.Position - currentPivot.Position).Unit
+            local newPos = currentPivot.Position + direction * missileSettings.homingSpeed * deltaTime
+
+            missileModel:PivotTo(CFrame.lookAt(newPos, target.Position))
+
+            if (newPos - target.Position).Magnitude < missileSettings.hitDistance then
+                connection:Disconnect()
+                explode(newPos)
+                missileModel:Destroy()
+            end
+        end
+    end)
+
+    Debris:AddItem(missileModel, missileSettings.lifetime + 2)
+end
+
+-- 連射ループ
+local lastFireTime = 0
+RunService.Heartbeat:Connect(function()
+    if not missileSettings.rapidFire then return end
+
+    local now = tick()
+    if now - lastFireTime >= missileSettings.fireRate then
+        lastFireTime = now
+        spawnMissile()
+    end
+end)
+
+-- UI：単発発射ボタン
+Tab:AddButton({
+    Name = "ミサイル発射（単発）",
+    Callback = function()
+        spawnMissile()
+        OrionLib:MakeNotification({
+            Name = "発射！",
+            Content = "弾道ミサイルを発射しました",
+            Image = "rbxassetid://4483345998",
+            Time = 3
+        })
+    end
+})
+
+-- UI：連射モードトグル
+Tab:AddToggle({
+    Name = "連射モード",
+    Default = false,
+    Save = false,
+    Flag = "RapidFireToggle",
+    Callback = function(state)
+        missileSettings.rapidFire = state
+        if state then
+            lastFireTime = 0
+        end
+    end
+})
+
+-- ★ UI：連射間隔スライダー（最小値を小さく）
+Tab:AddSlider({
+    Name = "連射間隔",
+    Min = 0.05,          -- ★ 0.05秒まで
+    Max = 2,
+    Default = 0.2,       -- ★ デフォルトを短く
+    Color = Color3.fromRGB(255, 120, 0),
+    Increment = 0.05,
+    ValueName = "秒",
+    Callback = function(value)
+        missileSettings.fireRate = value
+    end
+})
+
+-- ★ UI：発射音の音量スライダー
+Tab:AddSlider({
+    Name = "発射音の音量",
+    Min = 0,
+    Max = 3,
+    Default = 0.6,
+    Color = Color3.fromRGB(100, 200, 255),
+    Increment = 0.1,
+    ValueName = "",
+    Callback = function(value)
+        missileSettings.launchVolume = value
+    end
+})
+
+-- ★ UI：爆発音の音量スライダー
+Tab:AddSlider({
+    Name = "爆発音の音量",
+    Min = 0,
+    Max = 3,
+    Default = 0.8,
+    Color = Color3.fromRGB(255, 80, 80),
+    Increment = 0.1,
+    ValueName = "",
+    Callback = function(value)
+        missileSettings.explosionVolume = value
+    end
+})
+
+-- 吹き飛ばし力スライダー
+Tab:AddSlider({
+    Name = "吹き飛ばし力",
+    Min = 50,
+    Max = 800,
+    Default = 250,
+    Color = Color3.fromRGB(255, 80, 0),
+    Increment = 10,
+    ValueName = "",
+    Callback = function(value)
+        missileSettings.knockbackForce = value
+    end
+})
+
+-- 上昇速度スライダー
+Tab:AddSlider({
+    Name = "上昇速度",
+    Min = 50,
+    Max = 300,
+    Default = 150,
+    Color = Color3.fromRGB(255, 150, 0),
+    Increment = 10,
+    ValueName = "studs/s",
+    Callback = function(value)
+        missileSettings.launchSpeed = value
+    end
+})
+
+-- 追尾速度スライダー
+Tab:AddSlider({
+    Name = "追尾速度",
+    Min = 50,
+    Max = 400,
+    Default = 180,
+    Color = Color3.fromRGB(255, 80, 0),
+    Increment = 10,
+    ValueName = "studs/s",
+    Callback = function(value)
+        missileSettings.homingSpeed = value
+    end
+})
+
+OrionLib:Init()
