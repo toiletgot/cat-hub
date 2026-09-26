@@ -1,5 +1,5 @@
 --================================================================================
---  Flexible Object Detector HUB / 高精度版（OrionLib Based）
+--  Flexible Object Detector HUB / 高精度版（OrionLib Based） - Fixed
 --================================================================================
 
 -- 1. OrionLib 読み込み
@@ -14,7 +14,7 @@ else
     local ok2, res2 = pcall(function()
         return loadstring(game:HttpGet('https://pastefy.app/H3pBfBVT/raw'))()
     end)
-    if ok2 then
+    if ok2 and res2 then  -- ✅ FIX: res2 の nil チェックを追加
         OrionLib = res2
         print("[Detector] OrionLib loaded (backup).")
     else
@@ -47,7 +47,7 @@ local STATE = {
     ShowName        = true,
     ShowDistance    = true,
     ShowClassName   = false,
-    ShowPath        = false,   -- 🆕 フルパス表示
+    ShowPath        = false,
 
     ScanRadius      = 500,
     MinDistance     = 0,
@@ -56,15 +56,13 @@ local STATE = {
     RefreshRate     = 0.5,
     MaxObjects      = 500,
 
-    DetectMode      = "ALL",           -- ALL / KEYWORD
+    DetectMode      = "ALL",
     KeywordList     = { "dice", "toy" },
     ClassFilter     = "All",
 
-    -- 🆕 検出方式
-    ScanMethod      = "BOTH",          -- "RADIUS" / "DESCENDANT" / "BOTH"
-    GroupByModel    = true,            -- Modelを1つとしてESPする
+    ScanMethod      = "BOTH",
+    GroupByModel    = true,
 
-    -- 除外設定
     IgnoreLocalChar = true,
     IgnorePlayers   = true,
     IgnoreTerrain   = true,
@@ -82,7 +80,8 @@ local STATE = {
     HeightOffset    = 3,
 
     Detected        = {},
-    Count           = 0
+    Count           = 0,
+    CandidateCount  = 0,  -- ✅ FIX: 候補数を別途保持
 }
 
 --================================================================================
@@ -108,7 +107,6 @@ local function GetTargetPosition(obj)
     if obj:IsA("Model") then
         local okp, pivot = pcall(function() return obj:GetPivot() end)
         if okp and pivot then return pivot.Position end
-        -- フォールバック：PrimaryPartまたは最初のBasePart
         if obj.PrimaryPart then return obj.PrimaryPart.Position end
         local first = obj:FindFirstChildWhichIsA("BasePart", true)
         if first then return first.Position end
@@ -118,7 +116,8 @@ end
 
 local function IsLocalCharacterPart(obj)
     local char = LocalPlayer.Character
-    return char and obj:IsDescendantOf(char) or false
+    -- ✅ FIX: 括弧を明示して意図を明確化
+    return (char ~= nil) and obj:IsDescendantOf(char) or false
 end
 
 local function IsPlayerPart(obj)
@@ -128,11 +127,10 @@ local function IsPlayerPart(obj)
     return false
 end
 
--- 🆕 フルパス取得
 local function GetFullPath(obj)
     local parts = {}
     local cur = obj
-    while cur and cur ~= Workspace and cur ~= game do
+    while cur and cur ~= Workspace do
         table.insert(parts, 1, cur.Name)
         cur = cur.Parent
     end
@@ -151,7 +149,7 @@ local function IsGroundPart(obj)
     for _, k in ipairs(GROUND_KEYWORDS) do
         if string.find(n, k, 1, true) then return true end
     end
-    if obj:IsA("Terrain") then return true end
+    -- ✅ FIX: Terrain 判定は ShouldDetect 側に一本化したため削除
     if obj:IsA("SpawnLocation") then return true end
 
     if STATE.IgnoreAnchored and obj:IsA("BasePart") and obj.Anchored then
@@ -195,25 +193,22 @@ local function IsEffectPart(obj)
 end
 
 --================================================================================
--- 🎯 キーワードマッチ（改良版：自分の名前・親Model・祖先・ClassName）
+-- 🎯 キーワードマッチ
 --================================================================================
 
 local function MatchesKeywords(obj, keywords)
     if #keywords == 0 then return true end
 
-    -- 1. 自身の名前
     local n = obj.Name:lower()
     for _, k in ipairs(keywords) do
         if string.find(n, k, 1, true) then return true end
     end
 
-    -- 2. ClassName
     local cn = obj.ClassName:lower()
     for _, k in ipairs(keywords) do
         if string.find(cn, k, 1, true) then return true end
     end
 
-    -- 3. 祖先Model（数階層上まで）
     local parent = obj.Parent
     local depth = 0
     while parent and parent ~= Workspace and depth < 5 do
@@ -225,7 +220,6 @@ local function MatchesKeywords(obj, keywords)
         depth = depth + 1
     end
 
-    -- 4. 子パーツ（Modelの場合）
     if obj:IsA("Model") then
         for _, child in ipairs(obj:GetChildren()) do
             local cnn = child.Name:lower()
@@ -249,13 +243,11 @@ local function ShouldDetect(obj)
     if STATE.IgnoreTerrain and obj:IsA("Terrain") then return false end
     if IsGroundPart(obj) then return false end
 
-    -- BasePart固有チェック
     if obj:IsA("BasePart") then
         if obj.Transparency >= 1 then return false end
         if obj.Size.Magnitude < 0.05 then return false end
     end
 
-    -- Model固有チェック（全パーツが透明 or 小さすぎる場合は除外）
     if obj:IsA("Model") then
         local hasVisible = false
         for _, p in ipairs(obj:GetDescendants()) do
@@ -358,50 +350,49 @@ local function CleanupAllESP()
 end
 
 --================================================================================
--- 🔍 スキャン（3方式 + Modelグループ化）
+-- 🔍 スキャン
 --================================================================================
 
--- Model化できるならModelを優先して親を返す
 local function ResolveTargetObject(obj)
     if not STATE.GroupByModel then return obj end
     if obj:IsA("Model") then return obj end
 
-    -- BasePartがModelに属するならModelを返す（Workspace直下ならPartのまま）
     local model = obj:FindFirstAncestorOfClass("Model")
-    if model and model.Parent ~= Workspace then
+    -- ✅ FIX: Workspace 直下の Model にもまとめる（意図をコメントと一致させる）
+    if model and model ~= Workspace then
         return model
     end
     return obj
 end
 
-local function ScanByRadius()
+local function GetRootPos()
     local char = LocalPlayer.Character
     local root = char and char:FindFirstChild("HumanoidRootPart")
-    if not root then return {} end
+    return root and root.Position or nil
+end
 
+local function ScanByRadius()
+    local rootPos = GetRootPos()
+    if not rootPos then return {} end
     local scanR = math.max(STATE.ScanRadius, STATE.MaxDistance)
-    return Workspace:GetPartBoundsInRadius(root.Position, scanR)
+    return Workspace:GetPartBoundsInRadius(rootPos, scanR)
 end
 
 local function ScanByDescendant()
-    local char = LocalPlayer.Character
-    local root = char and char:FindFirstChild("HumanoidRootPart")
-    if not root then return {} end
+    local rootPos = GetRootPos()
+    if not rootPos then return {} end
 
     local scanR = math.max(STATE.ScanRadius, STATE.MaxDistance)
-    local r2 = scanR * scanR
     local result = {}
 
-    -- Workspace直下のModel/BasePartを走査（入れ子対応）
     for _, obj in ipairs(Workspace:GetDescendants()) do
         if obj:IsA("BasePart") then
-            local d = (obj.Position - root.Position).Magnitude
-            if d <= scanR then
+            if (obj.Position - rootPos).Magnitude <= scanR then
                 table.insert(result, obj)
             end
         elseif obj:IsA("Model") then
             local pos = GetTargetPosition(obj)
-            if pos and (pos - root.Position).Magnitude <= scanR then
+            if pos and (pos - rootPos).Magnitude <= scanR then
                 table.insert(result, obj)
             end
         end
@@ -421,14 +412,14 @@ local function ScanForObjects()
         local b = ScanByDescendant()
         local seen = {}
         for _, o in ipairs(a) do
-            if not seen[o] then seen[o] = true table.insert(raw, o) end
+            if not seen[o] then seen[o] = true; table.insert(raw, o) end
         end
         for _, o in ipairs(b) do
-            if not seen[o] then seen[o] = true table.insert(raw, o) end
+            if not seen[o] then seen[o] = true; table.insert(raw, o) end
         end
     end
 
-    -- 🆕 Modelグループ化 + 重複排除
+    -- Modelグループ化 + 重複排除
     local resolved = {}
     local seen = {}
     for _, obj in ipairs(raw) do
@@ -439,6 +430,17 @@ local function ScanForObjects()
         end
     end
 
+    STATE.CandidateCount = #resolved  -- ✅ FIX: 候補数を保持
+
+    -- ✅ FIX: 既存ESPのうち、除外条件に該当するものを削除
+    for obj in pairs(STATE.Detected) do
+        if not obj or not obj.Parent or not ShouldDetect(obj) then
+            RemoveESP(obj)
+        end
+    end
+
+    -- 新規検出
+    local detectedSet = {}  -- ✅ FIX: 今フレームで検出したセット
     local count = 0
     for _, obj in ipairs(resolved) do
         if count >= STATE.MaxObjects then break end
@@ -446,7 +448,15 @@ local function ScanForObjects()
             if not STATE.Detected[obj] then
                 CreateESP(obj)
             end
+            detectedSet[obj] = true
             count = count + 1
+        end
+    end
+
+    -- ✅ FIX: 今回検出されなかった既存ESPも削除（距離・条件変動に追従）
+    for obj in pairs(STATE.Detected) do
+        if not detectedSet[obj] then
+            RemoveESP(obj)
         end
     end
 
@@ -485,23 +495,28 @@ local CountLabel = TabMain:AddLabel("検出数: 0")
 
 TabMain:AddSection({ Name = "🔄 手動操作" })
 TabMain:AddButton({ Name = "🔃 今すぐスキャン",       Callback = function() CleanupAllESP() ScanForObjects() end })
-TabMain:AddButton({ Name = "🧹 すべての ESP をクリア", Callback = function() CleanupAllESP() STATE.Count = 0 end })
+TabMain:AddButton({ Name = "🧹 すべての ESP をクリア", Callback = function() CleanupAllESP() STATE.Count = 0 STATE.CandidateCount = 0 end })
 
 TabMain:AddSection({ Name = "📋 デバッグ" })
-local DebugLabel = TabMain:AddLabel("候補数: 0 / 検出: 0")
+local DebugLabel = TabMain:AddLabel("候補: 0 / 検出: 0")
 
 TabMain:AddButton({
     Name = "🖨️ 周囲の全オブジェクト名をコンソール出力",
     Callback = function()
-        local char = LocalPlayer.Character
-        local root = char and char:FindFirstChild("HumanoidRootPart")
-        if not root then return end
+        local rootPos = GetRootPos()
+        if not rootPos then
+            print("[Detector] キャラクターが存在しません。")
+            return
+        end
         print("===== 周囲のオブジェクト一覧 =====")
         for _, obj in ipairs(ScanByDescendant()) do
-            local d = (GetTargetPosition(obj) or root.Position - root.Position)
-            print(string.format("[%s] %s | Class: %s | 親: %s",
-                tostring(math.floor((GetTargetPosition(obj) or root.Position - root.Position).Magnitude)),
-                obj.Name, obj.ClassName, obj.Parent and obj.Parent.Name or "nil"))
+            -- ✅ FIX: 距離計算を正しく分離
+            local pos = GetTargetPosition(obj) or rootPos
+            local d = (pos - rootPos).Magnitude
+            print(string.format("[%dm] %s | Class: %s | 親: %s",
+                math.floor(d),
+                obj.Name, obj.ClassName,
+                obj.Parent and obj.Parent.Name or "nil"))
         end
         print("===== ここまで =====")
     end
@@ -514,7 +529,7 @@ TabTarget:AddDropdown({
     Name     = "検出モード",
     Default  = "ALL",
     Options  = { "ALL", "KEYWORD" },
-    Callback = function(V) STATE.DetectMode = V CleanupAllESP() end
+    Callback = function(V) STATE.DetectMode = V; CleanupAllESP() end
 })
 
 TabTarget:AddSection({ Name = "🎯 プリセット" })
@@ -562,6 +577,8 @@ TabTarget:AddTextbox({
         if STATE.DetectMode ~= "KEYWORD" then
             STATE.DetectMode = "KEYWORD"
         end
+        -- ✅ FIX: キーワード変更時に古いESPをクリア
+        CleanupAllESP()
     end
 })
 
@@ -574,7 +591,7 @@ TabTarget:AddDropdown({
         "MeshPart", "UnionOperation", "TrussPart",
         "WedgePart", "CornerWedgePart", "Accessory", "Tool"
     },
-    Callback = function(V) STATE.ClassFilter = V CleanupAllESP() end
+    Callback = function(V) STATE.ClassFilter = V; CleanupAllESP() end
 })
 
 -- 距離
@@ -691,7 +708,16 @@ TabSettings:AddSlider({
 TabSettings:AddColorPicker({
     Name = "ESP カラー",
     Default = Color3.fromRGB(0, 255, 150),
-    Callback = function(C) STATE.ESPColor = C end
+    Callback = function(C)
+        STATE.ESPColor = C
+        -- ✅ FIX: 既存ESPにも即時反映
+        for _, d in pairs(STATE.Detected) do
+            if d.Highlight then
+                d.Highlight.FillColor    = C
+                d.Highlight.OutlineColor = C
+            end
+        end
+    end
 })
 
 --================================================================================
@@ -742,12 +768,18 @@ RunService.Heartbeat:Connect(function(dt)
                 end
             end
         end
+
+        -- ✅ FIX: 実際のESP数をカウントに反映
+        local realCount = 0
+        for _ in pairs(STATE.Detected) do realCount = realCount + 1 end
+        STATE.Count = realCount
     end
 
     if labelAccum >= 0.5 then
         labelAccum = 0
         if CountLabel then CountLabel:Set("検出数: " .. STATE.Count) end
-        if DebugLabel then DebugLabel:Set(string.format("候補: %d / 検出: %d", STATE.Count, STATE.Count)) end
+        -- ✅ FIX: 候補数と検出数を別々に表示
+        if DebugLabel then DebugLabel:Set(string.format("候補: %d / 検出: %d", STATE.CandidateCount, STATE.Count)) end
     end
 end)
 
