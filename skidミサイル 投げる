@@ -1,0 +1,546 @@
+--[[
+    ミサイル専用（やわらか吸収 + 発射機能）
+    - ミサイル同士は CollisionGroup で衝突しない
+    - 発射位置・方向をランダム分散
+    - 発射したミサイルは二度と吸い込まない
+]]
+
+local OrionLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/BlizTBr/scripts/main/Orion X"))()
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local PhysicsService = game:GetService("PhysicsService")
+local player = Players.LocalPlayer
+
+-- ===== CollisionGroup 設定 =====
+pcall(function()
+    PhysicsService:RegisterCollisionGroup("Missiles")
+end)
+pcall(function()
+    PhysicsService:CollisionGroupSetCollidable("Missiles", "Missiles", false) -- ミサイル同士は衝突しない
+end)
+
+local settings = {
+    speed = 0.025,
+    width = 14,
+    height = 5,
+    density = 1.0,
+    depth = 0,
+    maxObjects = 30,
+    range = 80,
+    invertDirection = false,
+    pullStrength = 12,
+    softAbsorbTime = 1.6,
+    launchSpeed = 180,          -- 発射速度（前方向）
+    launchUpward = 8,           -- 上方向の力
+    rapidFireInterval = 0.18,   -- 連射間隔
+    launchCooldown = 0.08,      -- 単発の最小間隔（連打対策）
+    spreadRadius = 12,          -- 発射位置のランダム半径
+    spreadAngle = 12,           -- 発射方向の扇状広がり（度）
+    collidableDelay = 3,        -- 発射後 CanCollide を戻すまでの秒数
+}
+
+local mode = "None"
+local hoveringObjects = {}
+local objectList = {}
+local objectData = {}
+local launchedObjects = {}
+local ignoredObjects = {}   -- 発射済みで吸い込み対象から除外するリスト
+local timeCounter = 0
+local scanCooldown = 0
+local isStopped = false
+local isRapidFiring = false
+local lastRapidFire = 0
+local lastLaunch = 0
+local launchIndex = 0
+
+-- ミサイル判定
+local function isMissile(obj)
+    local name = string.lower(obj.Name)
+    return string.find(name, "missile") or string.find(name, "bomb")
+end
+
+local function isSelectableObject(part, character)
+    if not part:IsA("BasePart") or part.Anchored then return false end
+    if character and part:IsDescendantOf(character) then return false end
+    if part.Parent:FindFirstChild("Humanoid") then return false end
+    if part.Parent.Parent and part.Parent.Parent:FindFirstChild("Humanoid") then return false end
+
+    local ignore = {"Baseplate", "Terrain", "SpawnLocation", "Sky", "Map", "Wall", "Floor", "Grid"}
+    if table.find(ignore, part.Name) then return false end
+
+    local target = part.Parent:IsA("Model") and part.Parent or part
+    if not isMissile(target) and not isMissile(part) then
+        return false
+    end
+
+    local isOwner = false
+    pcall(function()
+        if part:GetNetworkOwner() == player then isOwner = true end
+    end)
+    if isOwner or part:FindFirstChild("creator") or part.Name == "Handle" or part:GetAttribute("Creator") == player.UserId then
+        return true
+    end
+
+    return part.Size.X < 40 and part.Size.Y < 40 and part.Size.Z < 40
+end
+
+local function getRoot(obj)
+    if obj:IsA("Model") then
+        return obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
+    end
+    return obj
+end
+
+local function setCollisionGroup(obj)
+    pcall(function()
+        if obj:IsA("Model") then
+            for _, p in ipairs(obj:GetDescendants()) do
+                if p:IsA("BasePart") then
+                    p.CollisionGroup = "Missiles"
+                end
+            end
+        elseif obj:IsA("BasePart") then
+            obj.CollisionGroup = "Missiles"
+        end
+    end)
+end
+
+local function setCanCollide(obj, value)
+    pcall(function()
+        if obj:IsA("Model") then
+            for _, p in ipairs(obj:GetDescendants()) do
+                if p:IsA("BasePart") then p.CanCollide = value end
+            end
+        elseif obj:IsA("BasePart") then
+            obj.CanCollide = value
+        end
+    end)
+end
+
+local function registerPart(part)
+    if isStopped then return end
+    local character = player.Character
+    if not isSelectableObject(part, character) then return end
+
+    local target = part.Parent:IsA("Model") and part.Parent or part
+
+    -- ★ 発射済みミサイルは吸い込まない
+    if ignoredObjects[target] or ignoredObjects[part] then return end
+
+    if hoveringObjects[target] then return end
+    if #objectList >= settings.maxObjects then return end
+
+    hoveringObjects[target] = true
+    table.insert(objectList, target)
+
+    objectData[target] = {
+        seed = math.random() * 100,
+        absorbStart = tick()
+    }
+
+    local root = part
+    if target:IsA("Model") then
+        if not target.PrimaryPart then
+            target.PrimaryPart = part
+        end
+        root = target.PrimaryPart
+
+        for _, p in ipairs(target:GetDescendants()) do
+            if p:IsA("BasePart") then
+                p.CanCollide = false
+                p.Anchored = false
+                if p ~= root and not p:FindFirstChildOfClass("WeldConstraint") then
+                    local weld = Instance.new("WeldConstraint")
+                    weld.Part0 = root
+                    weld.Part1 = p
+                    weld.Parent = p
+                end
+            end
+        end
+    else
+        part.CanCollide = false
+    end
+
+    -- ミサイル同士が衝突しないようにグループ設定
+    setCollisionGroup(target)
+
+    local bv = Instance.new("BodyVelocity")
+    bv.Name = "SyncForce"
+    bv.MaxForce = Vector3.new(5e6, 5e6, 5e6)
+    bv.P = 1000
+    bv.Velocity = Vector3.zero
+    bv.Parent = root
+
+    local bg = Instance.new("BodyGyro")
+    bg.Name = "SyncGyro"
+    bg.MaxTorque = Vector3.new(5e6, 5e6, 5e6)
+    bg.P = 1000
+    bg.Parent = root
+
+    pcall(function() root:SetNetworkOwner(player) end)
+end
+
+local function clearObjects()
+    for _, obj in ipairs(objectList) do
+        local root = getRoot(obj)
+        if root then
+            pcall(function()
+                setCanCollide(obj, true)
+                if root:FindFirstChild("SyncForce") then root.SyncForce:Destroy() end
+                if root:FindFirstChild("SyncGyro") then root.SyncGyro:Destroy() end
+            end)
+        end
+    end
+    hoveringObjects = {}
+    objectList = {}
+    objectData = {}
+    -- 無視リストはここではクリアしない（発射済みは引き続き無視）
+end
+
+-- ミサイルを1発発射
+local function launchOne()
+    if #objectList == 0 then return end
+
+    local now = tick()
+    if now - lastLaunch < settings.launchCooldown then return end
+    lastLaunch = now
+
+    local obj = table.remove(objectList, 1)
+    hoveringObjects[obj] = nil
+    objectData[obj] = nil
+
+    local root = getRoot(obj)
+    if not root then return end
+
+    if root:FindFirstChild("SyncForce") then root.SyncForce:Destroy() end
+    if root:FindFirstChild("SyncGyro") then root.SyncGyro:Destroy() end
+
+    -- 衝突グループ維持 & CanCollide false
+    setCollisionGroup(obj)
+    setCanCollide(obj, false)
+
+    -- 発射済みリストに追加
+    launchedObjects[obj] = tick()
+
+    -- ★ 吸い込み対象から除外（発射したものは二度と吸い込まない）
+    ignoredObjects[obj] = true
+    if obj:IsA("Model") then
+        for _, p in ipairs(obj:GetDescendants()) do
+            if p:IsA("BasePart") then
+                ignoredObjects[p] = true
+            end
+        end
+    end
+
+    local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+
+    local look = hrp.CFrame.LookVector
+    local right = hrp.CFrame.RightVector
+    local up = hrp.CFrame.UpVector
+
+    -- 発射位置を大きくランダム分散
+    launchIndex = launchIndex + 1
+    local angle = math.random() * math.pi * 2
+    local radius = settings.spreadRadius * (0.5 + math.random() * 0.5)
+    local heightOffset = 3 + math.random() * 6
+
+    local spawnPos = hrp.Position
+        + look * 8
+        + right * (math.cos(angle) * radius)
+        + up * heightOffset
+
+    if root:IsA("BasePart") then
+        root.CFrame = CFrame.new(spawnPos) * root.CFrame.Rotation
+    end
+
+    -- 発射方向も扇状にバラけさせる
+    local spreadRad = math.rad(settings.spreadAngle)
+    local spreadAngle = (math.random() - 0.5) * spreadRad
+    local launchDir = (CFrame.Angles(0, spreadAngle, 0) * look)
+
+    local bv = Instance.new("BodyVelocity")
+    bv.Name = "LaunchForce"
+    bv.MaxForce = Vector3.new(1e7, 1e7, 1e7)
+    bv.Velocity = launchDir * settings.launchSpeed + Vector3.new(0, settings.launchUpward, 0)
+    bv.Parent = root
+
+    local bg = Instance.new("BodyGyro")
+    bg.Name = "LaunchGyro"
+    bg.MaxTorque = Vector3.new(1e6, 1e6, 1e6)
+    bg.CFrame = CFrame.lookAt(root.Position, root.Position + launchDir)
+    bg.Parent = root
+
+    -- 一定時間後に LaunchForce/Gyro を削除
+    task.delay(settings.collidableDelay, function()
+        pcall(function()
+            if bv then bv:Destroy() end
+            if bg then bg:Destroy() end
+        end)
+    end)
+end
+
+-- 全部同時発射
+local function launchAll()
+    while #objectList > 0 do
+        launchOne()
+        task.wait(0.03)
+    end
+end
+
+-- UI
+local Window = OrionLib:MakeWindow({Name = "ミサイル発射", HidePremium = false, IntroText = "ミサイル専用"})
+
+local Tab = Window:MakeTab({Name = "メイン", Icon = "rbxassetid://4483345998"})
+
+Tab:AddToggle({
+    Name = "ミサイル取り込み ON/OFF",
+    Default = false,
+    Callback = function(v)
+        mode = v and "Orbit" or "None"
+        if not v then clearObjects() end
+    end
+})
+
+Tab:AddButton({
+    Name = "単発発射",
+    Callback = function()
+        launchOne()
+    end
+})
+
+Tab:AddToggle({
+    Name = "連射",
+    Default = false,
+    Callback = function(v)
+        isRapidFiring = v
+    end
+})
+
+Tab:AddButton({
+    Name = "一気に全部発射",
+    Callback = function()
+        launchAll()
+    end
+})
+
+Tab:AddButton({
+    Name = "全ミサイル解除",
+    Callback = clearObjects
+})
+
+Tab:AddSection({Name = "設定"})
+
+Tab:AddTextbox({
+    Name = "回転速度",
+    Default = "0.025",
+    TextDisappear = false,
+    Callback = function(t) settings.speed = tonumber(t) or 0.025 end
+})
+
+Tab:AddTextbox({
+    Name = "半径",
+    Default = "14",
+    TextDisappear = false,
+    Callback = function(t) settings.width = tonumber(t) or 14 end
+})
+
+Tab:AddTextbox({
+    Name = "高さ",
+    Default = "5",
+    TextDisappear = false,
+    Callback = function(t) settings.height = tonumber(t) or 5 end
+})
+
+Tab:AddTextbox({
+    Name = "最大保持数",
+    Default = "30",
+    TextDisappear = false,
+    Callback = function(t) settings.maxObjects = math.max(1, math.floor(tonumber(t) or 30)) end
+})
+
+Tab:AddTextbox({
+    Name = "吸い込み範囲",
+    Default = "80",
+    TextDisappear = false,
+    Callback = function(t) settings.range = tonumber(t) or 80 end
+})
+
+Tab:AddSlider({
+    Name = "発射の強さ",
+    Min = 0,
+    Max = 600,
+    Default = 180,
+    Color = Color3.fromRGB(255, 100, 100),
+    Increment = 5,
+    ValueName = "速度",
+    Callback = function(v)
+        settings.launchSpeed = v
+    end
+})
+
+Tab:AddSlider({
+    Name = "上方向の力",
+    Min = 0,
+    Max = 100,
+    Default = 8,
+    Color = Color3.fromRGB(100, 200, 255),
+    Increment = 1,
+    ValueName = "力",
+    Callback = function(v)
+        settings.launchUpward = v
+    end
+})
+
+Tab:AddTextbox({
+    Name = "連射間隔",
+    Default = "0.18",
+    TextDisappear = false,
+    Callback = function(t) settings.rapidFireInterval = tonumber(t) or 0.18 end
+})
+
+Tab:AddTextbox({
+    Name = "単発クールダウン",
+    Default = "0.08",
+    TextDisappear = false,
+    Callback = function(t) settings.launchCooldown = tonumber(t) or 0.08 end
+})
+
+Tab:AddTextbox({
+    Name = "発射位置の広がり",
+    Default = "12",
+    TextDisappear = false,
+    Callback = function(t) settings.spreadRadius = tonumber(t) or 12 end
+})
+
+Tab:AddTextbox({
+    Name = "発射方向の広がり(度)",
+    Default = "12",
+    TextDisappear = false,
+    Callback = function(t) settings.spreadAngle = tonumber(t) or 12 end
+})
+
+Tab:AddTextbox({
+    Name = "衝突復帰までの秒数",
+    Default = "3",
+    TextDisappear = false,
+    Callback = function(t) settings.collidableDelay = tonumber(t) or 3 end
+})
+
+Tab:AddToggle({
+    Name = "これ以上取り込まない",
+    Default = false,
+    Callback = function(v) isStopped = v end
+})
+
+-- 接触取り込み
+local function connectCharacter(char)
+    char:WaitForChild("HumanoidRootPart")
+    for _, v in ipairs(char:GetChildren()) do
+        if v:IsA("BasePart") then
+            v.Touched:Connect(function(hit)
+                if mode == "Orbit" then
+                    registerPart(hit)
+                end
+            end)
+        end
+    end
+end
+player.CharacterAdded:Connect(connectCharacter)
+if player.Character then connectCharacter(player.Character) end
+
+-- 発射済みミサイルの CanCollide を一定時間後に戻す + 無視リスト管理
+RunService.Heartbeat:Connect(function()
+    local now = tick()
+    for obj, launchTime in pairs(launchedObjects) do
+        if not obj or not obj.Parent then
+            -- ★ 消えたら無視リストからも外す
+            ignoredObjects[obj] = nil
+            launchedObjects[obj] = nil
+        elseif now - launchTime > settings.collidableDelay then
+            setCanCollide(obj, true)
+            launchedObjects[obj] = nil
+            -- ★ ここでは ignoredObjects を外さない（吸い込み防止を継続）
+        end
+    end
+end)
+
+-- メインループ
+RunService.Heartbeat:Connect(function()
+    -- 連射処理
+    if isRapidFiring and #objectList > 0 then
+        if tick() - lastRapidFire >= settings.rapidFireInterval then
+            lastRapidFire = tick()
+            launchOne()
+        end
+    end
+
+    if mode ~= "Orbit" then return end
+
+    local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+
+    timeCounter = timeCounter + settings.speed
+    local now = tick()
+
+    -- 死んだオブジェクト掃除
+    for i = #objectList, 1, -1 do
+        local obj = objectList[i]
+        local root = getRoot(obj)
+        if not obj or not obj.Parent or not root or not root:FindFirstChild("SyncForce") then
+            table.remove(objectList, i)
+            hoveringObjects[obj] = nil
+            objectData[obj] = nil
+        end
+    end
+
+    -- スキャン（ミサイルのみ）
+    scanCooldown = scanCooldown + RunService.Heartbeat:Wait()
+    if scanCooldown >= 0.15 then
+        scanCooldown = 0
+        if not isStopped and #objectList < settings.maxObjects then
+            local found = workspace:GetPartBoundsInRadius(hrp.Position, settings.range)
+            for _, p in ipairs(found) do
+                if #objectList >= settings.maxObjects then break end
+                if isSelectableObject(p, player.Character) then
+                    registerPart(p)
+                end
+            end
+        end
+    end
+
+    local total = #objectList
+    if total == 0 then return end
+
+    local lookCFrame = hrp.CFrame
+    local baseCenter = hrp.Position + (lookCFrame.LookVector * settings.depth)
+    local directionAngle = settings.invertDirection and CFrame.Angles(0, math.pi, 0) or CFrame.identity
+
+    for i, obj in ipairs(objectList) do
+        local root = getRoot(obj)
+        local data = objectData[obj]
+        if root and root:FindFirstChild("SyncForce") and data then
+            local angle = timeCounter + ((i - 1) / total) * math.pi * 2 * settings.density
+            local targetPos = baseCenter + Vector3.new(
+                math.cos(angle) * settings.width,
+                settings.height,
+                math.sin(angle) * settings.width
+            )
+            local rotCFrame = CFrame.lookAt(targetPos, baseCenter) * directionAngle
+
+            local elapsed = now - (data.absorbStart or now)
+            local softFactor = math.clamp(elapsed / settings.softAbsorbTime, 0.12, 1)
+            local currentPull = settings.pullStrength * softFactor
+
+            root.SyncForce.Velocity = (targetPos - root.Position) * currentPull
+            root.SyncGyro.CFrame = rotCFrame
+
+            if math.random() > 0.85 then
+                pcall(function() root:SetNetworkOwner(player) end)
+            end
+        end
+    end
+end)
+
+OrionLib:Init()
