@@ -1,0 +1,777 @@
+local OrionLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/BlizTBr/scripts/main/Orion%20X"))()
+
+local Window = OrionLib:MakeWindow({
+    Name = "Missile Control",
+    HidePremium = false,
+    IntroText = "Missile Control Improved"
+})
+
+----------------------------------------------------------------
+-- サービス
+----------------------------------------------------------------
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+local camera = workspace.CurrentCamera
+
+----------------------------------------------------------------
+-- 状態管理
+----------------------------------------------------------------
+local controlling = false
+local controlledMissiles = {}
+local MAX_MISSILES = 10
+
+local GRAB_RADIUS = 80
+local CURRENT_SPEED = 20
+
+local CAMERA_DISTANCE = 20
+local cameraYaw = 0
+local cameraPitch = -20
+local currentYaw = 0
+local currentPitch = -20
+local CAMERA_SMOOTHNESS = 30
+local CAMERA_SENSITIVITY = 1.0
+
+local savedPlayerCFrame = nil
+
+-- 追尾用
+local targetPlayer = nil
+local LOCKED_TARGET = false
+local AUTO_TARGET = true
+
+local NOSE_CORRECTION = CFrame.Angles(0, math.rad(-90), 0) * CFrame.Angles(math.rad(90), 0, 0)
+
+local GRABBABLE_NAMES = {
+    BombMissile = true,
+    -- 必要に応じて追加
+}
+
+----------------------------------------------------------------
+-- ユーティリティ
+----------------------------------------------------------------
+local function isGrabbable(part)
+    if not part or not part:IsA("BasePart") then return false end
+    if part.Anchored then return false end
+    if GRABBABLE_NAMES[part.Name] then return true end
+    local model = part:FindFirstAncestorOfClass("Model")
+    if model and GRABBABLE_NAMES[model.Name] then return true end
+    return false
+end
+
+local function isAlreadyControlled(root)
+    for _, entry in ipairs(controlledMissiles) do
+        if entry.root == root then return true end
+    end
+    return false
+end
+
+local function findNearbyMissiles()
+    local char = player.Character
+    if not char then return {} end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return {} end
+    local origin = hrp.Position
+
+    local results, seen = {}, {}
+    -- 軽量化のため、まずはWorkspace直下と主要フォルダを優先的に見る（必要に応じて調整）
+    local searchRoots = {workspace}
+    
+    for _, searchRoot in ipairs(searchRoots) do
+        for _, obj in ipairs(searchRoot:GetDescendants()) do
+            if obj:IsA("BasePart") and isGrabbable(obj) then
+                local root = obj.AssemblyRootPart or obj
+                if not seen[root] then
+                    seen[root] = true
+                    local dist = (root.Position - origin).Magnitude
+                    if dist <= GRAB_RADIUS and not isAlreadyControlled(root) then
+                        table.insert(results, { root = root, dist = dist })
+                    end
+                end
+            end
+        end
+    end
+
+    table.sort(results, function(a, b) return a.dist < b.dist end)
+    local roots = {}
+    for _, r in ipairs(results) do
+        table.insert(roots, r.root)
+    end
+    return roots
+end
+
+local function getMissileCenter()
+    local avgPos, count = Vector3.zero, 0
+    for _, entry in ipairs(controlledMissiles) do
+        if entry.root and entry.root.Parent then
+            avgPos = avgPos + entry.root.Position
+            count = count + 1
+        end
+    end
+    if count == 0 then return nil end
+    return avgPos / count
+end
+
+local function findNearestTarget()
+    local center = getMissileCenter()
+    if not center then return nil end
+    local nearest, nearestDist = nil, math.huge
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= player and p.Character then
+            local hrp = p.Character:FindFirstChild("HumanoidRootPart")
+            local hum = p.Character:FindFirstChildOfClass("Humanoid")
+            if hrp and hum and hum.Health > 0 then
+                local d = (hrp.Position - center).Magnitude
+                if d < nearestDist then
+                    nearest = p
+                    nearestDist = d
+                end
+            end
+        end
+    end
+    return nearest
+end
+
+local function getTargetPosition()
+    if not targetPlayer then return nil end
+    local char = targetPlayer.Character
+    if not char then return nil end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return nil end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if hum and hum.Health <= 0 then return nil end
+    return hrp.Position
+end
+
+----------------------------------------------------------------
+-- ターゲットマーカー
+----------------------------------------------------------------
+local targetMarker = Instance.new("BillboardGui")
+targetMarker.Name = "GrabMoveTargetMarker"
+targetMarker.Size = UDim2.new(0, 80, 0, 80)
+targetMarker.AlwaysOnTop = true
+targetMarker.Enabled = false
+
+local markerFrame = Instance.new("Frame")
+markerFrame.Size = UDim2.new(1, 0, 1, 0)
+markerFrame.BackgroundTransparency = 1
+markerFrame.Parent = targetMarker
+
+local function makeBracket(anchor, pos)
+    local f = Instance.new("Frame")
+    f.Size = UDim2.new(0, 18, 0, 18)
+    f.AnchorPoint = anchor
+    f.Position = pos
+    f.BackgroundTransparency = 1
+    local top = Instance.new("Frame")
+    top.Size = UDim2.new(1, 0, 0, 3)
+    top.BackgroundColor3 = Color3.fromRGB(255, 60, 60)
+    top.BorderSizePixel = 0
+    top.Parent = f
+    local side = Instance.new("Frame")
+    side.Size = UDim2.new(0, 3, 1, 0)
+    side.BackgroundColor3 = Color3.fromRGB(255, 60, 60)
+    side.BorderSizePixel = 0
+    side.Parent = f
+    f.Parent = markerFrame
+end
+makeBracket(Vector2.new(0, 1), UDim2.new(0, 0, 0, 0))
+makeBracket(Vector2.new(1, 1), UDim2.new(1, 0, 0, 0))
+makeBracket(Vector2.new(0, 0), UDim2.new(0, 0, 1, 0))
+makeBracket(Vector2.new(1, 0), UDim2.new(1, 0, 1, 0))
+
+local markerLabel = Instance.new("TextLabel")
+markerLabel.Size = UDim2.new(1, 0, 0, 20)
+markerLabel.Position = UDim2.new(0, 0, 1, 4)
+markerLabel.BackgroundTransparency = 1
+markerLabel.TextColor3 = Color3.fromRGB(255, 80, 80)
+markerLabel.Font = Enum.Font.GothamBold
+markerLabel.TextSize = 14
+markerLabel.TextStrokeTransparency = 0.3
+markerLabel.Text = ""
+markerLabel.Parent = targetMarker
+
+local function updateTargetMarker()
+    if not targetPlayer or not targetPlayer.Character then
+        targetMarker.Enabled = false
+        return
+    end
+    local head = targetPlayer.Character:FindFirstChild("Head")
+        or targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not head then
+        targetMarker.Enabled = false
+        return
+    end
+    targetMarker.Adornee = head
+    targetMarker.Enabled = true
+    markerLabel.Text = targetPlayer.DisplayName
+end
+
+----------------------------------------------------------------
+-- カメラ
+----------------------------------------------------------------
+local function updateThirdPersonCamera(dt)
+    if #controlledMissiles == 0 then return end
+    currentYaw = currentYaw + (cameraYaw - currentYaw) * math.clamp(dt * CAMERA_SMOOTHNESS, 0, 1)
+    currentPitch = currentPitch + (cameraPitch - currentPitch) * math.clamp(dt * CAMERA_SMOOTHNESS, 0, 1)
+    local yawRad = math.rad(currentYaw)
+    local pitchRad = math.rad(currentPitch)
+    local offset = Vector3.new(
+        math.cos(pitchRad) * math.sin(yawRad),
+        math.sin(pitchRad),
+        math.cos(pitchRad) * math.cos(yawRad)
+    ) * CAMERA_DISTANCE
+    local avgPos, count = Vector3.zero, 0
+    for _, entry in ipairs(controlledMissiles) do
+        if entry.root and entry.root.Parent then
+            avgPos = avgPos + entry.root.Position
+            count = count + 1
+        end
+    end
+    if count == 0 then return end
+    avgPos = avgPos / count
+    camera.CFrame = CFrame.lookAt(avgPos + offset, avgPos)
+end
+
+----------------------------------------------------------------
+-- ミサイル操作（LinearVelocity版）
+----------------------------------------------------------------
+local MAX_FORCE = 100000
+
+local function destroyMissileEntry(entry)
+    if entry.linearVel then entry.linearVel:Destroy() end
+    if entry.alignMover then entry.alignMover:Destroy() end
+    if entry.attachment then entry.attachment:Destroy() end
+end
+
+local function destroyAllMovers()
+    for _, entry in ipairs(controlledMissiles) do
+        destroyMissileEntry(entry)
+    end
+    controlledMissiles = {}
+end
+
+local function setRobloxJumpButtonVisible(visible)
+    pcall(function()
+        local touchGui = playerGui:FindFirstChild("TouchGui")
+        if touchGui then
+            local f = touchGui:FindFirstChild("TouchControlFrame")
+            if f then
+                local jb = f:FindFirstChild("JumpButton")
+                if jb then jb.Visible = visible end
+            end
+        end
+    end)
+end
+
+local function attachMoverToPart(root)
+    local attachment = Instance.new("Attachment")
+    attachment.Name = "GrabMoveAttachment"
+    attachment.Parent = root
+
+    local linearVel = Instance.new("LinearVelocity")
+    linearVel.Name = "GrabMoveVelocity"
+    linearVel.Attachment0 = attachment
+    linearVel.MaxForce = MAX_FORCE
+    linearVel.VectorVelocity = Vector3.zero
+    linearVel.RelativeTo = Enum.ActuatorRelativeTo.World
+    linearVel.Parent = root
+
+    local alignMover = Instance.new("AlignOrientation")
+    alignMover.Name = "GrabMoveOrientation"
+    alignMover.Mode = Enum.OrientationAlignmentMode.OneAttachment
+    alignMover.Attachment0 = attachment
+    alignMover.MaxTorque = 1000000
+    alignMover.Responsiveness = 25
+    alignMover.Parent = root
+
+    return {
+        root = root,
+        linearVel = linearVel,
+        alignMover = alignMover,
+        attachment = attachment
+    }
+end
+
+local function grabNearbyMissiles()
+    if #controlledMissiles >= MAX_MISSILES then
+        return 0, "MAX"
+    end
+    local nearby = findNearbyMissiles()
+    if #nearby == 0 then
+        return 0, "NONE"
+    end
+
+    if #controlledMissiles == 0 then
+        local char = player.Character
+        if char then
+            local hrp = char:FindFirstChild("HumanoidRootPart")
+            if hrp then
+                savedPlayerCFrame = hrp.CFrame
+                -- 固定位置への強制テレポートは廃止。必要ならここで任意の位置に移動可能
+                hrp.AssemblyLinearVelocity = Vector3.zero
+                hrp.AssemblyAngularVelocity = Vector3.zero
+            end
+        end
+
+        cameraYaw = 0
+        cameraPitch = -20
+        currentYaw = 0
+        currentPitch = -20
+        camera.CameraType = Enum.CameraType.Scriptable
+        controlling = true
+        setRobloxJumpButtonVisible(false)
+    end
+
+    local added = 0
+    for _, root in ipairs(nearby) do
+        if #controlledMissiles >= MAX_MISSILES then break end
+        table.insert(controlledMissiles, attachMoverToPart(root))
+        added = added + 1
+    end
+
+    updateThirdPersonCamera(0)
+    return added
+end
+
+local function stopControl()
+    destroyAllMovers()
+    if savedPlayerCFrame then
+        local char = player.Character
+        if char then
+            local hrp = char:FindFirstChild("HumanoidRootPart")
+            if hrp then
+                hrp.CFrame = savedPlayerCFrame
+                hrp.AssemblyLinearVelocity = Vector3.zero
+                hrp.AssemblyAngularVelocity = Vector3.zero
+            end
+        end
+        savedPlayerCFrame = nil
+    end
+    controlling = false
+    camera.CameraType = Enum.CameraType.Custom
+    setRobloxJumpButtonVisible(true)
+    targetPlayer = nil
+    LOCKED_TARGET = false
+    targetMarker.Enabled = false
+end
+
+----------------------------------------------------------------
+-- スティック（モバイル用）
+----------------------------------------------------------------
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "GrabMoveAuxGui"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = playerGui
+
+local stickBase = Instance.new("Frame")
+stickBase.Size = UDim2.new(0, 90, 0, 90)
+stickBase.Position = UDim2.new(0, 40, 1, -150)
+stickBase.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+stickBase.BackgroundTransparency = 0.4
+stickBase.Visible = false
+stickBase.ZIndex = 5
+local baseCorner = Instance.new("UICorner")
+baseCorner.CornerRadius = UDim.new(1, 0)
+baseCorner.Parent = stickBase
+stickBase.Parent = screenGui
+
+local stickKnob = Instance.new("Frame")
+stickKnob.Size = UDim2.new(0, 40, 0, 40)
+stickKnob.Position = UDim2.new(0.5, -20, 0.5, -20)
+stickKnob.BackgroundColor3 = Color3.fromRGB(200, 200, 200)
+stickKnob.ZIndex = 6
+local knobCorner = Instance.new("UICorner")
+knobCorner.CornerRadius = UDim.new(1, 0)
+knobCorner.Parent = stickKnob
+stickKnob.Parent = stickBase
+
+local stickRadius = 45
+local stickCenter = Vector2.new(45, 45)
+local stickInput = Vector2.new(0, 0)
+local activeStickTouch = nil
+
+local function updateKnob(delta)
+    local clamped = delta
+    if clamped.Magnitude > stickRadius then clamped = clamped.Unit * stickRadius end
+    stickKnob.Position = UDim2.new(0.5, clamped.X - 20, 0.5, clamped.Y - 20)
+    stickInput = Vector2.new(clamped.X / stickRadius, clamped.Y / stickRadius)
+end
+
+local function resetKnob()
+    stickKnob.Position = UDim2.new(0.5, -20, 0.5, -20)
+    stickInput = Vector2.new(0, 0)
+end
+
+stickBase.InputBegan:Connect(function(input)
+    if not controlling then return end
+    if input.UserInputType == Enum.UserInputType.Touch
+        or input.UserInputType == Enum.UserInputType.MouseButton1 then
+        activeStickTouch = input
+        local pos = input.Position
+        local basePos = stickBase.AbsolutePosition
+        updateKnob(Vector2.new(pos.X, pos.Y) - basePos - stickCenter)
+    end
+end)
+
+----------------------------------------------------------------
+-- カメラ回転入力
+----------------------------------------------------------------
+local activeCameraTouch = nil
+local lastCameraTouchPos = nil
+local MIN_PITCH = -80
+local MAX_PITCH = 80
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if not controlling then return end
+    if gameProcessed then return end
+    if input.UserInputType ~= Enum.UserInputType.Touch
+        and input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+    local screenWidth = camera.ViewportSize.X
+    if input.Position.X < screenWidth * 0.5 then return end
+    activeCameraTouch = input
+    lastCameraTouchPos = Vector2.new(input.Position.X, input.Position.Y)
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if not controlling then return end
+    if activeStickTouch == input
+        and (input.UserInputType == Enum.UserInputType.Touch
+            or input.UserInputType == Enum.UserInputType.MouseMovement) then
+        local pos = input.Position
+        local basePos = stickBase.AbsolutePosition
+        updateKnob(Vector2.new(pos.X, pos.Y) - basePos - stickCenter)
+    end
+    if activeCameraTouch == input
+        and (input.UserInputType == Enum.UserInputType.Touch
+            or input.UserInputType == Enum.UserInputType.MouseMovement) then
+        local pos = Vector2.new(input.Position.X, input.Position.Y)
+        local delta = pos - lastCameraTouchPos
+        lastCameraTouchPos = pos
+        cameraYaw = cameraYaw - delta.X * CAMERA_SENSITIVITY
+        cameraPitch = math.clamp(cameraPitch + delta.Y * CAMERA_SENSITIVITY, MIN_PITCH, MAX_PITCH)
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    if activeStickTouch == input then
+        activeStickTouch = nil
+        resetKnob()
+    end
+    if activeCameraTouch == input then
+        activeCameraTouch = nil
+        lastCameraTouchPos = nil
+    end
+end)
+
+----------------------------------------------------------------
+-- キャラクターリセット時の自動解除
+----------------------------------------------------------------
+player.CharacterAdded:Connect(function()
+    if controlling then
+        stopControl()
+        stickBase.Visible = false
+        resetKnob()
+    end
+end)
+
+----------------------------------------------------------------
+-- 毎フレーム更新
+----------------------------------------------------------------
+RunService.Heartbeat:Connect(function(dt)
+    if not controlling or #controlledMissiles == 0 then
+        return
+    end
+
+    -- 消滅したミサイルを掃除
+    for i = #controlledMissiles, 1, -1 do
+        local entry = controlledMissiles[i]
+        if not entry.root or not entry.root.Parent then
+            destroyMissileEntry(entry)
+            table.remove(controlledMissiles, i)
+        end
+    end
+
+    if #controlledMissiles == 0 then
+        stopControl()
+        stickBase.Visible = false
+        resetKnob()
+        return
+    end
+
+    updateThirdPersonCamera(dt)
+    local camCF = camera.CFrame
+
+    -- ターゲット管理
+    if AUTO_TARGET and not LOCKED_TARGET then
+        local cur = targetPlayer
+        local valid = cur and cur.Character
+            and cur.Character:FindFirstChild("HumanoidRootPart")
+            and cur.Character:FindFirstChildOfClass("Humanoid")
+            and cur.Character:FindFirstChildOfClass("Humanoid").Health > 0
+        if not valid then
+            targetPlayer = findNearestTarget()
+            updateTargetMarker()
+        end
+    else
+        if targetPlayer then
+            local char = targetPlayer.Character
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+            if not char or not hum or hum.Health <= 0 then
+                targetPlayer = nil
+                LOCKED_TARGET = false
+                targetMarker.Enabled = false
+            end
+        end
+    end
+
+    local targetPos = getTargetPosition()
+
+    for _, entry in ipairs(controlledMissiles) do
+        if entry.linearVel and entry.linearVel.Parent then
+            local desiredVel
+            if targetPos then
+                local dir = (targetPos - entry.root.Position)
+                if dir.Magnitude > 0.1 then
+                    desiredVel = dir.Unit * CURRENT_SPEED
+                else
+                    desiredVel = Vector3.zero
+                end
+            else
+                local forwardVel = camCF.LookVector * CURRENT_SPEED
+                local rightVel = camCF.RightVector * (stickInput.X * CURRENT_SPEED)
+                local upVel = Vector3.new(0, 1, 0) * (-stickInput.Y * CURRENT_SPEED)
+                desiredVel = forwardVel + rightVel + upVel
+            end
+
+            entry.linearVel.VectorVelocity = desiredVel
+
+            if desiredVel.Magnitude > 0.5 then
+                local lookCFrame = CFrame.lookAt(Vector3.zero, desiredVel.Unit) * NOSE_CORRECTION
+                if entry.alignMover and entry.alignMover.Parent then
+                    entry.alignMover.CFrame = lookCFrame
+                end
+            end
+        end
+    end
+end)
+
+----------------------------------------------------------------
+-- OrionLib UI
+----------------------------------------------------------------
+local MainTab = Window:MakeTab({
+    Name = "ミサイル操作",
+    Icon = "rbxassetid://4483345998",
+    PremiumOnly = false
+})
+
+local TargetTab = Window:MakeTab({
+    Name = "ターゲット",
+    Icon = "rbxassetid://4483345998",
+    PremiumOnly = false
+})
+
+-- ========== MainTab ==========
+MainTab:AddToggle({
+    Name = "ミサイル操作を開始",
+    Default = false,
+    Callback = function(state)
+        if state then
+            local added, reason = grabNearbyMissiles()
+            if added > 0 then
+                stickBase.Visible = true
+                if AUTO_TARGET then
+                    targetPlayer = findNearestTarget()
+                    LOCKED_TARGET = false
+                    updateTargetMarker()
+                end
+                OrionLib:MakeNotification({
+                    Name = "ミサイル操作",
+                    Content = added .. " 個のミサイルを掴みました",
+                    Time = 3
+                })
+            else
+                if reason == "MAX" then
+                    OrionLib:MakeNotification({
+                        Name = "ミサイル操作",
+                        Content = "上限に達しています",
+                        Time = 3
+                    })
+                else
+                    OrionLib:MakeNotification({
+                        Name = "ミサイル操作",
+                        Content = "近くにミサイルがありません",
+                        Time = 3
+                    })
+                end
+                -- トグルを元に戻す必要がある場合はUI側で制御
+            end
+        else
+            stopControl()
+            stickBase.Visible = false
+            resetKnob()
+        end
+    end
+})
+
+MainTab:AddButton({
+    Name = "近くのミサイルを追加",
+    Callback = function()
+        if not controlling then
+            OrionLib:MakeNotification({
+                Name = "ミサイル操作",
+                Content = "先に操作を開始してください",
+                Time = 3
+            })
+            return
+        end
+        local added, reason = grabNearbyMissiles()
+        if added > 0 then
+            OrionLib:MakeNotification({
+                Name = "追加",
+                Content = added .. " 個追加しました",
+                Time = 2
+            })
+        else
+            OrionLib:MakeNotification({
+                Name = "追加",
+                Content = (reason == "MAX") and "上限です" or "近くに無し",
+                Time = 2
+            })
+        end
+    end
+})
+
+MainTab:AddButton({
+    Name = "全解除",
+    Callback = function()
+        if controlling then
+            stopControl()
+            stickBase.Visible = false
+            resetKnob()
+            OrionLib:MakeNotification({
+                Name = "ミサイル操作",
+                Content = "全て解除しました",
+                Time = 2
+            })
+        end
+    end
+})
+
+MainTab:AddSlider({
+    Name = "速度",
+    Min = 1,
+    Max = 500,
+    Default = 20,
+    Color = Color3.fromRGB(80, 160, 255),
+    Callback = function(value)
+        CURRENT_SPEED = value
+    end
+})
+
+-- ========== TargetTab ==========
+TargetTab:AddToggle({
+    Name = "自動追尾（最寄りを自動選択）",
+    Default = true,
+    Callback = function(state)
+        AUTO_TARGET = state
+        if state then
+            LOCKED_TARGET = false
+            targetPlayer = findNearestTarget()
+            updateTargetMarker()
+        else
+            -- オフにした場合は現在のターゲットを維持（手動選択優先）
+        end
+    end
+})
+
+TargetTab:AddButton({
+    Name = "ターゲットを解除",
+    Callback = function()
+        targetPlayer = nil
+        LOCKED_TARGET = false
+        targetMarker.Enabled = false
+        OrionLib:MakeNotification({
+            Name = "ターゲット",
+            Content = "ロックを解除しました",
+            Time = 2
+        })
+    end
+})
+
+-- プレイヤー選択ドロップダウン
+local playerDropdown = TargetTab:AddDropdown({
+    Name = "ターゲットプレイヤーを選択",
+    Options = {},
+    Default = "",
+    Callback = function(selected)
+        -- 距離表示を除去してマッチング
+        local cleanName = selected:match("^(.-)%s*%[") or selected
+        cleanName = cleanName:gsub("%s+$", "") -- 末尾スペース除去
+
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p.DisplayName == cleanName or p.Name == cleanName then
+                targetPlayer = p
+                LOCKED_TARGET = true
+                updateTargetMarker()
+                OrionLib:MakeNotification({
+                    Name = "ターゲット",
+                    Content = p.DisplayName .. " をロックオン",
+                    Time = 2
+                })
+                break
+            end
+        end
+    end
+})
+
+local function refreshDropdown()
+    local opts = {}
+    local center = getMissileCenter()
+        or (player.Character and player.Character:FindFirstChild("HumanoidRootPart") and player.Character.HumanoidRootPart.Position)
+
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= player then
+            local label = p.DisplayName
+            if center and p.Character then
+                local hrp = p.Character:FindFirstChild("HumanoidRootPart")
+                if hrp then
+                    local d = (hrp.Position - center).Magnitude
+                    label = string.format("%s [%dm]", p.DisplayName, math.floor(d))
+                end
+            end
+            table.insert(opts, label)
+        end
+    end
+    playerDropdown:Refresh(opts, true)
+end
+
+Players.PlayerAdded:Connect(function()
+    task.wait(1)
+    refreshDropdown()
+end)
+
+Players.PlayerRemoving:Connect(function(p)
+    if targetPlayer == p then
+        targetPlayer = nil
+        LOCKED_TARGET = false
+        targetMarker.Enabled = false
+    end
+    task.wait(1)
+    refreshDropdown()
+end)
+
+task.spawn(function()
+    while true do
+        task.wait(1.5)
+        if controlling or true then -- 常に更新
+            refreshDropdown()
+        end
+    end
+end)
+
+refreshDropdown()
+
+OrionLib:Init()
