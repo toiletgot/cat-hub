@@ -1,0 +1,805 @@
+--[[
+    GrabMoveController.lua (LocalScript, サーバー不使用, 物理演算対応版)
+    配置場所: StarterPlayer > StarterPlayerScripts
+    ★ ハイライト廃止 / オブジェクトごとに正しい向き補正
+    ★ UFO/PaperPlane復活（強制アンカー解除＋高フォース） / 停止強化 / トラクター向き反対
+]]
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+local camera = workspace.CurrentCamera
+
+----------------------------------------------------------------
+-- 0. 起動時メッセージ
+----------------------------------------------------------------
+
+local startupGui = Instance.new("ScreenGui")
+startupGui.Name = "StartupMessageGui"
+startupGui.ResetOnSpawn = false
+startupGui.Parent = playerGui
+
+local messageLabel = Instance.new("TextLabel")
+messageLabel.Size = UDim2.new(0, 450, 0, 70)
+messageLabel.AnchorPoint = Vector2.new(0.5, 0.5)
+messageLabel.Position = UDim2.new(0.5, 0, 0.4, 0)
+messageLabel.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+messageLabel.BackgroundTransparency = 0.2
+messageLabel.Text = "skidしてすいません"
+messageLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+messageLabel.Font = Enum.Font.GothamBold
+messageLabel.TextSize = 18
+
+local msgCorner = Instance.new("UICorner")
+msgCorner.CornerRadius = UDim.new(0, 10)
+msgCorner.Parent = messageLabel
+messageLabel.Parent = startupGui
+
+task.delay(2, function()
+	if startupGui then startupGui:Destroy() end
+end)
+
+----------------------------------------------------------------
+-- 1. 状態管理
+----------------------------------------------------------------
+
+local controlling = false
+local controlledObjects = {}
+local MAX_OBJECTS = 10
+
+local GRAB_RADIUS = 80
+local CURRENT_SPEED = 20
+local CURRENT_VELOCITY = Vector3.zero
+local ACCELERATION = 8
+
+local manualStop = false
+
+local CAMERA_DISTANCE = 20
+local cameraYaw = 0
+local cameraPitch = -20
+local currentYaw = 0
+local currentPitch = -20
+local CAMERA_SMOOTHNESS = 30
+local CAMERA_SENSITIVITY = 1.0
+
+local PLAYER_FIXED_POSITION = Vector3.new(460.4, 131.4, 202.7)
+local savedPlayerCFrame = nil
+
+----------------------------------------------------------------
+-- ★ 向き補正テーブル（オブジェクトごとに個別設定）
+----------------------------------------------------------------
+
+local ORIENTATION_CORRECTIONS = {
+	-- ミサイル（元のコードの補正を維持）
+	["BombMissile"]      = CFrame.Angles(0, math.rad(-90), 0) * CFrame.Angles(math.rad(90), 0, 0),
+	-- おもちゃ（デフォルト＝補正なし。必要に応じて調整）
+	["FlyingToyHelicopter"] = CFrame.new(),
+	-- ★ トラクターの向き補正（反対向き）
+	["TractorGreen"]        = CFrame.Angles(0, math.rad(-90), 0),
+	-- ★ UFO（必要なら調整）
+	["Ufo"]                 = CFrame.new(),
+	["UFO"]                 = CFrame.new(),
+	-- ★ 紙飛行機（進行方向に鼻が向く補正）
+	["PaperPlane"]          = CFrame.Angles(0, math.rad(180), 0),
+}
+
+-- 部分一致パターン用の補正
+local ORIENTATION_PATTERNS = {
+	{ pattern = "Missile",     cf = CFrame.Angles(0, math.rad(-90), 0) * CFrame.Angles(math.rad(90), 0, 0) },
+	{ pattern = "Toy",         cf = CFrame.new() },
+	-- ★ トラクターの向き補正（反対向き）
+	{ pattern = "Tractor",     cf = CFrame.Angles(0, math.rad(-90), 0) },
+	{ pattern = "Helicopter",  cf = CFrame.new() },
+	-- ★ UFO
+	{ pattern = "Ufo",         cf = CFrame.new() },
+	{ pattern = "UFO",         cf = CFrame.new() },
+	-- ★ 紙飛行機
+	{ pattern = "PaperPlane",  cf = CFrame.Angles(0, math.rad(180), 0) },
+	{ pattern = "Paper",       cf = CFrame.Angles(0, math.rad(180), 0) },
+}
+
+local function getOrientationCorrection(name)
+	if ORIENTATION_CORRECTIONS[name] then
+		return ORIENTATION_CORRECTIONS[name]
+	end
+	for _, entry in ipairs(ORIENTATION_PATTERNS) do
+		if string.find(name, entry.pattern, 1, true) then
+			return entry.cf
+		end
+	end
+	return CFrame.new()
+end
+
+----------------------------------------------------------------
+-- ★ 掴めるオブジェクトの定義
+----------------------------------------------------------------
+
+local SINGLE_PART_NAMES = { BombMissile = true }
+local MODEL_NAMES = {
+	FlyingToyHelicopter = true,
+	TractorGreen = true,
+	Ufo = true,
+	UFO = true,
+	PaperPlane = true,
+}
+
+local SINGLE_PART_PATTERNS = { "Missile" }
+-- ★ UFO / PaperPlane 復活
+local MODEL_PATTERNS = { "Toy", "Tractor", "Helicopter", "Ufo", "UFO", "PaperPlane", "Paper" }
+
+local function matchesAny(name, list, patterns)
+	if list[name] then return true end
+	for _, pattern in ipairs(patterns) do
+		if string.find(name, pattern, 1, true) then
+			return true
+		end
+	end
+	return false
+end
+
+local function isForceMoveName(name)
+	-- Anchoredでも強制的に動かしたいオブジェクト
+	return string.find(name, "Ufo", 1, true)
+		or string.find(name, "UFO", 1, true)
+		or string.find(name, "PaperPlane", 1, true)
+		or string.find(name, "Paper", 1, true)
+end
+
+local function checkGrabbable(part)
+	if not part or not part:IsA("BasePart") then return false, false end
+
+	-- 通常は Anchored を拒否。UFO/PaperPlaneなどは強制移動のため許可する
+	local model = part:FindFirstAncestorOfClass("Model")
+	local nameToCheck = part.Name
+	if model then nameToCheck = model.Name end
+	local forceMove = isForceMoveName(nameToCheck) or isForceMoveName(part.Name)
+	if part.Anchored and not forceMove then
+		return false, false
+	end
+
+	if matchesAny(part.Name, SINGLE_PART_NAMES, SINGLE_PART_PATTERNS) then
+		return true, false
+	end
+	if matchesAny(part.Name, MODEL_NAMES, MODEL_PATTERNS) then
+		return true, true
+	end
+
+	if model then
+		if matchesAny(model.Name, SINGLE_PART_NAMES, SINGLE_PART_PATTERNS) then
+			return true, false
+		end
+		if matchesAny(model.Name, MODEL_NAMES, MODEL_PATTERNS) then
+			return true, true
+		end
+	end
+
+	return false, false
+end
+
+----------------------------------------------------------------
+-- 2. 近くのオブジェクト取得（キャッシュ）
+----------------------------------------------------------------
+
+local missileCache = {}
+
+local function refreshCache()
+	table.clear(missileCache)
+	for _, obj in ipairs(workspace:GetDescendants()) do
+		if obj:IsA("BasePart") then
+			local ok, isModel = checkGrabbable(obj)
+			if ok then
+				local root = obj.AssemblyRootPart or obj
+				local model = obj:FindFirstAncestorOfClass("Model")
+				local correctionName = obj.Name
+				if model then correctionName = model.Name end
+				missileCache[root] = {
+					isModel = isModel,
+					model = model,
+					correction = getOrientationCorrection(correctionName),
+				}
+			end
+		end
+	end
+end
+
+refreshCache()
+task.spawn(function()
+	while true do
+		task.wait(3)
+		if not controlling then
+			refreshCache()
+		end
+	end
+end)
+
+local function isAlreadyControlled(root)
+	for _, entry in ipairs(controlledObjects) do
+		if entry.originalRoot == root or entry.root == root then return true end
+	end
+	return false
+end
+
+local function findNearbyObjects()
+	local char = player.Character
+	if not char then return {} end
+	local hrp = char:FindFirstChild("HumanoidRootPart")
+	if not hrp then return {} end
+	local origin = hrp.Position
+
+	local results = {}
+	for root, info in pairs(missileCache) do
+		if root and root.Parent and not isAlreadyControlled(root) then
+			local dist = (root.Position - origin).Magnitude
+			if dist <= GRAB_RADIUS then
+				table.insert(results, { root = root, dist = dist, info = info })
+			end
+		end
+	end
+
+	table.sort(results, function(a, b) return a.dist < b.dist end)
+	return results
+end
+
+----------------------------------------------------------------
+-- 3. 三人称カメラ
+----------------------------------------------------------------
+
+local function updateThirdPersonCamera(dt)
+	if #controlledObjects == 0 then return end
+	currentYaw = currentYaw + (cameraYaw - currentYaw) * math.clamp(dt * CAMERA_SMOOTHNESS, 0, 1)
+	currentPitch = currentPitch + (cameraPitch - currentPitch) * math.clamp(dt * CAMERA_SMOOTHNESS, 0, 1)
+	local yawRad = math.rad(currentYaw)
+	local pitchRad = math.rad(currentPitch)
+	local offset = Vector3.new(
+		math.cos(pitchRad) * math.sin(yawRad),
+		math.sin(pitchRad),
+		math.cos(pitchRad) * math.cos(yawRad)
+	) * CAMERA_DISTANCE
+	local avgPos = Vector3.zero
+	local count = 0
+	for _, entry in ipairs(controlledObjects) do
+		if entry.root and entry.root.Parent then
+			avgPos = avgPos + entry.root.Position
+			count = count + 1
+		end
+	end
+	if count == 0 then return end
+	avgPos = avgPos / count
+	camera.CFrame = CFrame.lookAt(avgPos + offset, avgPos)
+end
+
+----------------------------------------------------------------
+-- 4. 開始/終了
+----------------------------------------------------------------
+
+local MAX_FORCE_SINGLE = 100000
+local MAX_FORCE_MODEL  = 30000
+
+local function destroyEntry(entry)
+	local toDestroy = { entry.mover, entry.alignMover, entry.attachment }
+	for _, obj in ipairs(toDestroy) do
+		if obj and obj.Parent then
+			pcall(function() obj:Destroy() end)
+		end
+	end
+end
+
+local function destroyAllMovers()
+	for _, entry in ipairs(controlledObjects) do
+		destroyEntry(entry)
+	end
+	controlledObjects = {}
+	CURRENT_VELOCITY = Vector3.zero
+	manualStop = false
+end
+
+local function setRobloxJumpButtonVisible(visible)
+	pcall(function()
+		local touchGui = playerGui:FindFirstChild("TouchGui")
+		if touchGui then
+			local f = touchGui:FindFirstChild("TouchControlFrame")
+			if f then
+				local jb = f:FindFirstChild("JumpButton")
+				if jb then jb.Visible = visible end
+			end
+		end
+	end)
+end
+
+local function attachMoverToPart(root, isModel, correction)
+	local targetPart = root
+	local model = nil
+	if isModel then
+		model = root:FindFirstAncestorOfClass("Model")
+		if model and model.PrimaryPart then
+			targetPart = model.PrimaryPart
+		end
+	end
+
+	-- ★ UFO/PaperPlaneなど強制移動: Anchoredを解除して動かす
+	local forceMove = isForceMoveName(targetPart.Name) or (model and isForceMoveName(model.Name))
+	if forceMove or targetPart.Anchored then
+		pcall(function()
+			targetPart.Anchored = false
+			if model then
+				for _, desc in ipairs(model:GetDescendants()) do
+					if desc:IsA("BasePart") then
+						desc.Anchored = false
+					end
+				end
+			end
+		end)
+	end
+
+	local mover = Instance.new("BodyVelocity")
+	mover.Name = "GrabMoveVelocity"
+	-- 強制移動オブジェクトは高フォースで無理やり動かす
+	local force = forceMove and 500000 or (isModel and MAX_FORCE_MODEL or MAX_FORCE_SINGLE)
+	mover.MaxForce = Vector3.new(force, force, force)
+	mover.P = 12500
+	mover.Velocity = Vector3.zero
+	mover.Parent = targetPart
+
+	local attachment = Instance.new("Attachment")
+	attachment.Name = "GrabMoveAttachment"
+	attachment.Parent = targetPart
+
+	local alignMover = Instance.new("AlignOrientation")
+	alignMover.Name = "GrabMoveOrientation"
+	alignMover.Mode = Enum.OrientationAlignmentMode.OneAttachment
+	alignMover.Attachment0 = attachment
+	alignMover.MaxTorque = forceMove and 2000000 or (isModel and 500000 or 1000000)
+	alignMover.Responsiveness = forceMove and 25 or (isModel and 10 or 20)
+	alignMover.Parent = targetPart
+
+	return {
+		root = targetPart,
+		originalRoot = root,
+		model = model,
+		mover = mover,
+		alignMover = alignMover,
+		attachment = attachment,
+		isModel = isModel,
+		correction = correction or CFrame.new(),
+	}
+end
+
+local function grabNearbyObjects()
+	if #controlledObjects >= MAX_OBJECTS then
+		return 0, "MAX"
+	end
+
+	refreshCache()
+
+	local nearby = findNearbyObjects()
+	if #nearby == 0 then
+		return 0, "NONE"
+	end
+
+	if #controlledObjects == 0 then
+		local char = player.Character
+		if char then
+			local hrp = char:FindFirstChild("HumanoidRootPart")
+			if hrp then
+				savedPlayerCFrame = hrp.CFrame
+				hrp.CFrame = CFrame.new(PLAYER_FIXED_POSITION)
+				hrp.AssemblyLinearVelocity = Vector3.zero
+				hrp.AssemblyAngularVelocity = Vector3.zero
+			end
+		end
+
+		cameraYaw = 0
+		cameraPitch = -20
+		currentYaw = 0
+		currentPitch = -20
+		CURRENT_VELOCITY = Vector3.zero
+		manualStop = false
+		camera.CameraType = Enum.CameraType.Scriptable
+		controlling = true
+		setRobloxJumpButtonVisible(false)
+	end
+
+	local added = 0
+	for _, item in ipairs(nearby) do
+		if #controlledObjects >= MAX_OBJECTS then break end
+		local entry = attachMoverToPart(item.root, item.info.isModel, item.info.correction)
+		table.insert(controlledObjects, entry)
+		added = added + 1
+	end
+
+	updateThirdPersonCamera(0)
+	return added
+end
+
+local function stopControl()
+	destroyAllMovers()
+	if savedPlayerCFrame then
+		local char = player.Character
+		if char then
+			local hrp = char:FindFirstChild("HumanoidRootPart")
+			if hrp then
+				hrp.CFrame = savedPlayerCFrame
+				hrp.AssemblyLinearVelocity = Vector3.zero
+				hrp.AssemblyAngularVelocity = Vector3.zero
+			end
+		end
+		savedPlayerCFrame = nil
+	end
+	controlling = false
+	camera.CameraType = Enum.CameraType.Custom
+	setRobloxJumpButtonVisible(true)
+end
+
+----------------------------------------------------------------
+-- 5. GUI
+----------------------------------------------------------------
+
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "GrabMoveGui"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = playerGui
+
+local crosshair = Instance.new("Frame")
+crosshair.Size = UDim2.new(0, 8, 0, 8)
+crosshair.AnchorPoint = Vector2.new(0.5, 0.5)
+crosshair.Position = UDim2.new(0.5, 0, 0.5, 0)
+crosshair.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+crosshair.BackgroundTransparency = 0.3
+local crosshairCorner = Instance.new("UICorner")
+crosshairCorner.CornerRadius = UDim.new(1, 0)
+crosshairCorner.Parent = crosshair
+crosshair.Parent = screenGui
+
+local toggleButton = Instance.new("TextButton")
+toggleButton.Size = UDim2.new(0, 110, 0, 40)
+toggleButton.Position = UDim2.new(1, -130, 0, 20)
+toggleButton.Text = "操作: OFF"
+toggleButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+toggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+toggleButton.Font = Enum.Font.GothamBold
+toggleButton.TextSize = 15
+local btnCorner = Instance.new("UICorner")
+btnCorner.CornerRadius = UDim.new(0, 8)
+btnCorner.Parent = toggleButton
+toggleButton.Parent = screenGui
+
+local addButton = Instance.new("TextButton")
+addButton.Size = UDim2.new(0, 110, 0, 40)
+addButton.Position = UDim2.new(1, -130, 0, 70)
+addButton.Text = "追加 (0/10)"
+addButton.BackgroundColor3 = Color3.fromRGB(40, 90, 160)
+addButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+addButton.Font = Enum.Font.GothamBold
+addButton.TextSize = 14
+addButton.Visible = false
+local addCorner = Instance.new("UICorner")
+addCorner.CornerRadius = UDim.new(0, 8)
+addCorner.Parent = addButton
+addButton.Parent = screenGui
+
+local stopButton = Instance.new("TextButton")
+stopButton.Size = UDim2.new(0, 110, 0, 40)
+stopButton.Position = UDim2.new(1, -130, 0, 120)
+stopButton.Text = "停止"
+stopButton.BackgroundColor3 = Color3.fromRGB(200, 140, 30)
+stopButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+stopButton.Font = Enum.Font.GothamBold
+stopButton.TextSize = 14
+stopButton.Visible = false
+local stopCorner = Instance.new("UICorner")
+stopCorner.CornerRadius = UDim.new(0, 8)
+stopCorner.Parent = stopButton
+stopButton.Parent = screenGui
+
+local subButtonContainer = Instance.new("Frame")
+subButtonContainer.Size = UDim2.new(0, 120, 0, 40)
+subButtonContainer.Position = UDim2.new(1, -265, 0, 20)
+subButtonContainer.BackgroundTransparency = 1
+subButtonContainer.Visible = false
+subButtonContainer.Parent = screenGui
+
+local listLayout = Instance.new("UIListLayout")
+listLayout.FillDirection = Enum.FillDirection.Horizontal
+listLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right
+listLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+listLayout.Padding = UDim.new(0, 10)
+listLayout.Parent = subButtonContainer
+
+local speedBox = Instance.new("TextBox")
+speedBox.Size = UDim2.new(0, 100, 0, 40)
+speedBox.Text = tostring(CURRENT_SPEED)
+speedBox.PlaceholderText = "速度"
+speedBox.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+speedBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+speedBox.Font = Enum.Font.GothamBold
+speedBox.TextSize = 14
+speedBox.ClearTextOnFocus = false
+speedBox.LayoutOrder = 1
+local sBoxCorner = Instance.new("UICorner")
+sBoxCorner.CornerRadius = UDim.new(0, 8)
+sBoxCorner.Parent = speedBox
+speedBox.Parent = subButtonContainer
+
+speedBox.FocusLost:Connect(function()
+	local val = tonumber(speedBox.Text)
+	if val then
+		CURRENT_SPEED = math.clamp(val, 1, 9999)
+		speedBox.Text = tostring(CURRENT_SPEED)
+	else
+		speedBox.Text = tostring(CURRENT_SPEED)
+	end
+end)
+
+local stickBase = Instance.new("Frame")
+stickBase.Size = UDim2.new(0, 90, 0, 90)
+stickBase.Position = UDim2.new(0, 40, 1, -150)
+stickBase.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+stickBase.BackgroundTransparency = 0.4
+stickBase.Visible = false
+local baseCorner = Instance.new("UICorner")
+baseCorner.CornerRadius = UDim.new(1, 0)
+baseCorner.Parent = stickBase
+stickBase.Parent = screenGui
+
+local stickKnob = Instance.new("Frame")
+stickKnob.Size = UDim2.new(0, 40, 0, 40)
+stickKnob.Position = UDim2.new(0.5, -20, 0.5, -20)
+stickKnob.BackgroundColor3 = Color3.fromRGB(200, 200, 200)
+local knobCorner = Instance.new("UICorner")
+knobCorner.CornerRadius = UDim.new(1, 0)
+knobCorner.Parent = stickKnob
+stickKnob.Parent = stickBase
+
+local stickRadius = 45
+local stickCenter = Vector2.new(45, 45)
+local stickInput = Vector2.new(0, 0)
+local activeStickTouch = nil
+
+local function updateKnob(delta)
+	local clamped = delta
+	if clamped.Magnitude > stickRadius then clamped = clamped.Unit * stickRadius end
+	stickKnob.Position = UDim2.new(0.5, clamped.X - 20, 0.5, clamped.Y - 20)
+	stickInput = Vector2.new(clamped.X / stickRadius, clamped.Y / stickRadius)
+	if clamped.Magnitude > 3 then
+		manualStop = false
+	end
+end
+
+local function resetKnob()
+	stickKnob.Position = UDim2.new(0.5, -20, 0.5, -20)
+	stickInput = Vector2.new(0, 0)
+end
+
+stickBase.InputBegan:Connect(function(input)
+	if not controlling then return end
+	if input.UserInputType == Enum.UserInputType.Touch
+		or input.UserInputType == Enum.UserInputType.MouseButton1 then
+		activeStickTouch = input
+		local pos = input.Position
+		local basePos = stickBase.AbsolutePosition
+		updateKnob(Vector2.new(pos.X, pos.Y) - basePos - stickCenter)
+	end
+end)
+
+----------------------------------------------------------------
+-- 6. カメラ回転 + キーボード操作
+----------------------------------------------------------------
+
+local activeCameraTouch = nil
+local lastCameraTouchPos = nil
+local MIN_PITCH = -80
+local MAX_PITCH = 80
+
+local keyboardInput = Vector3.zero
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+	if not controlling then return end
+	if gameProcessed then return end
+
+	if input.UserInputType == Enum.UserInputType.Keyboard then
+		if input.KeyCode == Enum.KeyCode.W then keyboardInput = keyboardInput + Vector3.new(0, 0, -1) end
+		if input.KeyCode == Enum.KeyCode.S then keyboardInput = keyboardInput + Vector3.new(0, 0, 1) end
+		if input.KeyCode == Enum.KeyCode.A then keyboardInput = keyboardInput + Vector3.new(-1, 0, 0) end
+		if input.KeyCode == Enum.KeyCode.D then keyboardInput = keyboardInput + Vector3.new(1, 0, 0) end
+		if input.KeyCode == Enum.KeyCode.Space then keyboardInput = keyboardInput + Vector3.new(0, 1, 0) end
+		if input.KeyCode == Enum.KeyCode.LeftShift then keyboardInput = keyboardInput + Vector3.new(0, -1, 0) end
+		if keyboardInput.Magnitude > 0 then
+			manualStop = false
+		end
+		return
+	end
+
+	if input.UserInputType ~= Enum.UserInputType.Touch
+		and input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+
+	local pos = input.Position
+	local stickAbsPos = stickBase.AbsolutePosition
+	local stickAbsSize = stickBase.AbsoluteSize
+	local inStick = pos.X >= stickAbsPos.X and pos.X <= stickAbsPos.X + stickAbsSize.X
+		and pos.Y >= stickAbsPos.Y and pos.Y <= stickAbsPos.Y + stickAbsSize.Y
+	if inStick then return end
+
+	local screenWidth = camera.ViewportSize.X
+	if pos.X < screenWidth * 0.5 then return end
+
+	activeCameraTouch = input
+	lastCameraTouchPos = Vector2.new(pos.X, pos.Y)
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+	if not controlling then return end
+	if activeStickTouch == input
+		and (input.UserInputType == Enum.UserInputType.Touch
+			or input.UserInputType == Enum.UserInputType.MouseMovement) then
+		local pos = input.Position
+		local basePos = stickBase.AbsolutePosition
+		updateKnob(Vector2.new(pos.X, pos.Y) - basePos - stickCenter)
+	end
+	if activeCameraTouch == input
+		and (input.UserInputType == Enum.UserInputType.Touch
+			or input.UserInputType == Enum.UserInputType.MouseMovement) then
+		local pos = Vector2.new(input.Position.X, input.Position.Y)
+		local delta = pos - lastCameraTouchPos
+		lastCameraTouchPos = pos
+		cameraYaw = cameraYaw - delta.X * CAMERA_SENSITIVITY
+		cameraPitch = math.clamp(cameraPitch + delta.Y * CAMERA_SENSITIVITY, MIN_PITCH, MAX_PITCH)
+	end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+	if activeStickTouch == input then
+		activeStickTouch = nil
+		resetKnob()
+	end
+	if activeCameraTouch == input then
+		activeCameraTouch = nil
+		lastCameraTouchPos = nil
+	end
+	if input.UserInputType == Enum.UserInputType.Keyboard then
+		if input.KeyCode == Enum.KeyCode.W then keyboardInput = keyboardInput - Vector3.new(0, 0, -1) end
+		if input.KeyCode == Enum.KeyCode.S then keyboardInput = keyboardInput - Vector3.new(0, 0, 1) end
+		if input.KeyCode == Enum.KeyCode.A then keyboardInput = keyboardInput - Vector3.new(-1, 0, 0) end
+		if input.KeyCode == Enum.KeyCode.D then keyboardInput = keyboardInput - Vector3.new(1, 0, 0) end
+		if input.KeyCode == Enum.KeyCode.Space then keyboardInput = keyboardInput - Vector3.new(0, 1, 0) end
+		if input.KeyCode == Enum.KeyCode.LeftShift then keyboardInput = keyboardInput - Vector3.new(0, -1, 0) end
+	end
+end)
+
+----------------------------------------------------------------
+-- 7. UI更新ヘルパー
+----------------------------------------------------------------
+
+local function updateCountLabel()
+	addButton.Text = "追加 (" .. #controlledObjects .. "/" .. MAX_OBJECTS .. ")"
+end
+
+local function showControlUI(show)
+	subButtonContainer.Visible = show
+	stickBase.Visible = show
+	addButton.Visible = show
+	stopButton.Visible = show
+end
+
+----------------------------------------------------------------
+-- 8. トグル・追加・停止
+----------------------------------------------------------------
+
+toggleButton.MouseButton1Click:Connect(function()
+	if not controlling then
+		local added, reason = grabNearbyObjects()
+		if added > 0 then
+			toggleButton.Text = "操作: ON (" .. added .. ")"
+			showControlUI(true)
+			updateCountLabel()
+			task.wait(1)
+			toggleButton.Text = "操作: ON"
+		else
+			if reason == "MAX" then
+				toggleButton.Text = "上限です"
+			else
+				toggleButton.Text = "近くに無し"
+			end
+			task.wait(1)
+			toggleButton.Text = "操作: OFF"
+		end
+	else
+		stopControl()
+		toggleButton.Text = "操作: OFF"
+		showControlUI(false)
+		resetKnob()
+	end
+end)
+
+addButton.MouseButton1Click:Connect(function()
+	if not controlling then return end
+	local added, reason = grabNearbyObjects()
+	updateCountLabel()
+	if added > 0 then
+		addButton.Text = added .. "個追加"
+	else
+		addButton.Text = (reason == "MAX") and "上限(10)" or "近くに無し"
+	end
+	task.wait(0.8)
+	updateCountLabel()
+end)
+
+stopButton.MouseButton1Click:Connect(function()
+	if not controlling then return end
+	manualStop = true
+	CURRENT_VELOCITY = Vector3.zero
+	resetKnob()
+	keyboardInput = Vector3.zero
+	-- 即座に速度をゼロにして確実に停止
+	for _, entry in ipairs(controlledObjects) do
+		if entry.mover and entry.mover.Parent then
+			entry.mover.Velocity = Vector3.zero
+		end
+	end
+	stopButton.Text = "停止中..."
+	task.wait(0.5)
+	stopButton.Text = "停止"
+end)
+
+----------------------------------------------------------------
+-- 9. 毎フレーム更新
+----------------------------------------------------------------
+
+RunService.Heartbeat:Connect(function(dt)
+	if not controlling or #controlledObjects == 0 then
+		return
+	end
+
+	for i = #controlledObjects, 1, -1 do
+		local entry = controlledObjects[i]
+		if not entry.root or not entry.root.Parent or not entry.root:IsDescendantOf(workspace) then
+			destroyEntry(entry)
+			table.remove(controlledObjects, i)
+		end
+	end
+
+	if #controlledObjects == 0 then
+		stopControl()
+		toggleButton.Text = "操作: OFF"
+		showControlUI(false)
+		resetKnob()
+		return
+	end
+
+	updateThirdPersonCamera(dt)
+	local camCF = camera.CFrame
+
+	local targetVel
+	if manualStop then
+		targetVel = Vector3.zero
+		CURRENT_VELOCITY = Vector3.zero  -- 停止時は即ゼロ
+	else
+		local forwardVel = camCF.LookVector * CURRENT_SPEED
+		local rightVel = camCF.RightVector * (stickInput.X * CURRENT_SPEED)
+		local upVel = Vector3.new(0, 1, 0) * (-stickInput.Y * CURRENT_SPEED)
+
+		local kbForward = camCF.LookVector * (keyboardInput.Z * CURRENT_SPEED)
+		local kbRight = camCF.RightVector * (keyboardInput.X * CURRENT_SPEED)
+		local kbUp = Vector3.new(0, 1, 0) * (keyboardInput.Y * CURRENT_SPEED)
+
+		targetVel = forwardVel + rightVel + upVel + kbForward + kbRight + kbUp
+		CURRENT_VELOCITY = CURRENT_VELOCITY:Lerp(targetVel, math.clamp(dt * ACCELERATION, 0, 1))
+	end
+
+	local lookBase = nil
+	if CURRENT_VELOCITY.Magnitude > 0.5 then
+		lookBase = CFrame.lookAt(Vector3.zero, CURRENT_VELOCITY.Unit)
+	end
+
+	for _, entry in ipairs(controlledObjects) do
+		if entry.mover and entry.mover.Parent then
+			entry.mover.Velocity = CURRENT_VELOCITY
+		end
+		if lookBase and entry.alignMover and entry.alignMover.Parent then
+			entry.alignMover.CFrame = lookBase * entry.correction
+		end
+	end
+end)
