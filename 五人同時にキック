@@ -1,0 +1,431 @@
+local aa = loadstring(game:HttpGet("https://raw.githubusercontent.com/jadpy/suki/refs/heads/main/orion"))()
+local aa1 = game:GetService("Players")
+local aa2 = game:GetService("ReplicatedStorage")
+local aa3 = game:GetService("RunService")
+local aa82 = game:GetService("Workspace")
+
+local aa4 = aa1.LocalPlayer
+local aa5 = aa2:WaitForChild("GrabEvents")
+
+local aa6 = false
+local aa7_targets = { "", "", "", "", "" }
+local aa8 = 15
+local aa9 = 25
+
+local aa10 = aa2:WaitForChild("MenuToys"):WaitForChild("SpawnToyRemoteFunction")
+local aa11 = aa5:WaitForChild("SetNetworkOwner")
+
+local aa12 = {
+    aa13 = false
+}
+local aa14 = {
+    aa15_list = { nil, nil, nil, nil, nil },
+}
+local aa16 = {}
+local aa17 = false
+
+-- ===== ラグ方式 =====
+local running = false
+local ragServer = false
+local targetLag = false
+local selectedPlayerName = nil
+local createLineRemote = aa5:FindFirstChild("CreateGrabLine")
+-- ================================================
+
+local function aa18()
+    local aa19 = {}
+    for _, aa20 in ipairs(aa1:GetPlayers()) do
+        if aa20 ~= aa4 then
+            table.insert(aa19, aa20.DisplayName .. " (@" .. aa20.Name .. ")")
+        end
+    end
+    return aa19
+end
+
+local function aa21(aa22)
+    for _, aa23 in ipairs(aa1:GetPlayers()) do
+        local aa24 = aa23.DisplayName .. " (@" .. aa23.Name .. ")"
+        if aa24 == aa22 then return aa23 end
+    end
+    return nil
+end
+
+local function aa25(aa26, aa27)
+    if not aa26.Character then return end
+    local aa28 = aa26.Character:FindFirstChild("HumanoidRootPart")
+    if not aa28 or not aa27 then return end
+
+    local aa29 = aa27.CFrame
+    aa27.CFrame = aa28.CFrame * CFrame.new(0, 0, 2)
+
+    for aa30 = 1, 15 do
+        aa11:FireServer(aa28, aa28.CFrame)
+        task.wait()
+    end
+
+    aa27.CFrame = aa29
+end
+
+local function aa31(aa32, aa33, aa34)
+    return aa32:FindFirstChild(aa33) or aa32:WaitForChild(aa33, aa34 or 5)
+end
+
+local function aa35(aa36)
+    if aa36 and aa36:IsA("BasePart") then
+        aa11:FireServer(aa36, aa36.CFrame)
+        task.wait()
+    end
+end
+
+local function aa37(aa38, aa39)
+    return aa38:FindFirstChild(aa39) ~= nil
+end
+
+local function aa40(aa41)
+    local aa42 = aa4.Character or aa4.CharacterAdded:Wait()
+    local aa43 = aa42:WaitForChild("HumanoidRootPart")
+
+    local waitCount = 0
+    while (aa4.InPlot.Value and not aa4.InOwnedPlot.Value) and waitCount < 50 do
+        task.wait(0.1)
+        waitCount = waitCount + 1
+    end
+    waitCount = 0
+    while not aa4.CanSpawnToy.Value and waitCount < 50 do
+        task.wait(0.1)
+        waitCount = waitCount + 1
+    end
+
+    local aa44 = aa43.CFrame * CFrame.new(0, 14, 20)
+    
+    local aa45 = workspace:FindFirstChild(aa4.Name.."SpawnedInToys")
+    if not aa45 then
+        aa45 = workspace:FindFirstChild("PlotItems")
+        if aa45 then
+            aa45 = aa45:FindFirstChild("Plot1")
+        end
+    end
+    if not aa45 then
+        aa45 = workspace
+    end
+
+    local aa46 = nil
+    local aa47 = aa45.ChildAdded:Connect(function(aa48)
+        if aa48.Name == aa41 then
+            aa46 = aa48
+        end
+    end)
+
+    task.spawn(function()
+        pcall(function()
+            aa10:InvokeServer(aa41, aa44, Vector3.zero)
+        end)
+    end)
+
+    local aa49 = tick()
+    repeat task.wait(0.05) until aa46 or (tick() - aa49) > 5
+    aa47:Disconnect()
+    return aa46
+end
+
+local function aa50()
+    if aa17 then return nil end
+    aa17 = true
+
+    local aa51 = aa40("PalletLightBrown")
+    if not aa51 then
+        aa17 = false
+        return nil
+    end
+
+    local aa52 = aa31(aa51, "SoundPart", 3)
+    if not aa52 then
+        aa51:Destroy()
+        aa17 = false
+        return nil
+    end
+
+    local retryCount = 0
+    while retryCount < 10 do
+        if not aa12.aa13 then
+            aa51:Destroy()
+            aa17 = false
+            return nil
+        end
+        aa35(aa52)
+        task.wait()
+        if aa37(aa52, "PartOwner") then
+            break
+        end
+        retryCount = retryCount + 1
+    end
+
+    if not aa37(aa52, "PartOwner") then
+        aa51:Destroy()
+        aa17 = false
+        return nil
+    end
+
+    for _, aa54 in pairs(aa51:GetDescendants()) do
+        if aa54:IsA("BasePart") then
+            aa54.CanCollide = false
+            aa54.Transparency = 0.8
+        end
+    end
+    aa51.Name = "RagdollPalete"
+
+    local aa55 = Instance.new("BodyVelocity")
+    aa55.MaxForce = Vector3.new(0, math.huge, 0)
+    aa55.Velocity = Vector3.new(0, 900, 0)
+    aa55.Parent = aa52
+
+    aa17 = false
+    return aa51
+end
+
+-- ===== ラグ方式（即連打） =====
+local function startLagSpam()
+    if running then return end
+    if not createLineRemote then return end
+    running = true
+
+    task.spawn(function()
+        while running do
+            local spawnLocation = aa82:FindFirstChild("SpawnLocation")
+                or aa82:FindFirstChild("Spawn")
+                or (aa4.Character and aa4.Character:FindFirstChild("HumanoidRootPart"))
+
+            if spawnLocation then
+                createLineRemote:FireServer(spawnLocation, CFrame.new(math.random(-2010000000, 2000000001), 0, math.random(-2008100000, 2000200000)))
+            end
+            task.wait()
+        end
+    end)
+end
+
+local function stopLagSpam()
+    if not running then return end
+    running = false
+end
+-- ================================================
+
+local aa56 = aa:MakeWindow({Name = "Grabkick (5人用・上空配置)", HidePremium = true, SaveConfig = false})
+
+local aa57 = aa56:MakeTab({Name = "1", Icon = "rbxassetid://4483345998"})
+
+-- 5人分のドロップダウン
+local targetDropdowns = {}
+for i = 1, 5 do
+    targetDropdowns[i] = aa57:AddDropdown({
+        Name = "Target Player " .. i,
+        Default = "",
+        Options = aa18(),
+        Callback = function(aa59)
+            aa7_targets[i] = aa59
+            local aa60 = aa21(aa59)
+            if aa60 then
+                aa14.aa15_list[i] = aa60.Name
+            else
+                aa14.aa15_list[i] = nil
+            end
+        end
+    })
+end
+
+aa57:AddToggle({
+    Name = "Grab kick (BETA) - 5人同時（上空）",
+    Default = false,
+    Callback = function(aa61)
+        aa6 = aa61
+        aa12.aa13 = aa61
+
+        if aa61 then
+            startLagSpam()
+        else
+            stopLagSpam()
+        end
+
+        if aa6 then
+            task.spawn(function()
+                local controlBPs = {}
+                local targetOffsets = {}
+                local lastTargets = { nil, nil, nil, nil, nil }
+                
+                -- ★★★ ここで半径と高さを調整してください ★★★
+                local circleRadius = 8   -- 水平距離（自分からの半径）
+                local circleHeight = 8   -- 垂直高さ（自分の足元からの高さ。大きくすると上空に浮く）
+
+                while aa6 do
+                    for idx, targetName in ipairs(aa14.aa15_list) do
+                        if lastTargets[idx] ~= targetName then
+                            targetOffsets[idx] = nil
+                            lastTargets[idx] = targetName
+                        end
+
+                        if not targetName then continue end
+
+                        local targetPlayer = aa1:FindFirstChild(targetName)
+                        if not targetPlayer then continue end
+
+                        local aa63 = aa4.Character
+                        local aa64 = aa63 and aa63:FindFirstChild("HumanoidRootPart")
+                        if not aa64 then continue end
+
+                        local targetChar = targetPlayer.Character
+                        if not targetChar then continue end
+                        local aa66 = targetChar:FindFirstChild("HumanoidRootPart")
+                        if not aa66 then continue end
+
+                        -- 距離チェック & 投げ
+                        local aa67 = (aa64.Position - aa66.Position).Magnitude
+                        if aa67 > aa9 then
+                            aa25(targetPlayer, aa64)
+                        end
+
+                        -- Grab & 速度リセット
+                        aa11:FireServer(aa66, aa66.CFrame)
+                        if aa5:FindFirstChild("DestroyGrabLine") then
+                            aa5.DestroyGrabLine:FireServer(aa66)
+                        end
+
+                        aa66.AssemblyLinearVelocity = Vector3.zero
+                        aa66.AssemblyAngularVelocity = Vector3.zero
+
+                        -- ★ 自分の周り＋上 に円配置（idxに応じて角度を均等に割り振る）
+                        if not targetOffsets[idx] then
+                            local angle = (idx - 1) * (2 * math.pi / 5) -- 0°, 72°, 144°, 216°, 288°
+                            local ox = math.cos(angle) * circleRadius
+                            local oz = math.sin(angle) * circleRadius
+                            -- Y成分に circleHeight を設定して「上空」に浮かせる
+                            targetOffsets[idx] = Vector3.new(ox, circleHeight, oz)
+                        end
+
+                        -- BodyPosition を設定
+                        if not controlBPs[idx] or not controlBPs[idx]:IsDescendantOf(workspace) then
+                            local bp = Instance.new("BodyPosition")
+                            bp.Name = "ControlBP"
+                            bp.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+                            bp.P = 800000
+                            bp.Parent = aa66
+                            controlBPs[idx] = bp
+                        end
+                        -- ★ 自分の位置 + 上空オフセット に移動させる
+                        controlBPs[idx].Position = aa64.Position + targetOffsets[idx]
+                    end
+                    task.wait()
+                end
+
+                -- ループ終了時に全ControlBPを削除
+                for idx, targetName in ipairs(aa14.aa15_list) do
+                    if targetName then
+                        local targetPlayer = aa1:FindFirstChild(targetName)
+                        if targetPlayer and targetPlayer.Character then
+                            local hrp = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+                            if hrp and hrp:FindFirstChild("ControlBP") then
+                                hrp.ControlBP:Destroy()
+                            end
+                        end
+                    end
+                end
+            end)
+        end
+
+        -- ===== レイジドールパレット管理（5人分） =====
+        if aa61 then
+            local aa72_palettes = {}
+
+            aa16["aa73"] = aa3.RenderStepped:Connect(function()
+                if not aa12.aa13 then return end
+
+                for idx, targetName in ipairs(aa14.aa15_list) do
+                    if not targetName then
+                        if aa72_palettes[idx] and aa72_palettes[idx]:IsDescendantOf(workspace) then
+                            aa72_palettes[idx]:Destroy()
+                        end
+                        aa72_palettes[idx] = nil
+                        continue
+                    end
+
+                    local targetPlayer = aa1:FindFirstChild(targetName)
+                    if not targetPlayer or not targetPlayer.Character then
+                        if aa72_palettes[idx] and aa72_palettes[idx]:IsDescendantOf(workspace) then
+                            aa72_palettes[idx]:Destroy()
+                        end
+                        aa72_palettes[idx] = nil
+                        continue
+                    end
+
+                    local hrp = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+                    local hum = targetPlayer.Character:FindFirstChild("Humanoid")
+                    if not hrp or not hum then
+                        if aa72_palettes[idx] and aa72_palettes[idx]:IsDescendantOf(workspace) then
+                            aa72_palettes[idx]:Destroy()
+                        end
+                        aa72_palettes[idx] = nil
+                        continue
+                    end
+
+                    if aa72_palettes[idx] and aa72_palettes[idx]:IsDescendantOf(workspace) then
+                        local soundPart = aa72_palettes[idx]:FindFirstChild("SoundPart")
+                        if soundPart and not aa37(soundPart, "PartOwner") then
+                            aa72_palettes[idx]:Destroy()
+                            aa72_palettes[idx] = nil
+                        end
+                    end
+
+                    if not aa17 and (not aa72_palettes[idx] or not aa72_palettes[idx]:IsDescendantOf(workspace)) then
+                        local newPalette = aa50()
+                        if newPalette then
+                            aa72_palettes[idx] = newPalette
+                        end
+                    end
+
+                    if aa72_palettes[idx] and aa72_palettes[idx]:IsDescendantOf(workspace) then
+                        local soundPart = aa72_palettes[idx]:FindFirstChild("SoundPart")
+                        if soundPart then
+                            local ragdolled = hum:FindFirstChild("Ragdolled")
+                            if ragdolled and not ragdolled.Value then
+                                soundPart.Position = hrp.Position
+                            end
+                        end
+                    end
+                end
+            end)
+        else
+            if aa16["aa73"] then
+                aa16["aa73"]:Disconnect()
+                aa16["aa73"] = nil
+            end
+        end
+    end
+})
+
+-- 全ドロップダウンをリフレッシュ
+local function aa79()
+    local options = aa18()
+    for i = 1, 5 do
+        if targetDropdowns[i] then
+            targetDropdowns[i]:Refresh(options, true)
+        end
+    end
+    for i = 1, 5 do
+        if aa14.aa15_list[i] then
+            local stillExists = aa1:FindFirstChild(aa14.aa15_list[i])
+            if not stillExists then
+                aa14.aa15_list[i] = nil
+                aa7_targets[i] = ""
+                if targetDropdowns[i] then
+                    targetDropdowns[i]:SetValue("")
+                end
+            end
+        end
+    end
+end
+
+aa1.PlayerAdded:Connect(function()
+    task.wait(0.5)
+    aa79()
+end)
+aa1.PlayerRemoving:Connect(aa79)
+
+aa:Init()
