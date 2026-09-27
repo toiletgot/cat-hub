@@ -1,5 +1,5 @@
 --[[
-    GrabMoveController - OrionLib版
+    GrabMoveController - OrionLib版 (個数制限なし)
     配置場所: StarterPlayer > StarterPlayerScripts または Executorで実行
 ]]
 
@@ -19,7 +19,7 @@ local camera = workspace.CurrentCamera
 
 local controlling = false
 local controlledObjects = {}
-local MAX_OBJECTS = 10
+-- MAX_OBJECTSを削除または非常に大きな値に設定
 
 local GRAB_RADIUS = 80
 local CURRENT_SPEED = 20
@@ -325,10 +325,6 @@ local function attachMoverToPart(root, isModel, correction)
 end
 
 local function grabNearbyObjects()
-	if #controlledObjects >= MAX_OBJECTS then
-		return 0, "MAX"
-	end
-
 	refreshCache()
 
 	local nearby = findNearbyObjects()
@@ -361,7 +357,6 @@ local function grabNearbyObjects()
 
 	local added = 0
 	for _, item in ipairs(nearby) do
-		if #controlledObjects >= MAX_OBJECTS then break end
 		local entry = attachMoverToPart(item.root, item.info.isModel, item.info.correction)
 		table.insert(controlledObjects, entry)
 		added = added + 1
@@ -614,7 +609,7 @@ local MainTab = Window:MakeTab({
 	PremiumOnly = false
 })
 
-MainTab:AddParagraph("Info", "近くのオブジェクトを掴んで操作できます\n最大10個まで追加可能")
+MainTab:AddParagraph("Info", "近くのオブジェクトを掴んで操作できます\n個数制限はありません")
 
 MainTab:AddButton({
 	Name = "操作開始 / 終了",
@@ -630,10 +625,9 @@ MainTab:AddButton({
 					Time = 3
 				})
 			else
-				local msg = (reason == "MAX") and "上限に達しています" or "近くに掴めるオブジェクトがありません"
 				OrionLib:MakeNotification({
 					Name = "GrabMove",
-					Content = msg,
+					Content = "近くに掴めるオブジェクトがありません",
 					Image = "rbxassetid://4483345998",
 					Time = 3
 				})
@@ -668,15 +662,14 @@ MainTab:AddButton({
 		if added > 0 then
 			OrionLib:MakeNotification({
 				Name = "GrabMove",
-				Content = added .. "個追加しました (" .. #controlledObjects .. "/" .. MAX_OBJECTS .. ")",
+				Content = added .. "個追加しました (合計: " .. #controlledObjects .. "個)",
 				Image = "rbxassetid://4483345998",
 				Time = 3
 			})
 		else
-			local msg = (reason == "MAX") and "上限(10)です" or "近くに無し"
 			OrionLib:MakeNotification({
 				Name = "GrabMove",
-				Content = msg,
+				Content = "近くに新しいオブジェクトはありません",
 				Image = "rbxassetid://4483345998",
 				Time = 3
 			})
@@ -709,7 +702,7 @@ MainTab:AddButton({
 MainTab:AddSlider({
 	Name = "速度",
 	Min = 1,
-	Max = 200,
+	Max = 3000,
 	Default = 20,
 	Color = Color3.fromRGB(255, 255, 255),
 	Increment = 1,
@@ -718,17 +711,6 @@ MainTab:AddSlider({
 		CURRENT_SPEED = Value
 	end
 })
-
-MainTab:AddLabel("操作中オブジェクト数: 0 / 10")
-
--- オブジェクト数を定期更新
-task.spawn(function()
-	while true do
-		task.wait(0.5)
-		-- Labelを動的に更新したい場合は、OrionLibのLabelを再作成するか
-		-- 簡易的に通知で確認する形にしています
-	end
-end)
 
 local SettingsTab = Window:MakeTab({
 	Name = "Settings",
