@@ -280,7 +280,7 @@ local function launchAll()
 end
 
 -- UI
-local Window = OrionLib:MakeWindow({Name = "ミサイル発射 (360度対応)", HidePremium = false, IntroText = "上下対応版"})
+local Window = OrionLib:MakeWindow({Name = "ミサイル", HidePremium = false, IntroText = "ミサイルですう、うおw"})
 
 local Tab = Window:MakeTab({Name = "メイン", Icon = "rbxassetid://4483345998"})
 
