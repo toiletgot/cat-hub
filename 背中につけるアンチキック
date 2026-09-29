@@ -1,0 +1,321 @@
+-- ============================================================
+-- Anti Toy (Standalone)
+-- つるはし・鉛筆・手裏剣
+-- ============================================================
+
+local Players           = game:GetService("Players")
+local Workspace         = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local LocalPlayer       = Players.LocalPlayer
+
+-- ============================================================
+-- Obsidian
+-- ============================================================
+local repo         = "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/"
+local Library      = loadstring(game:HttpGet(repo .. "Library.lua"))()
+local ThemeManager = loadstring(game:HttpGet(repo .. "addons/ThemeManager.lua"))()
+local SaveManager  = loadstring(game:HttpGet(repo .. "addons/SaveManager.lua"))()
+
+Library.ForceCheckbox = false
+
+-- ============================================================
+-- Remotes
+-- ============================================================
+local MenuToys        = ReplicatedStorage:WaitForChild("MenuToys")
+local SpawnRemote     = MenuToys:WaitForChild("SpawnToyRemoteFunction")
+local DestroyToy      = MenuToys:WaitForChild("DestroyToy")
+
+local GrabEvents      = ReplicatedStorage:WaitForChild("GrabEvents")
+local SetNetworkOwner = GrabEvents:WaitForChild("SetNetworkOwner")
+
+local PlayerEvents    = ReplicatedStorage:FindFirstChild("PlayerEvents")
+local StickyPartEvent = PlayerEvents and PlayerEvents:FindFirstChild("StickyPartEvent")
+
+-- ============================================================
+-- Config
+-- ============================================================
+local AntiToyConfig = {
+    ["ToolPickaxe"] = {
+        Display = "つるはし",
+        AttachTo = "Torso",
+        -- 写真の数値に固定
+        Offset = CFrame.new(-0.02, 0.97, 0.67)
+               * CFrame.Angles(math.rad(-88.5), math.rad(-0.4), math.rad(-0.4)),
+        Rename = nil,
+    },
+    ["ToolPencil"] = {
+        Display = "鉛筆",
+        AttachTo = "Torso",
+        Offset = CFrame.new(0, -1, 0) * CFrame.Angles(0, math.pi, 0),
+        Rename = nil,
+    },
+    ["NinjaShuriken"] = {
+        Display = "手裏剣",
+        AttachTo = "FirePlayerPart",
+        Offset = CFrame.new(0, 0, 0) * CFrame.Angles(0, math.rad(90), math.rad(90)),
+        Rename = "AntiKick",
+    },
+}
+
+local DisplayToName = {}
+local DropdownValues = {}
+for name, cfg in pairs(AntiToyConfig) do
+    DisplayToName[cfg.Display] = name
+    table.insert(DropdownValues, cfg.Display)
+end
+table.sort(DropdownValues)
+
+-- ============================================================
+-- State
+-- ============================================================
+local SelectedToy = "ToolPickaxe"
+local IsActive = false
+local LoopTask = nil
+
+-- ============================================================
+-- Helpers
+-- ============================================================
+local function GetHRP()
+    local c = LocalPlayer.Character
+    return c and c:FindFirstChild("HumanoidRootPart")
+end
+
+local function GetToysFolder()
+    return Workspace:FindFirstChild(LocalPlayer.Name .. "SpawnedInToys")
+end
+
+local function ClearToys()
+    task.spawn(function()
+        for _ = 1, 5 do
+            local inv = GetToysFolder()
+            if inv then
+                for _, v in pairs(inv:GetChildren()) do
+                    local n = v.Name
+                    if AntiToyConfig[n] or n == "AntiKick" or n == "Noclipped" then
+                        pcall(function() DestroyToy:FireServer(v) end)
+                    end
+                end
+            end
+            task.wait(0.05)
+        end
+    end)
+end
+
+local function GetAttachPart(char)
+    local cfg = AntiToyConfig[SelectedToy]
+    if not cfg then return nil end
+    if cfg.AttachTo == "FirePlayerPart" then
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        if not hrp then return nil end
+        return hrp:FindFirstChild("FirePlayerPart") or hrp:WaitForChild("FirePlayerPart", 3)
+    end
+    return char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso")
+end
+
+local function SpawnToy()
+    local toyName = SelectedToy
+    local cfg = AntiToyConfig[toyName]
+    if not toyName or not cfg then return nil end
+    local hrp = GetHRP()
+    if not hrp then return nil end
+
+    local canSpawn = LocalPlayer:FindFirstChild("CanSpawnToy")
+    local w = 0
+    while canSpawn and not canSpawn.Value and w < 30 do
+        task.wait(0.1)
+        w = w + 1
+    end
+
+    local inv = GetToysFolder()
+    if not inv then return nil end
+
+    local spawned = nil
+    local conn
+    conn = inv.ChildAdded:Connect(function(c)
+        if c.Name == toyName then
+            spawned = c
+        end
+    end)
+
+    task.spawn(function()
+        pcall(function()
+            SpawnRemote:InvokeServer(toyName, hrp.CFrame * CFrame.new(0, 2, 3), Vector3.zero)
+        end)
+    end)
+
+    local t0 = tick()
+    repeat task.wait(0.05) until spawned or (tick() - t0) > 1.5
+    if conn then pcall(function() conn:Disconnect() end) end
+
+    if not spawned and inv then
+        spawned = inv:FindFirstChild(toyName)
+    end
+
+    if spawned then
+        return spawned
+    end
+
+    Library:Notify({Title = "Anti Toy", Description = "スポーン失敗", Time = 3})
+    return nil
+end
+
+local function StickToy(toy)
+    if not toy or not toy:FindFirstChild("StickyPart") then return false end
+    local cfg = AntiToyConfig[SelectedToy]
+    if not cfg then return false end
+
+    local char = LocalPlayer.Character
+    if not char then return false end
+    local attachPart = GetAttachPart(char)
+    if not attachPart then return false end
+
+    local sticky = toy:FindFirstChild("StickyPart")
+    local soundPart = toy:FindFirstChild("SoundPart")
+
+    if soundPart then
+        if not soundPart:FindFirstChild("PartOwner") or soundPart.PartOwner.Value ~= LocalPlayer.Name then
+            pcall(function() SetNetworkOwner:FireServer(soundPart, soundPart.CFrame) end)
+        end
+    end
+
+    if StickyPartEvent then
+        pcall(function()
+            StickyPartEvent:FireServer(sticky, attachPart, cfg.Offset)
+        end)
+    end
+
+    for _, obj in pairs(toy:GetChildren()) do
+        if obj:IsA("BasePart") then
+            obj.CanTouch = false
+            obj.CanCollide = false
+            obj.CanQuery = false
+        end
+    end
+
+    if cfg.Rename then
+        toy.Name = cfg.Rename
+    end
+    return true
+end
+
+local function IsWelded(toy)
+    if not toy then return false end
+    local sticky = toy:FindFirstChild("StickyPart")
+    if not sticky then return false end
+    local weld = sticky:FindFirstChild("StickyWeld")
+    return weld and weld.Part1 ~= nil
+end
+
+local function FindCurrent()
+    local inv = GetToysFolder()
+    if not inv then return nil end
+    local cfg = AntiToyConfig[SelectedToy]
+    local toy = inv:FindFirstChild(SelectedToy)
+    if not toy and cfg and cfg.Rename then
+        toy = inv:FindFirstChild(cfg.Rename)
+    end
+    if not toy then
+        toy = inv:FindFirstChild("AntiKick")
+    end
+    return toy
+end
+
+local function Loop()
+    while IsActive do
+        task.wait(0.15)
+        local char = LocalPlayer.Character
+        if not char then continue end
+        local hum = char:FindFirstChild("Humanoid")
+        if not hum or hum.Health <= 0 then continue end
+
+        local toy = FindCurrent()
+        if not toy then
+            toy = SpawnToy()
+            if toy then
+                task.wait(0.1)
+                StickToy(toy)
+            end
+        else
+            if not IsWelded(toy) then
+                StickToy(toy)
+            end
+            local sticky = toy:FindFirstChild("StickyPart")
+            local hrp = char:FindFirstChild("HumanoidRootPart")
+            if sticky and hrp then
+                if (hrp.Position - sticky.Position).Magnitude >= 25 then
+                    pcall(function() DestroyToy:FireServer(toy) end)
+                end
+            end
+        end
+    end
+    ClearToys()
+end
+
+local function Start()
+    if IsActive then return end
+    IsActive = true
+    LoopTask = task.spawn(Loop)
+    Library:Notify({Title = "Anti Toy", Description = "ON", Time = 2})
+end
+
+local function Stop()
+    IsActive = false
+    if LoopTask then
+        pcall(function() task.cancel(LoopTask) end)
+        LoopTask = nil
+    end
+    ClearToys()
+    Library:Notify({Title = "Anti Toy", Description = "OFF", Time = 2})
+end
+
+-- ============================================================
+-- UI
+-- ============================================================
+local Window = Library:CreateWindow({
+    Title = "Anti Toy",
+    Footer = "Standalone",
+    NotifySide = "Right",
+    ShowCustomCursor = true,
+})
+
+local Tabs = {
+    Main = Window:AddTab("Main", "shield"),
+}
+
+local Group = Tabs.Main:AddLeftGroupbox("Anti Toy")
+
+Group:AddDropdown("ToySelect", {
+    Text = "使うトイ",
+    Default = "つるはし",
+    Values = DropdownValues,
+    Callback = function(v)
+        local name = DisplayToName[v]
+        if name then
+            local wasOn = IsActive
+            if wasOn then Stop() end
+            SelectedToy = name
+            if wasOn then Start() end
+        end
+    end,
+})
+
+Group:AddToggle("AntiToyOn", {
+    Text = "Anti Toy ON",
+    Default = false,
+    Callback = function(on)
+        if on then Start() else Stop() end
+    end,
+})
+
+ThemeManager:SetLibrary(Library)
+SaveManager:SetLibrary(Library)
+SaveManager:IgnoreThemeSettings()
+ThemeManager:SetFolder("AntiToy")
+SaveManager:SetFolder("AntiToy/configs")
+SaveManager:LoadAutoloadConfig()
+
+Library:Notify({Title = "Anti Toy", Description = "Loaded", Time = 3})
+
+Library:OnUnload(function()
+    Stop()
+end)
