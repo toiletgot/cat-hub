@@ -1,0 +1,659 @@
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+local StarterGui = game:GetService("StarterGui")
+local RunService = game:GetService("RunService")
+local LP = Players.LocalPlayer
+
+-- 通知
+local function Notify(title, text, duration)
+    StarterGui:SetCore("SendNotification", {
+        Title = title,
+        Text = text,
+        Duration = duration
+    })
+end
+
+-- Rayfieldライブラリの安全な読み込み
+local success, Rayfield = pcall(function()
+    return loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+end)
+
+if not success or not Rayfield then
+    Notify("ona", "Rayfieldの読み込みに失敗しました", 3)
+    return
+end
+
+local Window = Rayfield:CreateWindow({
+    Name = "ona",
+    LoadingTitle = "ona",
+    LoadingSubtitle = "by ona",
+    Theme = "Light",
+    ConfigurationSaving = {
+        Enabled = true,
+        FolderName = "ona",
+        FileName = "onaConfig"
+    },
+    KeySystem = false
+})
+
+-- killall 機能用変数と関数
+local currentBlob = nil
+local isActive = false
+local playerStatus = {}
+
+local function GetAllPlayers()
+    local players = {}
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LP then
+            table.insert(players, player)
+        end
+    end
+    return players
+end
+
+local function GetMyRoot()
+    return LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+end
+
+local function ResetTargets()
+    for id, status in pairs(playerStatus) do
+        if status == "Targeting" then playerStatus[id] = nil end
+    end
+end
+
+-- Kill処理
+local function KillPlayer(targetPlayer)
+    if not targetPlayer or not targetPlayer.Character then return false end
+    local humanoid = targetPlayer.Character:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return false end
+    for _ = 1, 5 do
+        pcall(function()
+            humanoid.BreakJointsOnDeath = false
+            humanoid:ChangeState(Enum.HumanoidStateType.Dead)
+        end)
+        if humanoid.Health <= 0 then return true end
+        task.wait(0.005)
+    end
+    return false
+end
+
+local function KillAll()
+    if isActive then return end
+    isActive = true
+
+    local allPlayers = GetAllPlayers()
+    if #allPlayers == 0 then
+        isActive = false
+        return
+    end
+
+    for _, targetPlayer in ipairs(allPlayers) do
+        playerStatus[targetPlayer.UserId] = "Targeting"
+    end
+
+    local rootPart = GetMyRoot()
+    if rootPart then
+        local spawnPos = rootPart.CFrame * CFrame.new(0, 0, -5)
+        pcall(function()
+            ReplicatedStorage.MenuToys.SpawnToyRemoteFunction:InvokeServer("CreatureBlobman", spawnPos, Vector3.new(0, 127, 0))
+        end)
+    end
+    task.wait(0.5)
+
+    local toyFolder = workspace:FindFirstChild(LP.Name .. "SpawnedInToys")
+    currentBlob = toyFolder and toyFolder:FindFirstChild("CreatureBlobman")
+    if not currentBlob then
+        ResetTargets()
+        isActive = false
+        return
+    end
+
+    local vehicleSeat = currentBlob:FindFirstChild("VehicleSeat")
+    if vehicleSeat and LP.Character then
+        local humanoid = LP.Character:FindFirstChildOfClass("Humanoid")
+        if humanoid then
+            vehicleSeat:Sit(humanoid)
+        end
+    end
+    task.wait(0.3)
+
+    local myRoot = GetMyRoot()
+    if not myRoot then
+        ResetTargets()
+        isActive = false
+        return
+    end
+
+    local tpWait = 0.025
+
+    for _, targetPlayer in ipairs(allPlayers) do
+        local targetRoot = targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if targetRoot then
+            myRoot.CFrame = targetRoot.CFrame
+            myRoot.AssemblyAngularVelocity = Vector3.zero
+            task.wait(tpWait)
+
+            local distance = (myRoot.Position - targetRoot.Position).Magnitude
+            if distance <= 35 then
+                for i = 1, 8 do
+                    if not targetRoot.Parent or not currentBlob.Parent then break end
+                    pcall(function()
+                        currentBlob.BlobmanSeatAndOwnerScript.CreatureGrab:FireServer(
+                            currentBlob.LeftDetector, targetRoot, currentBlob.LeftDetector.LeftWeld
+                        )
+                        currentBlob.BlobmanSeatAndOwnerScript.CreatureRelease:FireServer(currentBlob.LeftDetector.LeftWeld)
+                    end)
+                    task.wait()
+                end
+            end
+        end
+    end
+
+    myRoot.CFrame = CFrame.new(0, 0, 0)
+    myRoot.AssemblyLinearVelocity = Vector3.zero
+    task.wait(0.1)
+
+    for _, part in ipairs(currentBlob:GetDescendants()) do
+        if part:IsA("BasePart") then pcall(function() part.Anchored = true end) end
+    end
+    task.wait(0.1)
+
+    -- 全プレイヤーを固定
+    local radius = 13
+    local centerX, centerY, centerZ = 0, 10, 0
+
+    for i, targetPlayer in ipairs(allPlayers) do
+        local targetRoot = targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if targetRoot then
+            local angle = math.rad((i - 1) * (360 / #allPlayers))
+            local x = centerX + radius * math.cos(angle)
+            local z = centerZ + radius * math.sin(angle)
+
+            pcall(function()
+                targetRoot.CFrame = CFrame.new(x, centerY, z)
+                targetRoot.AssemblyLinearVelocity = Vector3.zero
+                targetRoot.AssemblyAngularVelocity = Vector3.zero
+            end)
+
+            local bp = Instance.new("BodyPosition")
+            bp.MaxForce = Vector3.new(1e9, 1e9, 1e9)
+            bp.P = 4000
+            bp.Position = Vector3.new(x, centerY, z)
+            bp.Parent = targetRoot
+            task.delay(2, function() pcall(function() bp:Destroy() end) end)
+        end
+    end
+    task.wait(0.1)
+
+    -- 固定が終わってから全員Kill
+    for _, targetPlayer in ipairs(allPlayers) do
+        if not isActive then break end
+        local targetChar = targetPlayer.Character
+        if targetChar then
+            local humanoid = targetChar:FindFirstChildOfClass("Humanoid")
+            if humanoid and humanoid.Health > 0 then
+                KillPlayer(targetPlayer)
+            end
+        end
+    end
+
+    task.wait(0.1)
+
+    for _ = 1, 2 do
+        for _, targetPlayer in ipairs(allPlayers) do
+            local targetRoot = targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+            if targetRoot then
+                task.spawn(function()
+                    pcall(function()
+                        ReplicatedStorage.GrabEvents.SetNetworkOwner:FireServer(targetRoot, CFrame.new(targetRoot.Position))
+                        ReplicatedStorage.GrabEvents.DestroyGrabLine:FireServer(targetRoot)
+                    end)
+                end)
+            end
+        end
+        task.wait(0.1)
+    end
+
+    task.wait(0.3)
+
+    for _, targetPlayer in ipairs(allPlayers) do
+        local targetRoot = targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if targetRoot then
+            task.spawn(function()
+                pcall(function()
+                    currentBlob.BlobmanSeatAndOwnerScript.CreatureGrab:FireServer(
+                        currentBlob.LeftDetector, targetRoot, currentBlob.LeftDetector.LeftWeld
+                    )
+                    currentBlob.BlobmanSeatAndOwnerScript.CreatureGrab:FireServer(
+                        currentBlob.RightDetector, targetRoot, currentBlob.RightDetector.RightWeld
+                    )
+                end)
+            end)
+        end
+    end
+
+    task.wait(0.1)
+
+    for _, targetPlayer in ipairs(allPlayers) do
+        if targetPlayer and targetPlayer.Parent == Players then
+            playerStatus[targetPlayer.UserId] = "Kicked"
+        end
+    end
+
+    for _, part in ipairs(currentBlob:GetDescendants()) do
+        if part:IsA("BasePart") then pcall(function() part.Anchored = false end) end
+    end
+
+    task.wait(1)
+    isActive = false
+end
+
+-- ===== UI設定 (Rayfield UI) =====
+local MainTab = Window:CreateTab("KillAll")
+
+MainTab:CreateSection("Blobman KillAll")
+
+MainTab:CreateParagraph({
+    Title = "ona",
+    Content = "全プレイヤーを固定してから一括でキルします。モバイル対応。"
+})
+
+MainTab:CreateButton({
+    Name = "固定して KillAll 開始",
+    Callback = function()
+        task.spawn(function()
+            pcall(function()
+                KillAll()
+            end)
+        end)
+
+        Rayfield:Notify({
+            Title = "ona",
+            Content = "固定してkillallを開始しました",
+            Duration = 2,
+        })
+    end,
+})
+
+MainTab:CreateDivider()
+
+local InfoTab = Window:CreateTab("情報")
+InfoTab:CreateSection("クレジット")
+InfoTab:CreateParagraph({
+    Title = "ona",
+    Content = "by ona | Blobman KillAll Script"
+})
+
+-- ===== バリア破壊タブ =====
+local BarrierTab = Window:CreateTab("バリア破壊")
+
+local autoBarrierRunning = false
+local autoBarrierToggle = nil
+local autoBarrierNoTPRunning = false
+local autoBarrierNoTPToggle = nil
+
+-- バリア破壊関数（通常版）
+local function executeBarrierBreak()
+    local player, playerName = LP, LP.Name
+
+    local plotItems = Workspace:FindFirstChild("PlotItems")
+    if plotItems then
+        local playersInPlots = plotItems:FindFirstChild("PlayersInPlots")
+        if playersInPlots and playersInPlots:FindFirstChild(playerName) then
+            Rayfield:Notify({
+                Title = "Error",
+                Content = "Please execute outside your house",
+                Duration = 3
+            })
+            return false
+        end
+    end
+
+    autoBarrierRunning = true
+    local success, result = pcall(function()
+        if not LP.Character or not LP.Character:FindFirstChild("HumanoidRootPart") then
+            Rayfield:Notify({ Title = "Error", Content = "Character not found", Duration = 3 })
+            return false
+        end
+
+        local humanoid = LP.Character:FindFirstChildOfClass("Humanoid")
+        if not humanoid then
+            Rayfield:Notify({ Title = "Error", Content = "Humanoid not found", Duration = 3 })
+            return false
+        end
+
+        local originalWalkSpeed = humanoid.WalkSpeed
+        local originalPosition = LP.Character.HumanoidRootPart.CFrame
+        humanoid.WalkSpeed = 0
+
+        if not ReplicatedStorage:FindFirstChild("MenuToys") then
+            humanoid.WalkSpeed = originalWalkSpeed
+            Rayfield:Notify({ Title = "Error", Content = "MenuToys not found", Duration = 3 })
+            return false
+        end
+
+        ReplicatedStorage.MenuToys.SpawnToyRemoteFunction:InvokeServer("InstrumentWoodwindOcarina",
+            CFrame.new(184.148834, -5.54824972, 498.136749, 0.829037189, -0.214714944, 0.516328275, 0, 0.923344612, 0.383972496, -0.559193552, -0.318327487, 0.765486956),
+            Vector3.new(0, 34, 0))
+        wait(0.4)
+
+        local toyFolder = Workspace:FindFirstChild(LP.Name .. "SpawnedInToys")
+        if not toyFolder or not toyFolder:FindFirstChild("InstrumentWoodwindOcarina") then
+            humanoid.WalkSpeed = originalWalkSpeed
+            Rayfield:Notify({ Title = "Error", Content = "Ocarina not found", Duration = 3 })
+            return false
+        end
+
+        local ocarina = toyFolder:FindFirstChild("InstrumentWoodwindOcarina")
+        if not ocarina or not ocarina:FindFirstChild("HoldPart") then
+            humanoid.WalkSpeed = originalWalkSpeed
+            Rayfield:Notify({ Title = "Error", Content = "Ocarina HoldPart not found", Duration = 3 })
+            return false
+        end
+
+        ocarina.HoldPart.HoldItemRemoteFunction:InvokeServer(ocarina, Workspace[LP.Name])
+
+        if LP.Character and LP.Character:FindFirstChild("HumanoidRootPart") then
+            LP.Character.HumanoidRootPart.CFrame = CFrame.new(304.06, 25.77, 488.54)
+        end
+
+        wait(0.21)
+
+        if toyFolder and toyFolder:FindFirstChild("InstrumentWoodwindOcarina") then
+            ReplicatedStorage.MenuToys.DestroyToy:FireServer(toyFolder.InstrumentWoodwindOcarina)
+        end
+
+        if LP.Character and LP.Character:FindFirstChild("HumanoidRootPart") then
+            LP.Character.HumanoidRootPart.CFrame = originalPosition
+        end
+
+        wait(0.7)
+
+        ReplicatedStorage.MenuToys.SpawnToyRemoteFunction:InvokeServer("Campfire",
+            CFrame.new(257.638672, -5.57392979, 450.103638, -0.950906992, -0.171067372, 0.257899135, 0, 0.833338678, 0.552762806, -0.309477001, 0.525626004, -0.79242748),
+            Vector3.new(0, 161.9720001220703, 0))
+
+        wait(0.7)
+
+        local campfirePosition = Vector3.new(257.638672, -5.57392979, 450.103638)
+        local toyFolder2 = Workspace:FindFirstChild(LP.Name .. "SpawnedInToys")
+        if toyFolder2 and toyFolder2:FindFirstChild("Campfire") then
+            local campfire = toyFolder2:FindFirstChild("Campfire")
+            local primaryPart = campfire.PrimaryPart or campfire:FindFirstChildWhichIsA("BasePart")
+            if primaryPart then
+                local distance = (primaryPart.Position - campfirePosition).Magnitude
+                if distance < 10 then
+                    wait(1)
+                    humanoid.WalkSpeed = originalWalkSpeed
+                    Rayfield:Notify({
+                        Title = "Success",
+                        Content = "Barrier破壊に成功！",
+                        Duration = 5
+                    })
+                    return true
+                end
+            end
+        end
+
+        humanoid.WalkSpeed = originalWalkSpeed
+        Rayfield:Notify({
+            Title = "Failed",
+            Content = "Campfire placement failed",
+            Duration = 3
+        })
+        return false
+    end)
+
+    if not success then
+        if LP.Character and LP.Character:FindFirstChild("HumanoidRootPart") then
+            local humanoid = LP.Character:FindFirstChildOfClass("Humanoid")
+            if humanoid then humanoid.WalkSpeed = 16 end
+        end
+        Rayfield:Notify({
+            Title = "Error",
+            Content = "Execution error: " .. tostring(result),
+            Duration = 3
+        })
+        return false
+    end
+
+    autoBarrierRunning = false
+    return result
+end
+
+-- バリア破壊関数（NoTP版）
+local function executeBarrierBreakNoTP()
+    local player, playerName = LP, LP.Name
+
+    local plotItems = Workspace:FindFirstChild("PlotItems")
+    if plotItems then
+        local playersInPlots = plotItems:FindFirstChild("PlayersInPlots")
+        if playersInPlots and playersInPlots:FindFirstChild(playerName) then
+            Rayfield:Notify({
+                Title = "エラー",
+                Content = "家の外で実行してください",
+                Duration = 3
+            })
+            return false
+        end
+    end
+
+    autoBarrierNoTPRunning = true
+    local success, err = pcall(function()
+        if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then
+            error("キャラクターが見つかりません")
+        end
+
+        local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
+        if not humanoid then
+            error("Humanoidが見つかりません")
+        end
+
+        humanoid.WalkSpeed = 0
+
+        if not ReplicatedStorage:FindFirstChild("MenuToys") then
+            humanoid.WalkSpeed = 16
+            error("MenuToysが見つかりません")
+        end
+
+        local spawnResult = ReplicatedStorage.MenuToys.SpawnToyRemoteFunction:InvokeServer("InstrumentWoodwindOcarina",
+            CFrame.new(184.148834, -5.54824972, 498.136749, 0.829037189, -0.214714944, 0.516328275, 0, 0.923344612, 0.383972496, -0.559193552, -0.318327487, 0.765486956),
+            Vector3.new(0, 34, 0))
+
+        if not spawnResult then
+            humanoid.WalkSpeed = 16
+            error("オカリナのスポーンに失敗しました")
+        end
+        wait(0.4)
+
+        local toyFolder = Workspace:FindFirstChild(playerName .. "SpawnedInToys")
+        if not toyFolder then
+            humanoid.WalkSpeed = 16
+            error("トイフォルダが見つかりません")
+        end
+
+        local ocarina = toyFolder:FindFirstChild("InstrumentWoodwindOcarina")
+        if not ocarina then
+            humanoid.WalkSpeed = 16
+            error("オカリナが見つかりません")
+        end
+
+        if not ocarina:FindFirstChild("HoldPart") then
+            humanoid.WalkSpeed = 16
+            error("オカリナのHoldPartが見つかりません")
+        end
+
+        local holdResult = Workspace[playerName .. "SpawnedInToys"].InstrumentWoodwindOcarina.HoldPart.HoldItemRemoteFunction:InvokeServer(
+            Workspace[playerName .. "SpawnedInToys"].InstrumentWoodwindOcarina,
+            Workspace[playerName])
+
+        if not holdResult then
+            humanoid.WalkSpeed = 16
+            error("オカリナを持つことに失敗しました")
+        end
+        wait(0.2)
+
+        local dropResult = Workspace[playerName .. "SpawnedInToys"].InstrumentWoodwindOcarina.HoldPart.DropItemRemoteFunction:InvokeServer(
+            Workspace[playerName .. "SpawnedInToys"].InstrumentWoodwindOcarina,
+            CFrame.new(304.06, 25.77, 488.54),
+            Vector3.new(0, 70.48600006103516, 0))
+
+        if not dropResult then
+            humanoid.WalkSpeed = 16
+            error("オカリナを落とすことに失敗しました")
+        end
+        wait(0.1)
+
+        if not Workspace:FindFirstChild(playerName .. "SpawnedInToys") then
+            humanoid.WalkSpeed = 16
+            error("トイフォルダが消失しました")
+        end
+        if not Workspace[playerName .. "SpawnedInToys"]:FindFirstChild("InstrumentWoodwindOcarina") then
+            humanoid.WalkSpeed = 16
+            error("オカリナが既に消失しています")
+        end
+
+        ReplicatedStorage.MenuToys.DestroyToy:FireServer(Workspace[playerName .. "SpawnedInToys"].InstrumentWoodwindOcarina)
+        wait(1.5)
+
+        local campfireSpawnResult = ReplicatedStorage.MenuToys.SpawnToyRemoteFunction:InvokeServer("Campfire",
+            CFrame.new(257.638672, -5.57392979, 450.103638, -0.950906992, -0.171067372, 0.257899135, 0, 0.833338678, 0.552762806, -0.309477001, 0.525626004, -0.79242748),
+            Vector3.new(0, 161.9720001220703, 0))
+
+        if not campfireSpawnResult then
+            humanoid.WalkSpeed = 16
+            error("Campfireのスポーンに失敗しました")
+        end
+        wait(1)
+
+        if not Workspace:FindFirstChild(playerName .. "SpawnedInToys") then
+            humanoid.WalkSpeed = 16
+            error("トイフォルダが消失しました")
+        end
+        if not Workspace[playerName .. "SpawnedInToys"]:FindFirstChild("Campfire") then
+            humanoid.WalkSpeed = 16
+            error("Campfireが見つかりません")
+        end
+
+        humanoid.WalkSpeed = 16
+        Rayfield:Notify({
+            Title = "成功",
+            Content = "Barrier破壊に成功しました！",
+            Duration = 3
+        })
+        return true
+    end)
+
+    if not success then
+        local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+        if humanoid then humanoid.WalkSpeed = 16 end
+        Rayfield:Notify({
+            Title = "失敗",
+            Content = tostring(err),
+            Duration = 3
+        })
+        return false
+    end
+
+    autoBarrierNoTPRunning = false
+    return true
+end
+
+BarrierTab:CreateSection("バリア破壊")
+
+BarrierTab:CreateButton({
+    Name = "Break Barrier (1回実行)",
+    Callback = function()
+        executeBarrierBreak()
+    end
+})
+
+BarrierTab:CreateSection("自動実行機能")
+
+autoBarrierToggle = BarrierTab:CreateToggle({
+    Name = "Auto Barrier破壊",
+    CurrentValue = false,
+    Flag = "AutoBarrier",
+    Callback = function(Value)
+        autoBarrierRunning = Value
+        if Value then
+            Rayfield:Notify({
+                Title = "Start",
+                Content = "Auto executing until success",
+                Duration = 2
+            })
+            task.spawn(function()
+                while autoBarrierRunning do
+                    local result = executeBarrierBreak()
+                    if result then
+                        if autoBarrierToggle then
+                            autoBarrierToggle:Set(false)
+                        end
+                        break
+                    end
+                    wait(1)
+                end
+            end)
+        else
+            Rayfield:Notify({
+                Title = "Stop",
+                Content = "Auto execution stopped",
+                Duration = 2
+            })
+        end
+    end
+})
+
+BarrierTab:CreateParagraph({
+    Title = "使い方",
+    Content = "・家の外で実行してください\n・自動実行は成功したら自動でOFFになります"
+})
+
+BarrierTab:CreateSection("テレポートなし版 (Beta)")
+
+BarrierTab:CreateButton({
+    Name = "Break Barrier NoTP (1回実行)",
+    Callback = function()
+        executeBarrierBreakNoTP()
+    end
+})
+
+autoBarrierNoTPToggle = BarrierTab:CreateToggle({
+    Name = "Auto Barrier破壊 NoTP (Beta)",
+    CurrentValue = false,
+    Flag = "AutoBarrierNoTP",
+    Callback = function(Value)
+        autoBarrierNoTPRunning = Value
+        if Value then
+            Rayfield:Notify({
+                Title = "開始",
+                Content = "成功するまで自動実行します",
+                Duration = 2
+            })
+            task.spawn(function()
+                while autoBarrierNoTPRunning do
+                    local result = executeBarrierBreakNoTP()
+                    if result then
+                        if autoBarrierNoTPToggle then
+                            autoBarrierNoTPToggle:Set(false)
+                        end
+                        break
+                    end
+                    wait(1.5)
+                end
+            end)
+        else
+            Rayfield:Notify({
+                Title = "停止",
+                Content = "Auto実行を停止しました",
+                Duration = 2
+            })
+        end
+    end
+})
+
+BarrierTab:CreateParagraph({
+    Title = "NoTP版の注意",
+    Content = "・ベータ版です\n・通常版より成功率が低い場合があります"
+})
