@@ -1,0 +1,843 @@
+--[[
+  LinoriaLib + KickAll + BarrierBreak + NoBlobKickAll
+  タイトル: るーHUB🕶️
+  アイコン: なし
+  Key Systemタブ削除済み
+  アンチ・三人称機能を除去
+]]
+
+local repo = "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/"
+local Library = loadstring(game:HttpGet(repo .. "Library.lua"))()
+local ThemeManager = loadstring(game:HttpGet(repo .. "addons/ThemeManager.lua"))()
+local SaveManager = loadstring(game:HttpGet(repo .. "addons/SaveManager.lua"))()
+
+local Options = Library.Options
+local Toggles = Library.Toggles
+
+Library.ForceCheckbox = false
+Library.ShowToggleFrameInKeybinds = true
+
+local Window = Library:CreateWindow({
+    Title = "るーHUB🕶️",
+    Footer = "version: example",
+    Icon = nil,
+    NotifySide = "Right",
+    ShowCustomCursor = true,
+})
+
+-- タブ定義
+local Tabs = {
+    ["UI Settings"] = Window:AddTab("UI Settings", "settings"),
+    ["Kick All"] = Window:AddTab("Kick All", "sword"),
+    ["NoBlob Kick"] = Window:AddTab("NoBlob Kick", "sword"),
+    ["Barrier Break"] = Window:AddTab("Barrier Break", "shield"),
+}
+
+-- ============================================================
+--  共通通知関数
+-- ============================================================
+local function Notify(title, text, duration)
+    duration = duration or 3
+    game:GetService("StarterGui"):SetCore("SendNotification", {
+        Title = title,
+        Text = text,
+        Duration = duration,
+    })
+end
+
+-- ============================================================
+--  キックオール機能（既存、円配置ロジックはそのまま維持）
+-- ============================================================
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local LocalPlayer = Players.LocalPlayer
+local Workspace = game:GetService("Workspace")
+local RunService = game:GetService("RunService")
+
+local currentBlob = nil
+local isActive = false
+local playerStatus = {}
+local whitelistFriends = false
+
+Players.PlayerRemoving:Connect(function(player)
+    local status = playerStatus[player.UserId]
+    if status == "Kicked" then
+        Notify("プレイヤーをキックしました", player.DisplayName .. " (@" .. player.Name .. ")")
+    else
+        Notify("プレイヤーが退出しました", player.DisplayName .. " (@" .. player.Name .. ")")
+    end
+    playerStatus[player.UserId] = nil
+end)
+
+local function GetAllPlayers()
+    local players = {}
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            local isFriend = false
+            if whitelistFriends then
+                pcall(function()
+                    isFriend = LocalPlayer:IsFriendsWith(player.UserId)
+                end)
+            end
+            if not isFriend then
+                table.insert(players, player)
+            end
+        end
+    end
+    return players
+end
+
+local function GetMyRoot()
+    return LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+end
+
+local function ResetTargets()
+    for id, status in pairs(playerStatus) do
+        if status == "Targeting" then
+            playerStatus[id] = nil
+        end
+    end
+end
+
+local function KickAll()
+    if isActive then return end
+    isActive = true
+
+    local allPlayers = GetAllPlayers()
+    if #allPlayers == 0 then
+        Notify("対象がいません", "キックできるプレイヤーが見つかりませんでした。", 3)
+        isActive = false
+        return
+    end
+
+    for _, targetPlayer in ipairs(allPlayers) do
+        playerStatus[targetPlayer.UserId] = "Targeting"
+    end
+
+    local rootPart = GetMyRoot()
+    if rootPart then
+        local spawnPos = rootPart.CFrame * CFrame.new(0, 0, -5)
+        ReplicatedStorage.MenuToys.SpawnToyRemoteFunction:InvokeServer("CreatureBlobman", spawnPos, Vector3.new(0, 127, 0))
+    end
+    task.wait(0.5)
+
+    local toyFolder = workspace:FindFirstChild(LocalPlayer.Name .. "SpawnedInToys")
+    currentBlob = toyFolder and toyFolder:FindFirstChild("CreatureBlobman")
+    if not currentBlob then
+        ResetTargets()
+        isActive = false
+        return
+    end
+
+    local vehicleSeat = currentBlob:FindFirstChild("VehicleSeat")
+    if vehicleSeat and LocalPlayer.Character then
+        vehicleSeat:Sit(LocalPlayer.Character:FindFirstChildOfClass("Humanoid"))
+    end
+    task.wait(0.3)
+
+    local myRoot = GetMyRoot()
+    if not myRoot then
+        ResetTargets()
+        isActive = false
+        return
+    end
+
+    for _, targetPlayer in ipairs(allPlayers) do
+        local targetRoot = targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if targetRoot then
+            myRoot.CFrame = targetRoot.CFrame
+            task.wait(0.02)
+
+            for i = 1, 5 do
+                pcall(function()
+                    currentBlob.BlobmanSeatAndOwnerScript.CreatureGrab:FireServer(
+                        currentBlob.LeftDetector, targetRoot, currentBlob.LeftDetector.LeftWeld
+                    )
+                    currentBlob.BlobmanSeatAndOwnerScript.CreatureRelease:FireServer(currentBlob.LeftDetector.LeftWeld)
+                end)
+                if i < 5 then task.wait(0.08) end
+            end
+        end
+    end
+
+    myRoot.CFrame = CFrame.new(0, 100, 0)
+    task.wait(0.1)
+
+    for _, part in ipairs(currentBlob:GetDescendants()) do
+        if part:IsA("BasePart") then
+            pcall(function() part.Anchored = true end)
+        end
+    end
+    task.wait(0.1)
+
+    local radius = 15
+    for i, targetPlayer in ipairs(allPlayers) do
+        local targetRoot = targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if targetRoot then
+            local angle = math.rad((i - 1) * (360 / #allPlayers))
+            local x = radius * math.cos(angle)
+            local z = radius * math.sin(angle)
+            targetRoot.CFrame = CFrame.new(x, 110, z)
+        end
+    end
+    task.wait(0.1)
+
+    for _ = 1, 2 do
+        for _, targetPlayer in ipairs(allPlayers) do
+            local targetRoot = targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+            if targetRoot then
+                task.spawn(function()
+                    pcall(function()
+                        ReplicatedStorage.GrabEvents.SetNetworkOwner:FireServer(targetRoot, CFrame.new(targetRoot.Position))
+                        ReplicatedStorage.GrabEvents.DestroyGrabLine:FireServer(targetRoot)
+                    end)
+                end)
+            end
+        end
+        task.wait(0.1)
+    end
+
+    task.wait(0.3)
+
+    for _, targetPlayer in ipairs(allPlayers) do
+        local targetRoot = targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if targetRoot then
+            task.spawn(function()
+                pcall(function()
+                    currentBlob.BlobmanSeatAndOwnerScript.CreatureGrab:FireServer(
+                        currentBlob.LeftDetector, targetRoot, currentBlob.LeftDetector.LeftWeld
+                    )
+                    currentBlob.BlobmanSeatAndOwnerScript.CreatureGrab:FireServer(
+                        currentBlob.RightDetector, targetRoot, currentBlob.RightDetector.RightWeld
+                    )
+                end)
+            end)
+        end
+    end
+
+    task.wait(0.1)
+
+    for _, targetPlayer in ipairs(allPlayers) do
+        if targetPlayer and targetPlayer.Parent == Players then
+            playerStatus[targetPlayer.UserId] = "Kicked"
+        end
+    end
+
+    myRoot.CFrame = CFrame.new(0, -50000, 0)
+
+    for _, part in ipairs(currentBlob:GetDescendants()) do
+        if part:IsA("BasePart") then
+            pcall(function() part.Anchored = false end)
+        end
+    end
+
+    task.wait(1)
+    isActive = false
+end
+
+-- ============================================================
+--  Kick All タブの UI
+-- ============================================================
+local KickTab = Tabs["Kick All"]
+local KickLeftGroup = KickTab:AddLeftGroupbox("実行", "play")
+
+KickLeftGroup:AddButton({
+    Text = "キックオール",
+    Func = KickAll,
+    Tooltip = "すべてのプレイヤー（フレンド以外）をキックします",
+    Risky = true,
+})
+
+KickLeftGroup:AddToggle("WhitelistFriends", {
+    Text = "フレンドを除外する",
+    Tooltip = "オンにすると、フレンドはキック対象外になります",
+    Default = false,
+    Callback = function(Value)
+        whitelistFriends = Value
+    end,
+})
+
+KickLeftGroup:AddLabel("ステータス: 待機中", false, "StatusLabel")
+
+local function UpdateStatus(text)
+    Options.StatusLabel:SetText("ステータス: " .. text)
+end
+
+local originalKickAll = KickAll
+KickAll = function()
+    if isActive then return end
+    UpdateStatus("実行中...")
+    local success, err = pcall(originalKickAll)
+    if not success then
+        UpdateStatus("エラー: " .. tostring(err))
+        Notify("エラー", "キック中に問題が発生しました", 5)
+    else
+        UpdateStatus("完了")
+    end
+    task.delay(3, function()
+        if not isActive then
+            UpdateStatus("待機中")
+        end
+    end)
+end
+
+-- ============================================================
+--  ノーブロブキックオール機能
+-- ============================================================
+local NoBlobTab = Tabs["NoBlob Kick"]
+
+-- ノーブロブ用の状態変数
+local noblob_selected_height = "Spawn"
+local noblob_line_lag_enabled = false
+local noblob_line_lag_thread = nil
+local noblob_is_running = false
+
+-- ノーブロブ用の通知
+local function NoBlobNotify(title, content, time)
+    time = time or 3
+    Notify(title, content, time)
+end
+
+-- 全プレイヤー取得（自分以外）
+local function NoBlobGetAllPlayers()
+    local players = {}
+    for _, plr in pairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer then
+            table.insert(players, plr)
+        end
+    end
+    return players
+end
+
+-- オーナーシップスパム
+local function NoBlobSpamOwnership(hrp)
+    local ge = ReplicatedStorage:FindFirstChild("GrabEvents")
+    if not ge then return end
+    local setOwner = ge:FindFirstChild("SetNetworkOwner")
+    if setOwner and hrp then
+        pcall(function()
+            setOwner:FireServer(hrp, hrp.CFrame)
+        end)
+    end
+end
+
+-- テレポート
+local function NoBlobTeleportToPlayer(myHrp, targetHrp)
+    if not myHrp or not targetHrp then return end
+    pcall(function()
+        myHrp.CFrame = targetHrp.CFrame * CFrame.new(0, 5, 5)
+        myHrp.AssemblyLinearVelocity = Vector3.zero
+    end)
+end
+
+-- グラブライン破棄
+local function NoBlobDestroyLineOnPlayer(hrp)
+    local ge = ReplicatedStorage:FindFirstChild("GrabEvents")
+    if not ge then return end
+    local createLine = ge:FindFirstChild("CreateGrabLine")
+    local destroyLine = ge:FindFirstChild("DestroyGrabLine")
+    if not createLine or not destroyLine then return end
+    pcall(function()
+        createLine:FireServer(hrp, CFrame.new(0, 1e9, 0))
+        task.wait()
+        destroyLine:FireServer(hrp)
+    end)
+end
+
+-- ラインラグ開始
+local function NoBlobStartLineLag()
+    if noblob_line_lag_enabled then return end
+    noblob_line_lag_enabled = true
+    noblob_line_lag_thread = coroutine.create(function()
+        local ge = ReplicatedStorage:FindFirstChild("GrabEvents")
+        if not ge then return end
+        local createLine = ge:FindFirstChild("CreateGrabLine")
+        if not createLine then return end
+        while noblob_line_lag_enabled do
+            local spawnLocation = Workspace:FindFirstChild("SpawnLocation")
+                or Workspace:FindFirstChild("Spawn")
+                or (LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart"))
+            if spawnLocation then
+                local randomX = math.random(-1e9, 1e9)
+                local randomZ = math.random(-1e9, 1e9)
+                local directions = {
+                    CFrame.new(randomX, 0, randomZ),
+                    CFrame.new(-randomX, 0, -randomZ),
+                    CFrame.new(randomX, 0, -randomZ),
+                    CFrame.new(-randomX, 0, randomZ)
+                }
+                for _, pos in pairs(directions) do
+                    createLine:FireServer(spawnLocation, pos)
+                end
+            end
+            task.wait()
+        end
+    end)
+    coroutine.resume(noblob_line_lag_thread)
+end
+
+-- ラインラグ停止
+local function NoBlobStopLineLag()
+    noblob_line_lag_enabled = false
+    if noblob_line_lag_thread then
+        coroutine.close(noblob_line_lag_thread)
+        noblob_line_lag_thread = nil
+    end
+end
+
+-- ノーブロブキック実行
+function ExecuteNoBlobKickAll()
+    if noblob_is_running then
+        Notify("ノーブロブキック", "既に実行中です", 2)
+        return
+    end
+    
+    noblob_is_running = true
+    task.spawn(function()
+        local height = (noblob_selected_height == "Heaven") and 1e9 or 35
+
+        -- ラグ開始
+        NoBlobStartLineLag()
+        NoBlobNotify("ノーブロブキック", "ラグ開始", 2)
+        task.wait(1)
+
+        local players = NoBlobGetAllPlayers()
+        if #players == 0 then
+            NoBlobStopLineLag()
+            NoBlobNotify("ノーブロブキック", "対象プレイヤーがいません", 3)
+            noblob_is_running = false
+            return
+        end
+
+        local myChar = LocalPlayer.Character
+        local myHrp = myChar and myChar:FindFirstChild("HumanoidRootPart")
+        if not myHrp then
+            NoBlobStopLineLag()
+            NoBlobNotify("ノーブロブキック", "自分のHRPが見つかりません", 3)
+            noblob_is_running = false
+            return
+        end
+
+        -- 対象のHRPを収集
+        local playerData = {}
+        for _, plr in ipairs(players) do
+            local char = plr.Character
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+            if hrp then
+                table.insert(playerData, {player = plr, hrp = hrp})
+            end
+        end
+
+        if #playerData == 0 then
+            NoBlobStopLineLag()
+            NoBlobNotify("ノーブロブキック", "有効な対象がいません", 3)
+            noblob_is_running = false
+            return
+        end
+
+        NoBlobNotify("ノーブロブキック", #playerData .. "人をキック開始", 2)
+
+        -- 各プレイヤーにテレポートしてオーナーシップをスパム
+        for _, data in ipairs(playerData) do
+            NoBlobTeleportToPlayer(myHrp, data.hrp)
+            task.wait(0.2)
+            NoBlobSpamOwnership(data.hrp)
+            task.wait()
+        end
+
+        -- 円状に配置して固定
+        local radius = 40
+        local angleStep = (math.pi * 2) / #playerData
+        for idx, data in ipairs(playerData) do
+            local angle = (idx - 1) * angleStep
+            local x = math.cos(angle) * radius
+            local z = math.sin(angle) * radius
+
+            pcall(function()
+                data.hrp.CFrame = CFrame.new(x, height, z)
+                data.hrp.AssemblyLinearVelocity = Vector3.zero
+            end)
+
+            -- BodyPositionで固定
+            local bp = Instance.new("BodyPosition")
+            bp.MaxForce = Vector3.new(1e9, 1e9, 1e9)
+            bp.P = 40000000
+            bp.Position = Vector3.new(x, height, z)
+            bp.Parent = data.hrp
+            task.delay(2, function()
+                pcall(function() bp:Destroy() end)
+            end)
+            task.wait()
+        end
+
+        -- グラブラインでキック (8回ループ)
+        for i = 1, 8 do
+            for _, data in ipairs(playerData) do
+                NoBlobDestroyLineOnPlayer(data.hrp)
+            end
+            task.wait(0.3)
+        end
+
+        NoBlobNotify("ノーブロブキック", #playerData .. "人キック完了！ラグ継続中", 3)
+        noblob_is_running = false
+    end)
+end
+
+-- ラグ停止関数
+function NoBlobStopLag()
+    NoBlobStopLineLag()
+    NoBlobNotify("ノーブロブキック", "ラグ処理を停止しました", 2)
+end
+
+-- 高さ切り替え関数
+function NoBlobSetHeight(mode)
+    if mode == "Heaven" then
+        noblob_selected_height = "Heaven"
+        NoBlobNotify("ノーブロブキック", "高さモード: Heaven (天国)", 2)
+    else
+        noblob_selected_height = "Spawn"
+        NoBlobNotify("ノーブロブキック", "高さモード: Spawn (地上)", 2)
+    end
+end
+
+-- ============================================================
+--  NoBlob Kick タブの UI
+-- ============================================================
+local NoBlobLeftGroup = NoBlobTab:AddLeftGroupbox("ノーブロブキック", "sword")
+
+NoBlobLeftGroup:AddButton({
+    Text = "ノーブロブ キックオール",
+    Func = ExecuteNoBlobKickAll,
+    Tooltip = "ブロブマンを使用せずにキックを実行します",
+    Risky = true,
+})
+
+NoBlobLeftGroup:AddDivider()
+
+NoBlobLeftGroup:AddButton({
+    Text = "ラグ処理 停止",
+    Func = NoBlobStopLag,
+    Tooltip = "ラインラグを停止します",
+    Risky = false,
+})
+
+NoBlobLeftGroup:AddDivider()
+
+NoBlobLeftGroup:AddButton({
+    Text = "高さモード: Heaven (天国)",
+    Func = function()
+        NoBlobSetHeight("Heaven")
+    end,
+    Tooltip = "対象を天国の高さに配置します",
+    Risky = false,
+})
+
+NoBlobLeftGroup:AddButton({
+    Text = "高さモード: Spawn (地上)",
+    Func = function()
+        NoBlobSetHeight("Spawn")
+    end,
+    Tooltip = "対象を地上の高さに配置します",
+    Risky = false,
+})
+
+NoBlobLeftGroup:AddDivider()
+
+NoBlobLeftGroup:AddLabel("現在の高さモード: " .. noblob_selected_height, false, "HeightStatus")
+
+-- 高さモード更新用の関数
+local function UpdateHeightStatus()
+    Options.HeightStatus:SetText("現在の高さモード: " .. noblob_selected_height)
+end
+
+-- 高さ設定関数をオーバーライドしてUIも更新
+local originalNoBlobSetHeight = NoBlobSetHeight
+NoBlobSetHeight = function(mode)
+    originalNoBlobSetHeight(mode)
+    UpdateHeightStatus()
+end
+
+-- ============================================================
+--  バリア破壊機能（Barrier Break）
+-- ============================================================
+local BarrierTab = Tabs["Barrier Break"]
+
+local autoBarrierRunning = false
+local autoBarrierNoTPRunning = false
+local autoBarrierToggleObj = nil
+local autoBarrierNoTPToggleObj = nil
+
+local function executeBarrierBreak()
+    local player, playerName = LocalPlayer, LocalPlayer.Name
+
+    local plotItems = Workspace:FindFirstChild("PlotItems")
+    if plotItems then
+        local playersInPlots = plotItems:FindFirstChild("PlayersInPlots")
+        if playersInPlots and playersInPlots:FindFirstChild(playerName) then
+            Notify("エラー", "自宅のプロット内では実行できません", 3)
+            return false
+        end
+    end
+
+    autoBarrierRunning = true
+    local success, result = pcall(function()
+        if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then
+            Notify("エラー", "キャラクターが見つかりません", 3)
+            return false
+        end
+
+        local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
+        if not humanoid then
+            Notify("エラー", "Humanoidが見つかりません", 3)
+            return false
+        end
+
+        local originalWalkSpeed = humanoid.WalkSpeed
+        local originalPosition = player.Character.HumanoidRootPart.CFrame
+        humanoid.WalkSpeed = 0
+
+        if not ReplicatedStorage:FindFirstChild("MenuToys") then
+            humanoid.WalkSpeed = originalWalkSpeed
+            Notify("エラー", "MenuToysが見つかりません", 3)
+            return false
+        end
+
+        ReplicatedStorage.MenuToys.SpawnToyRemoteFunction:InvokeServer("InstrumentWoodwindOcarina",
+            CFrame.new(184.148834, -5.54824972, 498.136749, 0.829037189, -0.214714944, 0.516328275, 0, 0.923344612, 0.383972496, -0.559193552, -0.318327487, 0.765486956),
+            Vector3.new(0, 34, 0))
+        task.wait(0.4)
+
+        local toyFolder = Workspace:FindFirstChild(playerName .. "SpawnedInToys")
+        if not toyFolder or not toyFolder:FindFirstChild("InstrumentWoodwindOcarina") then
+            humanoid.WalkSpeed = originalWalkSpeed
+            Notify("エラー", "オカリナが見つかりません", 3)
+            return false
+        end
+
+        local ocarina = toyFolder:FindFirstChild("InstrumentWoodwindOcarina")
+        if not ocarina or not ocarina:FindFirstChild("HoldPart") then
+            humanoid.WalkSpeed = originalWalkSpeed
+            Notify("エラー", "オカリナのHoldPartが見つかりません", 3)
+            return false
+        end
+
+        ocarina.HoldPart.HoldItemRemoteFunction:InvokeServer(ocarina, Workspace[playerName])
+        task.wait(0.1)
+
+        if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+            player.Character.HumanoidRootPart.CFrame = CFrame.new(304.06, 25.77, 488.54)
+        end
+        task.wait(0.21)
+
+        if toyFolder and toyFolder:FindFirstChild("InstrumentWoodwindOcarina") then
+            ReplicatedStorage.MenuToys.DestroyToy:FireServer(toyFolder.InstrumentWoodwindOcarina)
+        end
+
+        if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+            player.Character.HumanoidRootPart.CFrame = originalPosition
+        end
+        task.wait(0.7)
+
+        ReplicatedStorage.MenuToys.SpawnToyRemoteFunction:InvokeServer("Campfire",
+            CFrame.new(257.638672, -5.57392979, 450.103638, -0.950906992, -0.171067372, 0.257899135, 0, 0.833338678, 0.552762806, -0.309477001, 0.525626004, -0.79242748),
+            Vector3.new(0, 161.9720001220703, 0))
+        task.wait(0.7)
+
+        local campfirePosition = Vector3.new(257.638672, -5.57392979, 450.103638)
+        local toyFolder2 = Workspace:FindFirstChild(playerName .. "SpawnedInToys")
+        if toyFolder2 and toyFolder2:FindFirstChild("Campfire") then
+            local campfire = toyFolder2:FindFirstChild("Campfire")
+            local primaryPart = campfire.PrimaryPart or campfire:FindFirstChildWhichIsA("BasePart")
+            if primaryPart then
+                local distance = (primaryPart.Position - campfirePosition).Magnitude
+                if distance < 10 then
+                    task.wait(1)
+                    humanoid.WalkSpeed = originalWalkSpeed
+                    Notify("成功", "バリア破壊に成功しました", 5)
+                    return true
+                end
+            end
+        end
+
+        humanoid.WalkSpeed = originalWalkSpeed
+        Notify("失敗", "キャンプファイヤーの配置に失敗しました", 3)
+        return false
+    end)
+
+    if not success then
+        if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+            local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
+            if humanoid then humanoid.WalkSpeed = 16 end
+        end
+        Notify("エラー", "実行中にエラーが発生しました: " .. tostring(result), 3)
+        return false
+    end
+
+    autoBarrierRunning = false
+    return result
+end
+
+local function executeBarrierBreakNoTP()
+    local player, playerName = LocalPlayer, LocalPlayer.Name
+
+    local plotItems = Workspace:FindFirstChild("PlotItems")
+    if plotItems then
+        local playersInPlots = plotItems:FindFirstChild("PlayersInPlots")
+        if playersInPlots and playersInPlots:FindFirstChild(playerName) then
+            Notify("エラー", "自宅のプロット内では実行できません", 3)
+            return false
+        end
+    end
+
+    autoBarrierNoTPRunning = true
+    local success, err = pcall(function()
+        if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then
+            Notify("エラー", "キャラクターが見つかりません", 3)
+            return false
+        end
+
+        local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
+        if not humanoid then
+            Notify("エラー", "Humanoidが見つかりません", 3)
+            return false
+        end
+
+        local originalWalkSpeed = humanoid.WalkSpeed
+        humanoid.WalkSpeed = 0
+
+        if not ReplicatedStorage:FindFirstChild("MenuToys") then
+            humanoid.WalkSpeed = 16
+            Notify("エラー", "MenuToysが見つかりません", 3)
+            return false
+        end
+
+        ReplicatedStorage.MenuToys.SpawnToyRemoteFunction:InvokeServer("Campfire",
+            CFrame.new(257.638672, -5.57392979, 450.103638, -0.950906992, -0.171067372, 0.257899135, 0, 0.833338678, 0.552762806, -0.309477001, 0.525626004, -0.79242748),
+            Vector3.new(0, 161.9720001220703, 0))
+        task.wait(0.7)
+
+        local campfirePosition = Vector3.new(257.638672, -5.57392979, 450.103638)
+        local toyFolder = Workspace:FindFirstChild(playerName .. "SpawnedInToys")
+        if not toyFolder or not toyFolder:FindFirstChild("Campfire") then
+            humanoid.WalkSpeed = 16
+            error("Campfireが見つかりません")
+        end
+
+        humanoid.WalkSpeed = 16
+        Notify("成功", "バリア破壊（NoTP）に成功しました！", 3)
+        return true
+    end)
+
+    if not success then
+        local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+        if humanoid then humanoid.WalkSpeed = 16 end
+        Notify("エラー", tostring(err), 3)
+        return false
+    end
+
+    autoBarrierNoTPRunning = false
+    return true
+end
+
+-- ============================================================
+--  Barrier Break タブの UI
+-- ============================================================
+local LeftGroupBB = BarrierTab:AddLeftGroupbox("バリア破壊", "shield")
+
+LeftGroupBB:AddButton({
+    Text = "バリア破壊（1回実行）",
+    Func = function()
+        executeBarrierBreak()
+    end,
+    Tooltip = "通常のバリア破壊を1回実行します（テレポートあり）",
+    Risky = false,
+})
+
+autoBarrierToggleObj = LeftGroupBB:AddToggle("AutoBarrier", {
+    Text = "オート バリア破壊",
+    Tooltip = "成功するまで自動でバリア破壊を繰り返します",
+    Default = false,
+    Callback = function(Value)
+        autoBarrierRunning = Value
+        if Value then
+            Notify("開始", "成功するまで自動実行します", 2)
+            task.spawn(function()
+                while autoBarrierRunning do
+                    local result = executeBarrierBreak()
+                    if result then
+                        if autoBarrierToggleObj then
+                            autoBarrierToggleObj:SetValue(false)
+                        end
+                        break
+                    end
+                    task.wait(1)
+                end
+            end)
+        else
+            Notify("停止", "自動実行を停止しました", 2)
+        end
+    end,
+})
+
+LeftGroupBB:AddDivider()
+
+LeftGroupBB:AddButton({
+    Text = "バリア破壊 NoTP（1回実行）",
+    Func = function()
+        executeBarrierBreakNoTP()
+    end,
+    Tooltip = "テレポートなしのバリア破壊を1回実行します（Beta）",
+    Risky = false,
+})
+
+autoBarrierNoTPToggleObj = LeftGroupBB:AddToggle("AutoBarrierNoTP", {
+    Text = "オート バリア破壊 NoTP（Beta）",
+    Tooltip = "成功するまで自動でNoTPバリア破壊を繰り返します",
+    Default = false,
+    Callback = function(Value)
+        autoBarrierNoTPRunning = Value
+        if Value then
+            Notify("開始", "成功するまで自動実行します（NoTP）", 2)
+            task.spawn(function()
+                while autoBarrierNoTPRunning do
+                    local result = executeBarrierBreakNoTP()
+                    if result then
+                        if autoBarrierNoTPToggleObj then
+                            autoBarrierNoTPToggleObj:SetValue(false)
+                        end
+                        break
+                    end
+                    task.wait(1.5)
+                end
+            end)
+        else
+            Notify("停止", "自動実行（NoTP）を停止しました", 2)
+        end
+    end,
+})
+
+LeftGroupBB:AddLabel("注意事項", false)
+LeftGroupBB:AddLabel("・自宅のプロット内では実行できません", true)
+LeftGroupBB:AddLabel("・オート実行は成功時に自動でOFFになります", true)
+LeftGroupBB:AddLabel("・NoTP版はベータ版です（不安定な場合があります）", true)
+
+-- ============================================================
+--  UI Settings（テーマ・カラー変更）＆ 設定保存
+-- ============================================================
+ThemeManager:SetLibrary(Library)
+SaveManager:SetLibrary(Library)
+
+SaveManager:IgnoreThemeSettings()
+SaveManager:SetIgnoreIndexes({})
+
+ThemeManager:SetFolder("mspaint")
+SaveManager:SetFolder("mspaint/example")
+
+SaveManager:BuildConfigSection(Tabs["UI Settings"])
+ThemeManager:ApplyToTab(Tabs["UI Settings"])
+
+-- メニュー表示
+Library:SetVisible(true)
+
+print("✅ るーHUB🕶️ 読み込み完了！")
+print("📌 ノーブロブキック機能追加完了")
